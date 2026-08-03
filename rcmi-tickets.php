@@ -18,24 +18,133 @@ define('RCMI_TICKETS_FILE', __FILE__);
 define('RCMI_TICKETS_DIR', plugin_dir_path(__FILE__));
 define('RCMI_TICKETS_URL', plugin_dir_url(__FILE__));
 
-require_once RCMI_TICKETS_DIR . 'includes/class-roles.php';
-require_once RCMI_TICKETS_DIR . 'includes/class-permissions.php';
-require_once RCMI_TICKETS_DIR . 'includes/class-activator.php';
-require_once RCMI_TICKETS_DIR . 'includes/class-deactivator.php';
-require_once RCMI_TICKETS_DIR . 'includes/class-rest-tickets.php';
-require_once RCMI_TICKETS_DIR . 'includes/class-rest-tags.php';
-require_once RCMI_TICKETS_DIR . 'includes/class-rest-comments.php';
-require_once RCMI_TICKETS_DIR . 'includes/class-rest-attachments.php';
-require_once RCMI_TICKETS_DIR . 'includes/class-rest-meta.php';
-require_once RCMI_TICKETS_DIR . 'includes/class-emails.php';
-require_once RCMI_TICKETS_DIR . 'includes/class-updater.php';
+// ============================================================
+// DIAGNOSTIC ERROR CAPTURE (temporary — remove after activation
+// issue is resolved).
+//
+// WordPress swallows the real fatal error and shows a generic
+// "Plugin could not be activated because it triggered a fatal
+// error." message. This block captures the actual error via:
+//   1. try/catch around each require_once (catches ParseError,
+//      TypeError, Error, etc.)
+//   2. register_shutdown_function (catches E_ERROR that
+//      try/catch misses)
+// The error is stored in a transient and displayed as an
+// admin notice on the Plugins page after the redirect.
+// ============================================================
+
+/**
+ * Store the activation error so it survives the redirect back
+ * to plugins.php.
+ */
+function rcmi_tickets_store_activation_error($message, $file, $line) {
+    set_transient('rcmi_tickets_activation_error', [
+        'message' => $message,
+        'file'    => $file,
+        'line'    => $line,
+        'php'     => PHP_VERSION,
+        'time'    => current_time('mysql'),
+    ], 300);
+}
+
+/**
+ * Show the captured error as a red admin notice on plugins.php.
+ */
+add_action('admin_notices', function () {
+    if (!function_exists('get_current_screen')) {
+        return;
+    }
+    $screen = get_current_screen();
+    if (!$screen || $screen->id !== 'plugins') {
+        return;
+    }
+    $error = get_transient('rcmi_tickets_activation_error');
+    if (!$error) {
+        return;
+    }
+    delete_transient('rcmi_tickets_activation_error');
+    echo '<div class="notice notice-error is-dismissible" style="padding:12px 16px;">';
+    echo '<h3 style="margin:4px 0 8px;">RCMI Tickets — Activation Error</h3>';
+    echo '<p><strong>PHP ' . esc_html($error['php']) . '</strong></p>';
+    echo '<p style="font-family:monospace;font-size:13px;background:#fff;border:1px solid #ddd;padding:8px 12px;">';
+    echo esc_html($error['message']);
+    echo '</p>';
+    echo '<p>File: <code>' . esc_html($error['file']) . '</code> &nbsp; Line: <code>' . (int) $error['line'] . '</code></p>';
+    echo '<p style="color:#666;font-size:12px;">Captured at ' . esc_html($error['time']) . '</p>';
+    echo '</div>';
+});
+
+// Catch fatal errors that try/catch cannot (E_ERROR from C
+// extensions, etc.). Runs after the script shuts down.
+register_shutdown_function(function () {
+    $e = error_get_last();
+    if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        rcmi_tickets_store_activation_error(
+            'FATAL (' . $e['type'] . '): ' . $e['message'],
+            $e['file'],
+            $e['line']
+        );
+    }
+});
+
+// Load includes with try/catch — catches ParseError, TypeError,
+// Error, and any Throwable from file-level code.
+$rcmi_tickets_includes = [
+    'includes/class-roles.php',
+    'includes/class-permissions.php',
+    'includes/class-activator.php',
+    'includes/class-deactivator.php',
+    'includes/class-rest-tickets.php',
+    'includes/class-rest-tags.php',
+    'includes/class-rest-comments.php',
+    'includes/class-rest-attachments.php',
+    'includes/class-rest-meta.php',
+    'includes/class-emails.php',
+    'includes/class-updater.php',
+];
+
+foreach ($rcmi_tickets_includes as $rcmi_inc_file) {
+    try {
+        require_once RCMI_TICKETS_DIR . $rcmi_inc_file;
+    } catch (\Throwable $rcmi_inc_err) {
+        rcmi_tickets_store_activation_error(
+            'Error loading ' . $rcmi_inc_file . ': ' . $rcmi_inc_err->getMessage(),
+            $rcmi_inc_err->getFile(),
+            $rcmi_inc_err->getLine()
+        );
+        // Stop loading — the plugin can't function without its
+        // includes. The error will be shown on plugins.php.
+        return;
+    }
+}
 
 register_activation_hook(__FILE__, 'rcmi_tickets_activate');
 register_deactivation_hook(__FILE__, 'rcmi_tickets_deactivate');
 
 function rcmi_tickets_activate() {
-    rcmi_tickets_register_roles();
-    rcmi_tickets_create_tables();
+    try {
+        rcmi_tickets_register_roles();
+        rcmi_tickets_create_tables();
+    } catch (\Throwable $e) {
+        rcmi_tickets_store_activation_error(
+            'Activation hook error: ' . $e->getMessage(),
+            $e->getFile(),
+            $e->getLine()
+        );
+        // Show the error immediately on the activation screen
+        // (before WordPress redirects to plugins.php).
+        wp_die(
+            '<h2>RCMI Tickets — Activation Error</h2>' .
+            '<p><strong>PHP ' . PHP_VERSION . '</strong></p>' .
+            '<p style="font-family:monospace;background:#f9f9f9;padding:10px;border:1px solid #ddd;">' .
+            esc_html($e->getMessage()) . '</p>' .
+            '<p>File: <code>' . esc_html($e->getFile()) . '</code> &nbsp; Line: <code>' .
+            (int) $e->getLine() . '</code></p>' .
+            '<p><a href="' . esc_url(admin_url('plugins.php')) . '">&larr; Back to plugins</a></p>',
+            'RCMI Tickets Activation Error',
+            ['back_link' => true, 'response' => 500]
+        );
+    }
 }
 
 function rcmi_tickets_deactivate() {
