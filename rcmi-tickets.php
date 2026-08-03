@@ -101,6 +101,7 @@ $rcmi_tickets_includes = [
     'includes/class-rest-meta.php',
     'includes/class-emails.php',
     'includes/class-updater.php',
+    'includes/class-settings.php',
 ];
 
 foreach ($rcmi_tickets_includes as $rcmi_inc_file) {

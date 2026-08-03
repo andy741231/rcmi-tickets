@@ -187,6 +187,8 @@ add_filter('upgrader_post_install', 'rcmi_tickets_post_install', 10, 3);
 
 /**
  * Allow an explicit admin refresh without waiting for the six-hour cache.
+ * Triggered by the "Check for updates" link on the Plugins page or the
+ * Settings page.
  */
 function rcmi_tickets_maybe_refresh_update_cache() {
     if (!isset($_GET['rcmi_tickets_check_updates']) || !current_user_can('manage_options')) {
@@ -197,7 +199,14 @@ function rcmi_tickets_maybe_refresh_update_cache() {
     delete_site_transient('update_plugins');
     rcmi_tickets_get_github_commit();
 
-    wp_safe_redirect(remove_query_arg('rcmi_tickets_check_updates'));
+    // Redirect back to the page the request came from, stripping the
+    // check_updates query arg so a refresh doesn't re-trigger it.
+    $redirect = remove_query_arg('rcmi_tickets_check_updates');
+    // Add a flag so the settings page can show a "check completed" notice.
+    if (strpos($redirect, 'page=rcmi-tickets') !== false) {
+        $redirect = add_query_arg('rcmi_tickets_checked', '1', $redirect);
+    }
+    wp_safe_redirect($redirect);
     exit;
 }
 add_action('admin_init', 'rcmi_tickets_maybe_refresh_update_cache');
