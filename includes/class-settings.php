@@ -19,6 +19,69 @@ if (!defined('ABSPATH')) {
 }
 
 // ============================================================
+// Form handling — must run on admin_init (before any HTML output)
+// so wp_safe_redirect() doesn't hit "headers already sent".
+// ============================================================
+
+/**
+ * Handle "Create Tickets Page" and "Recreate Tickets Page" form
+ * submissions. Runs on admin_init so the redirect happens before
+ WordPress sends the admin page header.
+ */
+function rcmi_tickets_handle_page_form() {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
+    // Create page
+    if (isset($_POST['rcmi_tickets_create_page']) && check_admin_referer('rcmi_tickets_create_page')) {
+        $page_id = wp_insert_post([
+            'post_title'   => __('Tickets', 'rcmi-tickets'),
+            'post_content' => '[rcmi_tickets]',
+            'post_status'  => 'publish',
+            'post_type'    => 'page',
+            'post_name'    => 'tickets',
+        ]);
+
+        if (!is_wp_error($page_id)) {
+            delete_transient('rcmi_tickets_app_url');
+            wp_safe_redirect(add_query_arg('rcmi_tickets_page_created', $page_id, admin_url('admin.php?page=rcmi-tickets')));
+            exit;
+        }
+
+        // Error — redirect back with error message in query arg
+        wp_safe_redirect(add_query_arg('rcmi_tickets_page_error', urlencode($page_id->get_error_message()), admin_url('admin.php?page=rcmi-tickets')));
+        exit;
+    }
+
+    // Recreate page (delete old + create new)
+    if (isset($_POST['rcmi_tickets_recreate_page']) && check_admin_referer('rcmi_tickets_recreate_page')) {
+        $old_id = absint($_POST['rcmi_tickets_old_page_id']);
+        if ($old_id) {
+            wp_delete_post($old_id, true);
+            delete_transient('rcmi_tickets_app_url');
+        }
+        $page_id = wp_insert_post([
+            'post_title'   => __('Tickets', 'rcmi-tickets'),
+            'post_content' => '[rcmi_tickets]',
+            'post_status'  => 'publish',
+            'post_type'    => 'page',
+            'post_name'    => 'tickets',
+        ]);
+
+        if (!is_wp_error($page_id)) {
+            delete_transient('rcmi_tickets_app_url');
+            wp_safe_redirect(add_query_arg('rcmi_tickets_page_created', $page_id, admin_url('admin.php?page=rcmi-tickets')));
+            exit;
+        }
+
+        wp_safe_redirect(add_query_arg('rcmi_tickets_page_error', urlencode($page_id->get_error_message()), admin_url('admin.php?page=rcmi-tickets')));
+        exit;
+    }
+}
+add_action('admin_init', 'rcmi_tickets_handle_page_form');
+
+// ============================================================
 // Admin menu
 // ============================================================
 
@@ -42,46 +105,7 @@ function rcmi_tickets_render_settings_page() {
     $tab = isset($_GET['tab']) ? sanitize_key($_GET['tab']) : 'setup';
     $shortcode_page_id = rcmi_tickets_find_shortcode_page();
     $created = isset($_GET['rcmi_tickets_page_created']) ? absint($_GET['rcmi_tickets_page_created']) : 0;
-
-    // Handle "Create Tickets Page" form submission
-    if (isset($_POST['rcmi_tickets_create_page']) && check_admin_referer('rcmi_tickets_create_page')) {
-        $page_id = wp_insert_post([
-            'post_title'   => __('Tickets', 'rcmi-tickets'),
-            'post_content' => '[rcmi_tickets]',
-            'post_status'  => 'publish',
-            'post_type'    => 'page',
-            'post_name'    => 'tickets',
-        ]);
-
-        if (is_wp_error($page_id)) {
-            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html($page_id->get_error_message()) . '</p></div>';
-        } else {
-            delete_transient('rcmi_tickets_app_url');
-            wp_safe_redirect(add_query_arg('rcmi_tickets_page_created', $page_id, admin_url('admin.php?page=rcmi-tickets')));
-            exit;
-        }
-    }
-
-    // Handle "Delete & recreate" form submission
-    if (isset($_POST['rcmi_tickets_recreate_page']) && check_admin_referer('rcmi_tickets_recreate_page')) {
-        $old_id = absint($_POST['rcmi_tickets_old_page_id']);
-        if ($old_id) {
-            wp_delete_post($old_id, true);
-            delete_transient('rcmi_tickets_app_url');
-        }
-        $page_id = wp_insert_post([
-            'post_title'   => __('Tickets', 'rcmi-tickets'),
-            'post_content' => '[rcmi_tickets]',
-            'post_status'  => 'publish',
-            'post_type'    => 'page',
-            'post_name'    => 'tickets',
-        ]);
-        if (!is_wp_error($page_id)) {
-            delete_transient('rcmi_tickets_app_url');
-            wp_safe_redirect(add_query_arg('rcmi_tickets_page_created', $page_id, admin_url('admin.php?page=rcmi-tickets')));
-            exit;
-        }
-    }
+    $page_error = isset($_GET['rcmi_tickets_page_error']) ? urldecode(sanitize_text_field($_GET['rcmi_tickets_page_error'])) : '';
 
     ?>
     <div class="wrap">
@@ -95,6 +119,12 @@ function rcmi_tickets_render_settings_page() {
                     esc_url(get_permalink($created)),
                     esc_url(admin_url('post.php?post=' . $created . '&action=edit'))
                 )); ?></p>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($page_error): ?>
+            <div class="notice notice-error is-dismissible">
+                <p><strong><?php esc_html_e('Error creating tickets page:', 'rcmi-tickets'); ?></strong> <?php echo esc_html($page_error); ?></p>
             </div>
         <?php endif; ?>
 
