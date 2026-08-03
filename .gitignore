@@ -1,0 +1,6 @@
+# Node.js dependencies
+app/node_modules/
+
+# Vite dev artifacts (keep dist/ — production downloads ZIP and doesn't run npm build)
+*.log
+.DS_Store

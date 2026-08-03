@@ -1,0 +1,187 @@
+@import './tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    .rcmi-tickets input::placeholder,
+    .rcmi-tickets textarea::placeholder {
+        color: #7a8588;
+        opacity: 1;
+    }
+}
+
+@layer components {
+    .rcmi-surface {
+        border: 1px solid var(--rcmi-border);
+        border-radius: var(--rcmi-radius-md);
+        background: var(--rcmi-surface);
+        box-shadow: var(--rcmi-shadow-sm);
+    }
+
+    .rcmi-card {
+        border: 1px solid var(--rcmi-border);
+        border-radius: var(--rcmi-radius-md);
+        background: var(--rcmi-surface);
+        box-shadow: var(--rcmi-shadow-sm);
+    }
+
+    .rcmi-section-label {
+        color: var(--rcmi-muted);
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .rcmi-button-primary {
+        border-radius: var(--rcmi-radius-sm);
+        background: var(--rcmi-red);
+        color: #fff;
+        font-weight: 600;
+    }
+
+    .rcmi-button-primary:hover {
+        background: var(--rcmi-red-dark);
+        transform: translateY(-1px);
+    }
+
+    .rcmi-button-primary:active {
+        transform: translateY(0);
+    }
+
+    .rcmi-button-secondary {
+        border: 1px solid var(--rcmi-border-strong);
+        border-radius: var(--rcmi-radius-sm);
+        background: var(--rcmi-surface);
+        color: var(--rcmi-slate);
+        font-weight: 600;
+    }
+
+    .rcmi-button-secondary:hover {
+        border-color: var(--rcmi-slate);
+        background: var(--rcmi-bg);
+    }
+
+    .rcmi-button-danger {
+        border: 1px solid #f3c9cf;
+        border-radius: var(--rcmi-radius-sm);
+        background: #fdecef;
+        color: var(--rcmi-red-dark);
+        font-weight: 600;
+    }
+
+    .rcmi-button-danger:hover {
+        background: #fbd5dc;
+        border-color: #ea9aa4;
+    }
+
+    .rcmi-button-ghost {
+        border-radius: var(--rcmi-radius-sm);
+        background: transparent;
+        color: var(--rcmi-muted);
+        font-weight: 600;
+    }
+
+    .rcmi-button-ghost:hover {
+        background: var(--rcmi-bg);
+        color: var(--rcmi-ink);
+    }
+
+    .rcmi-input {
+        border: 1px solid var(--rcmi-border-strong);
+        border-radius: var(--rcmi-radius-sm);
+        background: var(--rcmi-surface);
+        color: var(--rcmi-ink);
+        font-size: 0.875rem;
+        padding: 0.625rem 0.75rem;
+        width: 100%;
+    }
+
+    .rcmi-input:focus {
+        border-color: var(--rcmi-red);
+        box-shadow: 0 0 0 1px var(--rcmi-red);
+        outline: none;
+    }
+
+    .rcmi-field-label {
+        display: block;
+        margin-bottom: 0.375rem;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--rcmi-ink);
+    }
+
+    .rcmi-field-required {
+        color: var(--rcmi-red);
+        margin-left: 0.125rem;
+    }
+
+    .rcmi-field-help {
+        margin-top: 0.375rem;
+        font-size: 0.75rem;
+        color: var(--rcmi-muted);
+    }
+
+    .rcmi-avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 9999px;
+        background: var(--rcmi-teal-soft);
+        color: var(--rcmi-teal);
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+
+    .rcmi-tag-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        border-radius: 9999px;
+        background: var(--rcmi-teal-soft);
+        color: var(--rcmi-teal);
+        font-size: 0.6875rem;
+        font-weight: 600;
+        padding: 0.1875rem 0.625rem;
+    }
+
+    .rcmi-breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.8125rem;
+    }
+
+    .rcmi-breadcrumb a {
+        color: var(--rcmi-muted);
+        font-weight: 600;
+    }
+
+    .rcmi-breadcrumb a:hover {
+        color: var(--rcmi-red);
+    }
+
+    .rcmi-breadcrumb-sep {
+        color: var(--rcmi-border-strong);
+    }
+
+    .rcmi-priority-dot {
+        display: inline-block;
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 9999px;
+        margin-right: 0.375rem;
+    }
+
+    .rcmi-priority-high   .rcmi-priority-dot { background: #c8102e; }
+    .rcmi-priority-medium .rcmi-priority-dot { background: #a66b00; }
+    .rcmi-priority-low    .rcmi-priority-dot { background: #687174; }
+
+    .rcmi-priority-high   { color: #c8102e; }
+    .rcmi-priority-medium { color: #a66b00; }
+    .rcmi-priority-low    { color: #687174; }
+}
+
