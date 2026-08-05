@@ -14,17 +14,19 @@ const props = defineProps({
 });
 
 const classes = {
-    Received:  'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200',
-    Approved:  'bg-blue-50 text-blue-800 ring-1 ring-inset ring-blue-200',
-    Rejected:  'bg-red-50 text-red-800 ring-1 ring-inset ring-red-200',
-    Completed: 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200',
+    'Received':          'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200',
+    'Pending Approval':  'bg-purple-50 text-purple-800 ring-1 ring-inset ring-purple-200',
+    'Approved':          'bg-blue-50 text-blue-800 ring-1 ring-inset ring-blue-200',
+    'Rejected':          'bg-red-50 text-red-800 ring-1 ring-inset ring-red-200',
+    'Completed':         'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200',
 };
 
 const icons = {
-    Received:  'clock',
-    Approved:  'check-circle',
-    Rejected:  'x-circle',
-    Completed: 'check-badge',
+    'Received':          'clock',
+    'Pending Approval':  'bell',
+    'Approved':          'check-circle',
+    'Rejected':          'x-circle',
+    'Completed':         'check-badge',
 };
 
 const badgeClass = computed(() => classes[props.status] || 'bg-gray-100 text-gray-800');

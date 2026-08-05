@@ -5,6 +5,11 @@
 @tailwind utilities;
 
 @layer base {
+    .rcmi-tickets,
+    .rcmi-tickets * {
+        font-family: 'Source Sans 3', 'Source Sans Pro', system-ui, sans-serif;
+    }
+
     .rcmi-tickets input::placeholder,
     .rcmi-tickets textarea::placeholder {
         color: #7a8588;
@@ -124,6 +129,34 @@
         color: var(--rcmi-muted);
     }
 
+    .rcmi-reaction-toolbar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        border-top: 1px solid #f1f5f9;
+        padding-top: 0.75rem;
+    }
+
+    .rcmi-reaction-toolbar-label {
+        color: #64748b;
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    /* Honeypot — hidden from humans, visible to bots */
+    .rcmi-honeypot {
+        position: absolute;
+        left: -9999px;
+        top: -9999px;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+    }
+
     .rcmi-avatar {
         display: inline-flex;
         align-items: center;
@@ -184,6 +217,52 @@
     .rcmi-priority-medium { color: #a66b00; }
     .rcmi-priority-low    { color: #687174; }
 
+    /* ── Navigation (App.vue header) ─────────────────────────────── */
+
+    .rcmi-nav-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        border-radius: var(--rcmi-radius-sm);
+        padding: 0.5rem 0.875rem;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--rcmi-muted);
+        text-decoration: none;
+        transition: background-color 150ms ease, color 150ms ease;
+    }
+
+    .rcmi-nav-link:hover {
+        background: var(--rcmi-bg);
+        color: var(--rcmi-ink);
+    }
+
+    .rcmi-nav-link-active {
+        background: var(--rcmi-red-soft);
+        color: var(--rcmi-red);
+    }
+
+    .rcmi-nav-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.25rem;
+        height: 1.25rem;
+        padding: 0 0.375rem;
+        border-radius: 9999px;
+        background: var(--rcmi-red);
+        color: #fff;
+        font-size: 0.6875rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    /* ── Form Builder page ───────────────────────────────────────── */
+
+    .rcmi-formbuilder-page {
+        font-family: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
     .rcmi-formbuilder-page-header {
         display: flex;
         align-items: flex-end;
@@ -192,20 +271,6 @@
         margin-bottom: 1.5rem;
         padding-bottom: 1.25rem;
         border-bottom: 1px solid var(--rcmi-border);
-    }
-
-    .rcmi-formbuilder-workspace {
-        display: grid;
-        grid-template-columns: 230px minmax(0, 1fr);
-        gap: 1.25rem;
-        align-items: start;
-    }
-
-    .rcmi-formbuilder-sidebar {
-        display: grid;
-        gap: 1rem;
-        position: sticky;
-        top: 1rem;
     }
 
     .rcmi-ticket-detail-layout {
@@ -228,28 +293,409 @@
     .rcmi-readonly-fields > div:has(.rcmi-section-label) {
         grid-column: 1 / -1;
     }
-}
-
-@media (max-width: 767px) {
-    .rcmi-ticket-detail-layout {
-        grid-template-columns: 1fr;
-    }
-
-    .rcmi-readonly-fields {
-        grid-template-columns: 1fr;
-    }
-
-    .rcmi-formbuilder-page-header {
-        align-items: flex-start;
-        flex-direction: column;
-    }
 
     .rcmi-formbuilder-workspace {
-        grid-template-columns: 1fr;
+        display: grid;
+        grid-template-columns: 230px minmax(0, 1fr);
+        gap: 1.25rem;
+        align-items: start;
     }
 
     .rcmi-formbuilder-sidebar {
-        position: static;
+        display: grid;
+        gap: 1rem;
+        position: sticky;
+        top: 1rem;
+    }
+
+    .rcmi-formbuilder-palette-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        min-height: 2.25rem;
+        padding: 0.5rem 0.625rem;
+        border: 1px solid var(--rcmi-border);
+        border-radius: var(--rcmi-radius-sm);
+        background: var(--rcmi-surface);
+        color: var(--rcmi-ink);
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+    }
+
+    .rcmi-formbuilder-palette-button:hover {
+        border-color: var(--rcmi-red);
+        background: var(--rcmi-red-soft);
+        color: var(--rcmi-red-dark);
+    }
+
+    .rcmi-formbuilder-guide {
+        padding: 1rem;
+        border: 1px solid var(--rcmi-border);
+        border-radius: var(--rcmi-radius-md);
+        background: var(--rcmi-surface-subtle);
+    }
+
+    .rcmi-formbuilder-canvas {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid var(--rcmi-border);
+        border-radius: var(--rcmi-radius-lg);
+        background: var(--rcmi-surface);
+        box-shadow: var(--rcmi-shadow-sm);
+    }
+
+    .rcmi-formbuilder-canvas-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--rcmi-border);
+        background: var(--rcmi-surface-subtle);
+    }
+
+    .rcmi-formbuilder-field-list {
+        padding: 1.25rem;
+    }
+
+    .rcmi-formbuilder-group-label {
+        margin: 1rem 0 0.5rem;
+        color: var(--rcmi-muted);
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .rcmi-formbuilder-group-label:first-child {
+        margin-top: 0;
+    }
+
+    .rcmi-formbuilder-condition-chip {
+        max-width: 15rem;
+        overflow: hidden;
+        padding: 0.2rem 0.45rem;
+        border-radius: 9999px;
+        background: var(--rcmi-gold-soft);
+        color: var(--rcmi-gold);
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .rcmi-formbuilder-drop-zone {
+        min-height: 0.5rem;
+        margin: 0.125rem 0;
+        border: 1px dashed transparent;
+        border-radius: var(--rcmi-radius-sm);
+        color: var(--rcmi-red);
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-align: center;
+        text-transform: uppercase;
+        transition: min-height 100ms ease, border-color 100ms ease, background-color 100ms ease;
+    }
+
+    .rcmi-formbuilder-drop-zone-active {
+        min-height: 2rem;
+        border-color: var(--rcmi-red);
+        background: var(--rcmi-red-soft);
+    }
+
+    .rcmi-formbuilder-empty {
+        padding: 3rem 1rem;
+        color: var(--rcmi-muted);
+        font-size: 0.875rem;
+        text-align: center;
+    }
+
+    @media (max-width: 767px) {
+        .rcmi-ticket-detail-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .rcmi-readonly-fields {
+            grid-template-columns: 1fr;
+        }
+
+        .rcmi-formbuilder-page-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .rcmi-formbuilder-workspace {
+            grid-template-columns: 1fr;
+        }
+
+        .rcmi-formbuilder-sidebar {
+            position: static;
+        }
+    }
+
+    .rcmi-formbuilder-field {
+        border: 1px solid var(--rcmi-border);
+        border-radius: var(--rcmi-radius-md);
+        background: var(--rcmi-surface);
+        padding: 0.75rem;
+        transition: border-color 150ms ease, box-shadow 150ms ease;
+    }
+
+    .rcmi-formbuilder-field:hover {
+        border-color: var(--rcmi-border-strong);
+    }
+
+    .rcmi-formbuilder-field-dragging {
+        opacity: 0.5;
+        border-style: dashed;
+        border-color: var(--rcmi-red);
+    }
+
+    .rcmi-formbuilder-field-drop-target {
+        border-color: var(--rcmi-red);
+        border-style: dashed;
+        background: var(--rcmi-red-soft);
+    }
+
+    /* ── Approval Timeline ───────────────────────────────────────── */
+
+    .rcmi-timeline-status {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.125rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+
+    /* ── Status badge colors (Pending Approval) ──────────────────── */
+
+    .rcmi-status-pending-approval {
+        background: var(--rcmi-amber-soft);
+        color: var(--rcmi-amber);
+    }
+
+    /* ── Inbox queue chips ───────────────────────────────────────── */
+
+    .rcmi-queue-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: var(--rcmi-radius-sm);
+        border: 1px solid var(--rcmi-border);
+        background: var(--rcmi-surface);
+        color: var(--rcmi-muted);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+    }
+
+    .rcmi-queue-chip:hover {
+        background: var(--rcmi-surface-subtle);
+        border-color: var(--rcmi-border-strong);
+        color: var(--rcmi-ink);
+    }
+
+    .rcmi-queue-chip-active {
+        background: var(--rcmi-red-soft);
+        border-color: var(--rcmi-red);
+        color: var(--rcmi-red);
+    }
+
+    .rcmi-queue-chip-active-warning {
+        background: var(--rcmi-warning-soft);
+        border-color: var(--rcmi-warning);
+        color: var(--rcmi-warning);
+    }
+
+    .rcmi-queue-chip-active-danger {
+        background: var(--rcmi-danger-soft);
+        border-color: var(--rcmi-danger);
+        color: var(--rcmi-danger);
+    }
+
+    .rcmi-queue-chip-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.25rem;
+        height: 1.25rem;
+        padding: 0 0.375rem;
+        border-radius: 9999px;
+        background: var(--rcmi-bg);
+        color: var(--rcmi-muted);
+        font-size: 0.6875rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    .rcmi-queue-chip-active .rcmi-queue-chip-count {
+        background: var(--rcmi-red);
+        color: #fff;
+    }
+
+    .rcmi-queue-chip-active-warning .rcmi-queue-chip-count {
+        background: var(--rcmi-warning);
+        color: #fff;
+    }
+
+    .rcmi-queue-chip-active-danger .rcmi-queue-chip-count {
+        background: var(--rcmi-danger);
+        color: #fff;
+    }
+
+    /* Explicit card grid rules prevent theme grid utilities from collapsing the inbox. */
+    .rcmi-ticket-card-grid {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    @media (min-width: 640px) {
+        .rcmi-ticket-card-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+    }
+
+    @media (min-width: 768px) {
+        .rcmi-ticket-card-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        }
+    }
+
+    /* ── Inbox table refinements ─────────────────────────────────── */
+
+    .rcmi-inbox-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .rcmi-inbox-table thead th {
+        background: var(--rcmi-surface-subtle);
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--rcmi-muted);
+        padding: 0.625rem 1.25rem;
+        text-align: left;
+        border-bottom: 1px solid var(--rcmi-border);
+    }
+
+    .rcmi-inbox-table tbody tr {
+        transition: background-color 100ms ease;
+    }
+
+    .rcmi-inbox-table tbody tr:hover {
+        background: var(--rcmi-row-hover);
+    }
+
+    .rcmi-inbox-table tbody tr:focus-within {
+        background: var(--rcmi-red-soft);
+    }
+
+    .rcmi-inbox-table tbody td {
+        padding: 0.75rem 1.25rem;
+        font-size: 0.875rem;
+        border-bottom: 1px solid var(--rcmi-border);
+    }
+
+    .rcmi-inbox-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    /* Row-level semantic indicators */
+    .rcmi-row-indicator {
+        display: inline-block;
+        width: 3px;
+        height: 1.25rem;
+        border-radius: 2px;
+        margin-right: 0.625rem;
+        vertical-align: middle;
+    }
+
+    .rcmi-row-indicator-warning { background: var(--rcmi-warning); }
+    .rcmi-row-indicator-danger  { background: var(--rcmi-danger); }
+
+    /* ── Active filter chips ─────────────────────────────────────── */
+
+    .rcmi-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.1875rem 0.5rem;
+        border-radius: 9999px;
+        background: var(--rcmi-red-soft);
+        color: var(--rcmi-red);
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .rcmi-filter-chip button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1rem;
+        height: 1rem;
+        border-radius: 9999px;
+        background: transparent;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        font-size: 0.75rem;
+        line-height: 1;
+    }
+
+    .rcmi-filter-chip button:hover {
+        background: rgba(200, 16, 46, 0.15);
+    }
+
+    /* ── View toggle (icon buttons) ──────────────────────────────── */
+
+    .rcmi-view-toggle {
+        display: inline-flex;
+        border-radius: var(--rcmi-radius-sm);
+        border: 1px solid var(--rcmi-border);
+        background: var(--rcmi-surface-subtle);
+        padding: 0.1875rem;
+    }
+
+    .rcmi-view-toggle-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 4px;
+        border: none;
+        background: transparent;
+        color: var(--rcmi-muted);
+        cursor: pointer;
+        transition: background-color 150ms ease, color 150ms ease;
+    }
+
+    .rcmi-view-toggle-btn:hover {
+        color: var(--rcmi-ink);
+    }
+
+    .rcmi-view-toggle-btn-active {
+        background: var(--rcmi-surface);
+        color: var(--rcmi-ink);
+        box-shadow: var(--rcmi-shadow-sm);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rcmi-tickets :where(.rcmi-formbuilder-field, .rcmi-button-primary) {
+        transition: none;
+        transform: none !important;
     }
 }
 

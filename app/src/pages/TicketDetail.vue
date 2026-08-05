@@ -68,28 +68,66 @@
 
             <!-- Action buttons -->
             <div class="mb-6 flex flex-wrap items-center gap-2 border-b border-gray-200 pb-4">
-                <!-- Status changes -->
-                <template v-if="canChangeStatus('Approved') && ['Received', 'Pending Approval'].includes(ticket.status)">
-                    <button @click="changeStatus('Approved')" :disabled="statusChanging"
-                        class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                        <Icon name="check-circle" /> Approve
-                    </button>
-                </template>
-                <template v-if="canChangeStatus('Rejected')">
-                    <button @click="rejectOpen = !rejectOpen" :disabled="statusChanging"
-                        class="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50">
-                        <Icon name="x-circle" /> Reject
-                    </button>
-                </template>
-                <template v-if="canChangeStatus('Completed') && ticket.status === 'Approved'">
-                    <button @click="changeStatus('Completed')" :disabled="statusChanging"
+                <!-- Chain approve/reject (current-step approver only) -->
+                <template v-if="canApproveChain">
+                    <button @click="chainApprove" :disabled="approvalBusy"
                         class="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
-                        <Icon name="check-badge" /> Complete
+                        <Icon name="check-circle" /> Approve Step
                     </button>
+                    <button @click="chainRejectOpen = !chainRejectOpen" :disabled="approvalBusy"
+                        class="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50">
+                        <Icon name="x-circle" /> Reject Step
+                    </button>
+                    <div v-if="chainRejectOpen" class="mt-2 w-full rounded-lg border border-red-200 bg-red-50/70 p-4 sm:max-w-2xl">
+                        <div class="flex items-start gap-3">
+                            <span class="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700">
+                                <Icon name="alert" />
+                            </span>
+                            <div class="min-w-0 flex-1">
+                                <h3 class="text-sm font-semibold text-red-900">Reject this approval step</h3>
+                                <p class="mt-1 text-xs leading-relaxed text-red-800">Explain what needs to change. This reason will be saved in the approval timeline.</p>
+                                <label for="chain-reject-reason" class="sr-only">Reason for rejection</label>
+                                <textarea id="chain-reject-reason" v-model="chainRejectComment" rows="3"
+                                    placeholder="Enter a clear reason for rejection…"
+                                    class="rcmi-input mt-3 resize-y bg-white" aria-label="Reason for rejection"></textarea>
+                                <div class="mt-3 flex flex-wrap items-center gap-2">
+                                    <button @click="chainReject" :disabled="!chainRejectComment.trim() || approvalBusy"
+                                        class="rcmi-button-danger inline-flex items-center gap-1.5 px-3.5 py-2 text-sm disabled:opacity-50">
+                                        <Icon name="x-circle" /> {{ approvalBusy ? 'Submitting…' : 'Submit rejection' }}
+                                    </button>
+                                    <button @click="chainRejectOpen = false; chainRejectComment = ''"
+                                        class="rcmi-button-ghost px-3 py-2 text-sm">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </template>
 
-                <!-- Reject reason input -->
-                <div v-if="rejectOpen" class="flex w-full items-center gap-2 sm:w-auto">
+                <!-- Legacy status changes (only when NO chain is active) -->
+                <template v-if="!hasActiveChain">
+                    <template v-if="canChangeStatus('Approved') && ['Received', 'Pending Approval'].includes(ticket.status)">
+                        <button @click="changeStatus('Approved')" :disabled="statusChanging"
+                            class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                            <Icon name="check-circle" /> Approve
+                        </button>
+                    </template>
+                    <template v-if="canChangeStatus('Rejected')">
+                        <button @click="rejectOpen = !rejectOpen" :disabled="statusChanging"
+                            class="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50">
+                            <Icon name="x-circle" /> Reject
+                        </button>
+                    </template>
+                </template>
+                <div v-if="canChangeStatus('Completed') && ticket.status === 'Approved'" class="mt-2 flex w-full items-center gap-2 border-t border-gray-200 pt-3">
+                    <span class="mr-1 text-xs text-gray-500">Ticket actions</span>
+                    <button @click="changeStatus('Completed')" :disabled="statusChanging"
+                        class="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50">
+                        <Icon name="check-badge" /> Complete ticket
+                    </button>
+                </div>
+
+                <!-- Legacy reject reason input -->
+                <div v-if="!hasActiveChain && rejectOpen" class="flex w-full items-center gap-2 sm:w-auto">
                     <input v-model="rejectMessage" type="text" placeholder="Reason for rejection…"
                         class="rcmi-input flex-1 sm:w-64" aria-label="Reason for rejection" />
                     <button @click="changeStatus('Rejected')" :disabled="!rejectMessage.trim() || statusChanging"
@@ -121,9 +159,9 @@
                 <!-- Main column -->
                 <div class="space-y-6">
                     <!-- Ticket Details (custom fields) -->
-                    <section v-if="ticket.field_definitions && ticket.field_definitions.length > 0" class="rcmi-card p-6">
+                    <section v-if="meta.form_fields && meta.form_fields.length > 0 && hasCustomAnswers" class="rcmi-card p-6">
                         <h3 class="rcmi-section-label mb-4">Ticket Details</h3>
-                        <DynamicForm :fields="ticket.field_definitions" :model-value="ticket.field_answers || {}" readonly />
+                        <DynamicForm :fields="meta.form_fields" :model-value="ticket.form_answers || {}" readonly />
                     </section>
 
                     <!-- Attachments -->
@@ -193,8 +231,8 @@
                         </dl>
                     </section>
 
-                    <!-- Approval Timeline -->
-                    <section v-if="hasActiveChain" class="rcmi-card p-5">
+                    <!-- Approval timeline -->
+                    <section v-if="ticket.approval_history && ticket.approval_history.length > 0" class="rcmi-card p-5">
                         <h3 class="rcmi-section-label mb-4">Approval Timeline</h3>
                         <ApprovalTimeline :steps="ticket.approval_history" :chain="ticket.approval_chain" />
                     </section>
@@ -236,10 +274,10 @@ import { useRouter } from 'vue-router';
 import { api } from '../api.js';
 import StatusBadge from '../components/StatusBadge.vue';
 import CommentThread from '../components/CommentThread.vue';
-import DynamicForm from '../components/DynamicForm.vue';
-import ApprovalTimeline from '../components/ApprovalTimeline.vue';
 import Modal from '../components/Modal.vue';
 import Icon from '../components/Icon.vue';
+import DynamicForm from '../components/DynamicForm.vue';
+import ApprovalTimeline from '../components/ApprovalTimeline.vue';
 import { useToast } from '../composables/useToast.js';
 
 const props = defineProps({ id: { type: String, required: true } });
@@ -247,7 +285,7 @@ const router = useRouter();
 const toast = useToast();
 
 const ticket = ref(null);
-const meta = reactive({ current_user: {}, caps: {} });
+const meta = reactive({ current_user: {}, caps: {}, form_fields: [] });
 const loading = ref(true);
 const loadError = ref('');
 const statusChanging = ref(false);
@@ -255,22 +293,36 @@ const deleting = ref(false);
 const confirmDelete = ref(false);
 const rejectOpen = ref(false);
 const rejectMessage = ref('');
+const chainRejectOpen = ref(false);
+const chainRejectComment = ref('');
+const approvalBusy = ref(false);
 
 const isManager = computed(() => meta.caps.manage === true);
 const isAuthor = computed(() => ticket.value && meta.current_user.id === ticket.value.author_id);
 const isAssignee = computed(() => ticket.value && ticket.value.assignee_ids && ticket.value.assignee_ids.includes(meta.current_user.id));
 
+const hasActiveChain = computed(() => {
+    return ticket.value && ticket.value.approval_history && ticket.value.approval_history.length > 0;
+});
+
+const canApproveChain = computed(() => {
+    if (!ticket.value || !ticket.value.current_approval_step) return false;
+    return ticket.value.status === 'Pending Approval';
+});
+
+const hasCustomAnswers = computed(() => {
+    if (!ticket.value || !ticket.value.form_answers) return false;
+    return Object.keys(ticket.value.form_answers).length > 0;
+});
+
 const canEditTicket = computed(() => {
     if (!ticket.value) return false;
     if (isManager.value) return true;
+    // Author can edit when status is Received (includes chain-restart sent-back state)
     return isAuthor.value && ticket.value.status === 'Received';
 });
 
 const canDeleteTicket = computed(() => isManager.value);
-
-const hasActiveChain = computed(() => {
-    return ticket.value && ticket.value.approval_history && ticket.value.approval_history.length > 0;
-});
 
 function canChangeStatus(newStatus) {
     if (!ticket.value) return false;
@@ -297,6 +349,42 @@ async function changeStatus(newStatus) {
         toast.error('Failed to change status. Please try again.');
     } finally {
         statusChanging.value = false;
+    }
+}
+
+async function chainApprove() {
+    approvalBusy.value = true;
+    try {
+        const body = {};
+        if (chainRejectComment.value.trim()) body.comment = chainRejectComment.value.trim();
+        const res = await api(`/tickets/${ticket.value.id}/approve`, { method: 'POST', body });
+        toast.success(res.ticket_status === 'Approved' ? 'Ticket approved!' : 'Step approved — advanced to next step');
+        await loadTicket();
+        chainRejectOpen.value = false;
+        chainRejectComment.value = '';
+    } catch (e) {
+        toast.error(e.message || 'Failed to approve step');
+    } finally {
+        approvalBusy.value = false;
+    }
+}
+
+async function chainReject() {
+    approvalBusy.value = true;
+    try {
+        const body = { comment: chainRejectComment.value.trim() };
+        const res = await api(`/tickets/${ticket.value.id}/reject`, { method: 'POST', body });
+        const msg = res.on_reject === 'terminal' ? 'Ticket rejected (terminal)'
+            : res.on_reject === 'back_one' ? 'Sent back one step'
+            : 'Sent back to author for revision';
+        toast.success(msg);
+        await loadTicket();
+        chainRejectOpen.value = false;
+        chainRejectComment.value = '';
+    } catch (e) {
+        toast.error(e.message || 'Failed to reject step');
+    } finally {
+        approvalBusy.value = false;
     }
 }
 
@@ -359,7 +447,10 @@ function initials(name) {
 
 function downloadUrl(id) {
     const config = window.rcmiTickets || {};
-    return `${config.apiBase}/attachments/${id}/download`;
+    const base = `${config.apiBase}/attachments/${id}/download`;
+    // Append nonce as query param so the <a href> click authenticates
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}_wpnonce=${config.nonce}`;
 }
 
 async function loadMeta() {

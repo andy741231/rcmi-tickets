@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
  * Valid status and priority values (frozen per §3/§5).
  */
 function rcmi_tickets_valid_statuses() {
-    return ['Received', 'Approved', 'Rejected', 'Completed'];
+    return ['Received', 'Pending Approval', 'Approved', 'Rejected', 'Completed'];
 }
 
 function rcmi_tickets_valid_priorities() {
@@ -121,6 +121,7 @@ function rcmi_tickets_write_args($is_update = false) {
         'due_date'       => ['type' => 'string', 'validate_callback' => function ($v) { return $v === '' || strtotime($v) !== false; }],
         'assignee_ids'   => ['type' => 'array', 'items' => ['type' => 'integer']],
         'tag_ids'        => ['type' => 'array', 'items' => ['type' => 'integer']],
+        'form_answers'   => ['type' => 'object'], // map of field_key => value (schema v3)
     ];
     if ($is_update) {
         $args['status'] = ['type' => 'string', 'validate_callback' => function ($v) { return in_array($v, rcmi_tickets_valid_statuses(), true); }];
@@ -221,6 +222,21 @@ function rcmi_tickets_sync_tags($ticket_id, $tag_ids) {
 function rcmi_tickets_format_ticket($row) {
     $author = get_userdata($row['author_id']);
     $updater = $row['updated_by'] ? get_userdata($row['updated_by']) : null;
+    $author_name = $author ? $author->display_name : '';
+    $author_email = $author ? $author->user_email : '';
+
+    // Public submissions share a guest author account; recover the submitter's
+    // actual name and email from the receipt line stored in the description.
+    if ($author && $author->user_login === 'guest_submitter') {
+        $source = wp_strip_all_tags((string) ($row['description_text'] ?: $row['description']));
+        if (preg_match('/Submitted by:\s*(.*?)\s*\(([^)]+)\)/i', $source, $matches)) {
+            $candidate_email = trim($matches[2]);
+            if (is_email($candidate_email)) {
+                $author_name = trim($matches[1]) ?: $author_name;
+                $author_email = $candidate_email;
+            }
+        }
+    }
 
     $assignees = [];
     foreach ($row['assignee_ids'] as $uid) {
@@ -236,10 +252,26 @@ function rcmi_tickets_format_ticket($row) {
 
     $tags = rcmi_tickets_get_ticket_tags($row['id']);
 
+    // Schema v3: form answers + approval info
+    $form_answers = rcmi_tickets_get_ticket_form_answers($row['id']);
+    $approvals = rcmi_tickets_get_ticket_approvals($row['id']);
+    $current_step = null;
+    foreach ($approvals as $a) {
+        if ($a['status'] === 'pending') {
+            $current_step = $a;
+            break;
+        }
+    }
+    $approval_chain = null;
+    if ($approvals) {
+        $approval_chain = rcmi_tickets_load_approval_chain($approvals[0]['chain_id']);
+    }
+
     return [
         'id'              => (int) $row['id'],
         'author_id'       => (int) $row['author_id'],
-        'author_name'     => $author ? $author->display_name : '',
+        'author_name'     => $author_name,
+        'author_email'    => $author_email,
         'title'           => $row['title'],
         'description'     => $row['description'],
         'status'          => $row['status'],
@@ -251,9 +283,222 @@ function rcmi_tickets_format_ticket($row) {
         'assignees'       => $assignees,
         'tag_ids'         => $row['tag_ids'],
         'tags'            => $tags,
+        'form_answers'    => $form_answers,
+        'approval_chain'  => $approval_chain,
+        'current_approval_step' => $current_step,
+        'approval_history' => $approvals,
         'created_at'      => $row['created_at'],
         'updated_at'      => $row['updated_at'],
     ];
+}
+
+/**
+ * Get form answers for a ticket as a map of field_key => value (schema v3).
+ */
+function rcmi_tickets_get_ticket_form_answers($ticket_id) {
+    global $wpdb;
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT fa.value, ff.field_key, ff.type
+         FROM {$wpdb->prefix}rcmi_form_answers fa
+         INNER JOIN {$wpdb->prefix}rcmi_form_fields ff ON ff.id = fa.field_id
+         WHERE fa.ticket_id = %d",
+        (int) $ticket_id
+    ), ARRAY_A);
+
+    $answers = [];
+    foreach ($rows as $r) {
+        $val = $r['value'];
+        // Decode JSON for multi-value (checkbox) — stored as JSON array
+        if ($r['type'] === 'checkbox' || $r['type'] === 'radio') {
+            $decoded = json_decode($val, true);
+            $answers[$r['field_key']] = (is_array($decoded)) ? $decoded : $val;
+        } else {
+            $answers[$r['field_key']] = $val;
+        }
+    }
+    return $answers;
+}
+
+/**
+ * Save form answers for a ticket (replace). $answers is field_key => value (schema v3).
+ */
+function rcmi_tickets_sync_form_answers($ticket_id, $answers) {
+    global $wpdb;
+
+    // Wipe existing
+    $wpdb->delete($wpdb->prefix . 'rcmi_form_answers', ['ticket_id' => (int) $ticket_id], ['%d']);
+
+    if (!is_array($answers)) {
+        return;
+    }
+
+    // Build field_key => field_id map
+    $fields = rcmi_tickets_get_all_form_fields();
+    $key_to_id = [];
+    foreach ($fields as $f) {
+        $key_to_id[$f['field_key']] = (int) $f['id'];
+    }
+
+    foreach ($answers as $key => $value) {
+        if (!isset($key_to_id[$key])) {
+            continue; // unknown field, skip
+        }
+        $stored = is_array($value) ? wp_json_encode(array_map('strval', $value)) : (string) $value;
+        $wpdb->insert(
+            $wpdb->prefix . 'rcmi_form_answers',
+            [
+                'ticket_id' => (int) $ticket_id,
+                'field_id'  => $key_to_id[$key],
+                'value'     => $stored,
+            ],
+            ['%d', '%d', '%s']
+        );
+    }
+}
+
+/**
+ * Resolve which approval chain applies to a ticket based on its form answers.
+ * Match priority: exact trigger_field_key + trigger_value match → else default chain
+ * (trigger_field_key NULL or empty) → else null (no chain).
+ *
+ * @param array $form_answers field_key => value
+ * @return array|null Chain row (with steps) or null.
+ */
+function rcmi_tickets_resolve_approval_chain($form_answers) {
+    $chains = rcmi_tickets_get_all_approval_chains();
+    if (!$chains) {
+        return null;
+    }
+
+    // First pass: exact match on trigger_field_key + trigger_value
+    foreach ($chains as $chain) {
+        if (!$chain['is_active']) {
+            continue;
+        }
+        $tfk = $chain['trigger_field_key'];
+        $tv = $chain['trigger_value'];
+        if ($tfk && $tv && isset($form_answers[$tfk]) && (string) $form_answers[$tfk] === (string) $tv) {
+            return $chain;
+        }
+    }
+
+    // Second pass: default chain (no trigger)
+    foreach ($chains as $chain) {
+        if (!$chain['is_active']) {
+            continue;
+        }
+        if (!$chain['trigger_field_key']) {
+            return $chain;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Initialize the approval chain for a newly-created ticket:
+ * create rcmi_ticket_approvals rows for each step, resolve role → user,
+ * set ticket status to 'Pending Approval', email first approver.
+ *
+ * @param int   $ticket_id
+ * @param array $chain  Chain with steps
+ * @return bool True if chain was initialized, false if no resolvable approver.
+ */
+function rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain, $cycle = 1) {
+    global $wpdb;
+    $ticket_id = (int) $ticket_id;
+    $cycle = (int) $cycle;
+
+    if (!$chain || empty($chain['steps'])) {
+        return false;
+    }
+
+    $order = 1;
+    $first_step_id = null;
+    foreach ($chain['steps'] as $step) {
+        $approver_user_id = null;
+        $approver_role = null;
+
+        if ($step['approver_type'] === 'user') {
+            $approver_user_id = (int) $step['approver_user_id'];
+        } else {
+            $approver_role = $step['approver_role'];
+            // Resolve role → first user with that role
+            $users = get_users(['role' => $approver_role, 'number' => 1, 'fields' => 'ID']);
+            if ($users) {
+                $approver_user_id = (int) $users[0];
+            }
+        }
+
+        $tok = rcmi_tickets_generate_approval_token();
+        $wpdb->insert($wpdb->prefix . 'rcmi_ticket_approvals', [
+            'ticket_id'        => $ticket_id,
+            'chain_id'         => (int) $chain['id'],
+            'step_id'          => (int) $step['id'],
+            'sort_order'       => $order,
+            'cycle'            => $cycle,
+            'approver_user_id' => $approver_user_id,
+            'approver_role'    => $approver_role,
+            'status'           => 'pending',
+            'token'            => $tok['token'],
+            'token_expires'    => $tok['expires'],
+        ], ['%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s']);
+
+        if ($order === 1) {
+            $first_step_id = (int) $wpdb->insert_id;
+        }
+        $order++;
+    }
+
+    // Set ticket to Pending Approval
+    $wpdb->update(
+        $wpdb->prefix . 'rcmi_tickets',
+        ['status' => 'Pending Approval'],
+        ['id' => $ticket_id],
+        ['%s'],
+        ['%d']
+    );
+
+    // Email first approver
+    if ($first_step_id) {
+        do_action('rcmi_ticket_approval_step', $ticket_id, $first_step_id, 'chain_started');
+    }
+
+    return true;
+}
+
+/**
+ * Reset a ticket's approval chain back to step 1 (used on resubmit after restart).
+ * Preserves old approval rows as history and creates new rows with an incremented cycle.
+ */
+function rcmi_tickets_restart_ticket_approval_chain($ticket_id) {
+    global $wpdb;
+    $ticket_id = (int) $ticket_id;
+
+    // Find the chain from the existing rows
+    $existing = $wpdb->get_row($wpdb->prepare(
+        "SELECT chain_id, MAX(cycle) as max_cycle FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE ticket_id = %d",
+        $ticket_id
+    ), ARRAY_A);
+    if (!$existing || !$existing['chain_id']) {
+        return false;
+    }
+    $chain = rcmi_tickets_load_approval_chain((int) $existing['chain_id']);
+    if (!$chain) {
+        return false;
+    }
+
+    // Mark all existing pending rows as skipped (they should not remain pending)
+    $wpdb->query($wpdb->prepare(
+        "UPDATE {$wpdb->prefix}rcmi_ticket_approvals
+         SET status = 'skipped', token = NULL
+         WHERE ticket_id = %d AND status = 'pending'",
+        $ticket_id
+    ));
+
+    // Re-init with next cycle number
+    $next_cycle = (int) $existing['max_cycle'] + 1;
+    return rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain, $next_cycle);
 }
 
 function rcmi_tickets_get_ticket_tags($ticket_id) {
@@ -466,6 +711,7 @@ function rcmi_tickets_handle_create($request) {
     $due_date = !empty($request['due_date']) ? $request['due_date'] : null;
     $assignee_ids = $request['assignee_ids'] ?? [];
     $tag_ids = $request['tag_ids'] ?? [];
+    $form_answers = $request['form_answers'] ?? [];
 
     if (empty($title)) {
         return new WP_Error('rcmi_tickets_missing_title', 'Title is required.', ['status' => 400]);
@@ -473,6 +719,7 @@ function rcmi_tickets_handle_create($request) {
 
     $description_text = wp_strip_all_tags($description);
 
+    // Insert as 'Received' first; chain init (if any) will flip to 'Pending Approval'
     $wpdb->insert($wpdb->prefix . 'rcmi_tickets', [
         'author_id'        => get_current_user_id(),
         'title'            => $title,
@@ -492,8 +739,15 @@ function rcmi_tickets_handle_create($request) {
 
     rcmi_tickets_sync_assignees($ticket_id, $assignee_ids);
     rcmi_tickets_sync_tags($ticket_id, $tag_ids);
+    rcmi_tickets_sync_form_answers($ticket_id, $form_answers);
 
     do_action('rcmi_ticket_created', $ticket_id, get_current_user_id(), $assignee_ids);
+
+    // Schema v3: resolve + init approval chain (flips status to 'Pending Approval' if matched)
+    $chain = rcmi_tickets_resolve_approval_chain($form_answers);
+    if ($chain) {
+        rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain);
+    }
 
     $row = rcmi_tickets_load_ticket($ticket_id);
     return new WP_REST_Response(rcmi_tickets_format_ticket($row), 201);
@@ -552,6 +806,22 @@ function rcmi_tickets_handle_update($request) {
     if (isset($request['tag_ids'])) {
         rcmi_tickets_sync_tags($request['id'], $request['tag_ids']);
     }
+    if (isset($request['form_answers'])) {
+        rcmi_tickets_sync_form_answers($request['id'], $request['form_answers']);
+    }
+
+    // Schema v3: resubmit path. If the ticket was sent back to 'Received' after a
+    // 'restart' rejection (it has existing approval rows), and the author just
+    // edited it, restart the chain → status back to 'Pending Approval'.
+    if ($ticket['status'] === 'Received') {
+        $has_chain = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE ticket_id = %d",
+            (int) $request['id']
+        ));
+        if ($has_chain) {
+            rcmi_tickets_restart_ticket_approval_chain((int) $request['id']);
+        }
+    }
 
     // Fire status change action if status was updated
     if (isset($data['status']) && $ticket['status'] !== $data['status']) {
@@ -579,6 +849,8 @@ function rcmi_tickets_handle_delete($request) {
     $wpdb->delete($wpdb->prefix . 'rcmi_ticket_attachments', ['ticket_id' => $ticket_id], ['%d']);
     $wpdb->delete($wpdb->prefix . 'rcmi_ticket_assignees', ['ticket_id' => $ticket_id], ['%d']);
     $wpdb->delete($wpdb->prefix . 'rcmi_ticket_tag_map', ['ticket_id' => $ticket_id], ['%d']);
+    $wpdb->delete($wpdb->prefix . 'rcmi_form_answers', ['ticket_id' => $ticket_id], ['%d']);
+    $wpdb->delete($wpdb->prefix . 'rcmi_ticket_approvals', ['ticket_id' => $ticket_id], ['%d']);
 
     // Delete comments and their reactions/attachments
     $comment_ids = $wpdb->get_col($wpdb->prepare(
@@ -626,136 +898,4 @@ function rcmi_tickets_handle_status($request) {
 
     $row = rcmi_tickets_load_ticket($request['id']);
     return new WP_REST_Response(rcmi_tickets_format_ticket($row), 200);
-}
-
-// ── approval chain helpers ────────────────────────────────────────────
-
-/**
- * Resolve which approval chain to use for a ticket based on form answers.
- *
- * Matches the chain's trigger_field_key / trigger_value against the form
- * answers. If no trigger is set on a chain, it matches everything. The
- * first active chain whose trigger matches (or has no trigger) is used.
- *
- * @param array $form_answers Map of field_key => value.
- * @return array|null Chain row (with steps) or null if no chain configured.
- */
-function rcmi_tickets_resolve_approval_chain($form_answers) {
-    global $wpdb;
-    $chains = $wpdb->get_results(
-        "SELECT * FROM {$wpdb->prefix}rcmi_approval_chains WHERE is_active = 1 ORDER BY id ASC",
-        ARRAY_A
-    );
-    if (!$chains) {
-        return null;
-    }
-
-    foreach ($chains as $chain) {
-        $trigger_key = $chain['trigger_field_key'];
-        $trigger_val = $chain['trigger_value'];
-
-        // No trigger → matches everything
-        if (empty($trigger_key)) {
-            return rcmi_tickets_load_approval_chain($chain['id']);
-        }
-
-        // Check if the form answer for this key matches the trigger value
-        $answer = $form_answers[$trigger_key] ?? null;
-        if ($answer !== null && (string) $answer === (string) $trigger_val) {
-            return rcmi_tickets_load_approval_chain($chain['id']);
-        }
-    }
-
-    // No match — return the first chain as fallback (or null if none)
-    return rcmi_tickets_load_approval_chain($chains[0]['id']);
-}
-
-/**
- * Initialise the approval chain for a ticket: create one ticket_approvals
- * row per chain step, all in the given cycle (default 1).
- *
- * @param int   $ticket_id
- * @param array $chain     Chain row (with 'steps' array from rcmi_tickets_load_approval_chain).
- * @param int   $cycle     Cycle number (1 for initial, incremented on restart).
- */
-function rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain, $cycle = 1) {
-    global $wpdb;
-    $ticket_id = (int) $ticket_id;
-    $cycle = (int) $cycle;
-    $chain_id = (int) ($chain['id'] ?? 0);
-    $steps = $chain['steps'] ?? [];
-
-    if (!$chain_id || !$steps) {
-        return;
-    }
-
-    $order = 1;
-    foreach ($steps as $step) {
-        $tok = rcmi_tickets_generate_approval_token();
-        $wpdb->insert($wpdb->prefix . 'rcmi_ticket_approvals', [
-            'ticket_id'        => $ticket_id,
-            'chain_id'         => $chain_id,
-            'step_id'          => (int) $step['id'],
-            'sort_order'       => $order,
-            'cycle'            => $cycle,
-            'approver_user_id' => $step['approver_user_id'] !== null ? (int) $step['approver_user_id'] : null,
-            'approver_role'    => $step['approver_role'] ?? null,
-            'status'           => 'pending',
-            'token'            => $tok['token'],
-            'token_expires'    => $tok['expires'],
-        ], ['%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s']);
-        $order++;
-    }
-
-    // Fire action for the first step so notification emails go out
-    $first = $wpdb->get_var($wpdb->prepare(
-        "SELECT id FROM {$wpdb->prefix}rcmi_ticket_approvals
-         WHERE ticket_id = %d AND cycle = %d ORDER BY sort_order ASC LIMIT 1",
-        $ticket_id, $cycle
-    ));
-    if ($first) {
-        do_action('rcmi_ticket_approval_step', $ticket_id, (int) $first, 'chain_init');
-    }
-}
-
-/**
- * Restart the approval chain for a ticket after a rejection.
- *
- * Instead of deleting existing rows, this preserves history by:
- * 1. Finding the current max cycle for the ticket
- * 2. Marking all pending rows as 'skipped' (token cleared)
- * 3. Re-initialising the chain at cycle = max_cycle + 1
- *
- * @param int $ticket_id
- */
-function rcmi_tickets_restart_ticket_approval_chain($ticket_id) {
-    global $wpdb;
-    $ticket_id = (int) $ticket_id;
-
-    // Find the chain_id and max cycle from existing approval rows
-    $row = $wpdb->get_row($wpdb->prepare(
-        "SELECT chain_id, MAX(cycle) as max_cycle FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE ticket_id = %d",
-        $ticket_id
-    ), ARRAY_A);
-
-    if (!$row || !$row['chain_id']) {
-        return;
-    }
-
-    $chain_id = (int) $row['chain_id'];
-    $next_cycle = (int) $row['max_cycle'] + 1;
-
-    // Mark all existing pending rows as skipped (preserve history, clear tokens)
-    $wpdb->query($wpdb->prepare(
-        "UPDATE {$wpdb->prefix}rcmi_ticket_approvals
-         SET status = 'skipped', token = NULL
-         WHERE ticket_id = %d AND status = 'pending'",
-        $ticket_id
-    ));
-
-    // Re-init the chain at the next cycle
-    $chain = rcmi_tickets_load_approval_chain($chain_id);
-    if ($chain) {
-        rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain, $next_cycle);
-    }
 }

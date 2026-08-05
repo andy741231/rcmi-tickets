@@ -68,9 +68,17 @@ function rcmi_tickets_can($user_id, $action, $ticket = null, $new_status = null)
                 return false;
             }
             $t = rcmi_tickets_normalize_ticket($ticket);
-            return $manage
+            if ($manage
                 || $t['author_id'] === $user_id
-                || in_array($user_id, $t['assignee_ids'], true);
+                || in_array($user_id, $t['assignee_ids'], true)) {
+                return true;
+            }
+            // Schema v3: chain approvers can view the ticket (Decision A)
+            $ticket_id = isset($ticket['id']) ? (int) $ticket['id'] : 0;
+            if ($ticket_id && function_exists('rcmi_tickets_user_can_approve_ticket')) {
+                return rcmi_tickets_user_can_approve_ticket($user_id, $ticket_id);
+            }
+            return false;
 
         case 'update':
             if (!$ticket) {
@@ -95,6 +103,15 @@ function rcmi_tickets_can($user_id, $action, $ticket = null, $new_status = null)
             }
             $t = rcmi_tickets_normalize_ticket($ticket);
             return $new_status === 'Completed' && in_array($user_id, $t['assignee_ids'], true);
+
+        case 'approve':
+            // Schema v3: current-step approver can approve/reject.
+            // $ticket may be a ticket row; we need its id.
+            $ticket_id = is_array($ticket) ? (int) ($ticket['id'] ?? 0) : 0;
+            if (!$ticket_id) {
+                return false;
+            }
+            return rcmi_tickets_user_can_approve_ticket($user_id, $ticket_id);
     }
 
     return false;

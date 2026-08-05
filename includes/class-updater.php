@@ -189,6 +189,12 @@ add_filter('upgrader_post_install', 'rcmi_tickets_post_install', 10, 3);
  * Allow an explicit admin refresh without waiting for the six-hour cache.
  * Triggered by the "Check for updates" link on the Plugins page or the
  * Settings page.
+ *
+ * Hooked to init (not admin_init) with an early priority so the redirect
+ * fires before any admin page output starts. On some hosts (IIS/cgi-fcgi)
+ * headers are sent before admin_init, causing "Cannot modify header
+ * information" warnings. Falls back to a JS redirect if headers are
+ * already sent.
  */
 function rcmi_tickets_maybe_refresh_update_cache() {
     if (!isset($_GET['rcmi_tickets_check_updates']) || !current_user_can('manage_options')) {
@@ -206,7 +212,15 @@ function rcmi_tickets_maybe_refresh_update_cache() {
     if (strpos($redirect, 'page=rcmi-tickets') !== false) {
         $redirect = add_query_arg('rcmi_tickets_checked', '1', $redirect);
     }
-    wp_safe_redirect($redirect);
+
+    if (!headers_sent()) {
+        wp_safe_redirect($redirect);
+        exit;
+    }
+
+    // Headers already sent (IIS/cgi-fcgi) — fall back to JS redirect.
+    echo '<script type="text/javascript">window.location=' .
+        wp_json_encode($redirect) . ';</script>';
     exit;
 }
-add_action('admin_init', 'rcmi_tickets_maybe_refresh_update_cache');
+add_action('admin_init', 'rcmi_tickets_maybe_refresh_update_cache', 1);

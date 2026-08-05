@@ -66,6 +66,65 @@ function rcmi_tickets_handle_meta() {
         'pin'     => rcmi_tickets_can($user_id, 'pin'),
     ];
 
+    // Schema v3: form fields, approval chains, allowed mime types, pending approval count
+    $form_fields = rcmi_tickets_get_all_form_fields();
+    $approval_chains = rcmi_tickets_get_all_approval_chains();
+    $allowed_mime = array_keys(rcmi_tickets_allowed_mime_types());
+
+    // Count tickets pending current user's approval
+    $pending_approval_count = 0;
+    $pending_rows = $wpdb->get_results(
+        "SELECT ta.approver_user_id, ta.approver_role
+         FROM {$wpdb->prefix}rcmi_ticket_approvals ta
+         INNER JOIN {$wpdb->prefix}rcmi_tickets t ON t.id = ta.ticket_id
+         WHERE ta.status = 'pending' AND t.status = 'Pending Approval'"
+    , ARRAY_A);
+    $user_obj = get_userdata($user_id);
+    $user_roles = $user_obj ? (array) $user_obj->roles : [];
+    foreach ($pending_rows as $r) {
+        if ($r['approver_user_id'] !== null && (int) $r['approver_user_id'] === $user_id) {
+            $pending_approval_count++;
+        } elseif (!empty($r['approver_role']) && in_array($r['approver_role'], $user_roles, true)) {
+            $pending_approval_count++;
+        }
+    }
+
+    // Inbox summary counts (across all visible tickets, not just current page)
+    $is_manager = rcmi_tickets_can($user_id, 'manage');
+    $vis_where = $is_manager ? '' : "WHERE t.author_id = %d OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
+    $vis_args = $is_manager ? [] : [$user_id, $user_id];
+    $vis_clause = $is_manager ? '' : $wpdb->prepare($vis_where, $vis_args);
+
+    $status_counts = [];
+    $status_rows = $wpdb->get_results(
+        "SELECT t.status, COUNT(*) as cnt FROM {$wpdb->prefix}rcmi_tickets t {$vis_clause} GROUP BY t.status"
+    , ARRAY_A);
+    foreach ($status_rows as $r) {
+        $status_counts[$r['status']] = (int) $r['cnt'];
+    }
+
+    $today = current_time('Y-m-d');
+    $due_soon_count = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_tickets t {$vis_clause}" . ($vis_clause ? " AND" : " WHERE") . " t.due_date IS NOT NULL AND t.due_date >= %s AND t.due_date <= DATE_ADD(%s, INTERVAL 7 DAY) AND t.status NOT IN ('Completed','Rejected')",
+        array_merge($vis_args, [$today, $today])
+    ));
+    $overdue_count = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_tickets t {$vis_clause}" . ($vis_clause ? " AND" : " WHERE") . " t.due_date IS NOT NULL AND t.due_date < %s AND t.status NOT IN ('Completed','Rejected')",
+        array_merge($vis_args, [$today])
+    ));
+    $total_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_tickets t {$vis_clause}");
+
+    $inbox_summary = [
+        'total'            => $total_count,
+        'received'         => $status_counts['Received'] ?? 0,
+        'pending_approval' => $status_counts['Pending Approval'] ?? 0,
+        'approved'         => $status_counts['Approved'] ?? 0,
+        'rejected'         => $status_counts['Rejected'] ?? 0,
+        'completed'        => $status_counts['Completed'] ?? 0,
+        'due_soon'         => $due_soon_count,
+        'overdue'          => $overdue_count,
+    ];
+
     return new WP_REST_Response([
         'statuses'  => rcmi_tickets_valid_statuses(),
         'priorities' => rcmi_tickets_valid_priorities(),
@@ -78,5 +137,10 @@ function rcmi_tickets_handle_meta() {
         'caps'             => $caps,
         'tags'             => $tags,
         'assignable_users' => $assignable_users,
+        'form_fields'      => $form_fields,
+        'approval_chains'  => $approval_chains,
+        'allowed_mime_types' => $allowed_mime,
+        'pending_approval_count' => $pending_approval_count,
+        'inbox_summary'    => $inbox_summary,
     ], 200);
 }

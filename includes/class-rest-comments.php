@@ -376,8 +376,10 @@ function rcmi_tickets_get_comment_reactions($comment_id) {
 }
 
 /**
- * Toggle a reaction: if the user already reacted with this type, remove it;
- * otherwise add it. Idempotent.
+ * Toggle a reaction: one reaction per user per comment.
+ * - If user already reacted with the same type, remove it (toggle off).
+ * - If user reacted with a different type, replace it with the new type.
+ * - If user has no reaction, add it.
  *
  * @param int    $comment_id
  * @param int    $user_id
@@ -394,8 +396,7 @@ function rcmi_tickets_toggle_reaction($comment_id, $user_id, $type) {
         return rcmi_tickets_get_comment_reactions($comment_id);
     }
 
-    // PK is (comment_id, user_id) — one reaction per user per comment.
-    // Query the existing type (if any) so we can toggle / update.
+    // Check if user already has any reaction on this comment
     $existing_type = $wpdb->get_var($wpdb->prepare(
         "SELECT type FROM {$wpdb->prefix}rcmi_ticket_comment_reactions
          WHERE comment_id = %d AND user_id = %d",
@@ -404,22 +405,23 @@ function rcmi_tickets_toggle_reaction($comment_id, $user_id, $type) {
 
     if ($existing_type !== null) {
         if ($existing_type === $type) {
-            // Same reaction → toggle off (delete)
+            // Same type → toggle off (remove)
             $wpdb->delete($wpdb->prefix . 'rcmi_ticket_comment_reactions', [
                 'comment_id' => $comment_id,
                 'user_id'    => $user_id,
             ], ['%d', '%d']);
         } else {
-            // Different reaction → update the type
-            $wpdb->update($wpdb->prefix . 'rcmi_ticket_comment_reactions', [
-                'type' => $type,
-            ], [
-                'comment_id' => $comment_id,
-                'user_id'    => $user_id,
-            ], ['%s'], ['%d', '%d']);
+            // Different type → replace with new type
+            $wpdb->update(
+                $wpdb->prefix . 'rcmi_ticket_comment_reactions',
+                ['type' => $type],
+                ['comment_id' => $comment_id, 'user_id' => $user_id],
+                ['%s'],
+                ['%d', '%d']
+            );
         }
     } else {
-        // No existing reaction → insert new
+        // No existing reaction → add new
         $wpdb->insert($wpdb->prefix . 'rcmi_ticket_comment_reactions', [
             'comment_id' => $comment_id,
             'user_id'    => $user_id,

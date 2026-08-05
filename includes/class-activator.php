@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
  * re-run on the next admin request to bring tables up to date.
  */
 if (!defined('RCMI_TICKETS_DB_VERSION')) {
-    define('RCMI_TICKETS_DB_VERSION', '2');
+    define('RCMI_TICKETS_DB_VERSION', '3');
 }
 
 /**
@@ -110,9 +110,36 @@ function rcmi_tickets_schema_statements() {
             PRIMARY KEY  (ticket_id, tag_id)
         ) {$charset_collate};",
 
+        // ── Schema v3: dynamic form builder + approval chains ───────────
+
+        'form_fields' => "CREATE TABLE {$prefix}rcmi_form_fields (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            field_key VARCHAR(100) NOT NULL,
+            label VARCHAR(255) NOT NULL,
+            type VARCHAR(20) NOT NULL,
+            required TINYINT(1) NOT NULL DEFAULT 0,
+            sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+            config LONGTEXT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY field_key (field_key),
+            KEY sort_order (sort_order)
+        ) {$charset_collate};",
+
+        'form_answers' => "CREATE TABLE {$prefix}rcmi_form_answers (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            ticket_id BIGINT UNSIGNED NOT NULL,
+            field_id BIGINT UNSIGNED NOT NULL,
+            value LONGTEXT NULL,
+            PRIMARY KEY  (id),
+            KEY ticket_id (ticket_id),
+            KEY field_id (field_id)
+        ) {$charset_collate};",
+
         'approval_chains' => "CREATE TABLE {$prefix}rcmi_approval_chains (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            name VARCHAR(255) NOT NULL,
+            name VARCHAR(150) NOT NULL,
             description TEXT NULL,
             trigger_field_key VARCHAR(100) NULL,
             trigger_value VARCHAR(255) NULL,
@@ -121,19 +148,21 @@ function rcmi_tickets_schema_statements() {
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
+            KEY trigger_field_key (trigger_field_key),
             KEY is_active (is_active)
         ) {$charset_collate};",
 
         'approval_steps' => "CREATE TABLE {$prefix}rcmi_approval_steps (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             chain_id BIGINT UNSIGNED NOT NULL,
-            sort_order INT NOT NULL DEFAULT 1,
-            approver_type VARCHAR(10) NOT NULL DEFAULT 'user',
+            sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+            approver_type VARCHAR(10) NOT NULL,
             approver_user_id BIGINT UNSIGNED NULL,
             approver_role VARCHAR(100) NULL,
-            name VARCHAR(255) NOT NULL DEFAULT '',
+            name VARCHAR(150) NULL,
             PRIMARY KEY  (id),
-            KEY chain_id (chain_id)
+            KEY chain_id (chain_id),
+            KEY sort_order (sort_order)
         ) {$charset_collate};",
 
         'ticket_approvals' => "CREATE TABLE {$prefix}rcmi_ticket_approvals (
@@ -141,44 +170,21 @@ function rcmi_tickets_schema_statements() {
             ticket_id BIGINT UNSIGNED NOT NULL,
             chain_id BIGINT UNSIGNED NOT NULL,
             step_id BIGINT UNSIGNED NOT NULL,
-            sort_order INT NOT NULL DEFAULT 1,
+            sort_order INT UNSIGNED NOT NULL DEFAULT 0,
             cycle INT UNSIGNED NOT NULL DEFAULT 1,
             approver_user_id BIGINT UNSIGNED NULL,
             approver_role VARCHAR(100) NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            status VARCHAR(15) NOT NULL DEFAULT 'pending',
             decided_at DATETIME NULL,
             decided_by BIGINT UNSIGNED NULL,
             comment TEXT NULL,
-            token VARCHAR(64) NULL,
+            token CHAR(64) NULL,
             token_expires DATETIME NULL,
             PRIMARY KEY  (id),
             KEY ticket_id (ticket_id),
             KEY chain_id (chain_id),
+            KEY approver_user_id (approver_user_id),
             KEY status (status)
-        ) {$charset_collate};",
-
-        'form_fields' => "CREATE TABLE {$prefix}rcmi_form_fields (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            field_key VARCHAR(100) NOT NULL,
-            label VARCHAR(255) NOT NULL,
-            type VARCHAR(50) NOT NULL DEFAULT 'text',
-            required TINYINT(1) NOT NULL DEFAULT 0,
-            sort_order INT NOT NULL DEFAULT 1,
-            config TEXT NULL,
-            created_at DATETIME NOT NULL,
-            updated_at DATETIME NOT NULL,
-            PRIMARY KEY  (id),
-            UNIQUE KEY field_key (field_key)
-        ) {$charset_collate};",
-
-        'form_answers' => "CREATE TABLE {$prefix}rcmi_form_answers (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            ticket_id BIGINT UNSIGNED NOT NULL,
-            field_id BIGINT UNSIGNED NOT NULL,
-            value TEXT NULL,
-            PRIMARY KEY  (id),
-            KEY ticket_id (ticket_id),
-            KEY field_id (field_id)
         ) {$charset_collate};",
     ];
 }

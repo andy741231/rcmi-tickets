@@ -23,16 +23,14 @@
             </div>
 
             <form @submit.prevent="submit" class="rcmi-card space-y-6 p-6 sm:p-8">
-                <!-- Custom fields -->
-                <div v-if="fieldDefinitions && fieldDefinitions.length > 0">
-                    <span class="rcmi-field-label">Ticket Details</span>
-                    <div class="mt-2">
-                        <DynamicForm :fields="fieldDefinitions" v-model="form.field_answers" />
-                    </div>
+                <!-- Custom fields (DynamicForm) -->
+                <div v-if="meta.form_fields && meta.form_fields.length > 0">
+                    <h3 class="rcmi-section-label mb-4">Additional Information</h3>
+                    <DynamicForm :fields="meta.form_fields" v-model="form.form_answers" />
                 </div>
 
                 <!-- Priority + Due Date -->
-                <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 border-t border-gray-100 pt-5">
                     <div>
                         <label for="edit-priority" class="rcmi-field-label">Priority</label>
                         <select id="edit-priority" v-model="form.priority" class="rcmi-input">
@@ -76,16 +74,15 @@
 import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
-import DynamicForm from '../components/DynamicForm.vue';
 import FileUploader from '../components/FileUploader.vue';
+import DynamicForm from '../components/DynamicForm.vue';
 import Icon from '../components/Icon.vue';
 import { useToast } from '../composables/useToast.js';
 
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
 const toast = useToast();
-const meta = reactive({ priorities: [], field_definitions: [] });
-const fieldDefinitions = ref([]);
+const meta = reactive({ priorities: [], form_fields: [] });
 const loading = ref(true);
 const submitting = ref(false);
 const error = ref('');
@@ -93,7 +90,7 @@ const error = ref('');
 const form = reactive({
     priority: 'Medium',
     due_date: '',
-    field_answers: {},
+    form_answers: {},
     attachments: [],
 });
 
@@ -101,7 +98,6 @@ async function loadMeta() {
     try {
         const data = await api('/meta');
         Object.assign(meta, data);
-        if (data.field_definitions) fieldDefinitions.value = data.field_definitions;
     } catch (e) {
         error.value = 'Failed to load form data.';
     }
@@ -112,9 +108,8 @@ async function loadTicket() {
         const ticket = await api(`/tickets/${props.id}`);
         form.priority = ticket.priority || 'Medium';
         form.due_date = ticket.due_date || '';
-        form.field_answers = ticket.field_answers || {};
+        form.form_answers = ticket.form_answers || {};
         form.attachments = ticket.attachments || [];
-        if (ticket.field_definitions) fieldDefinitions.value = ticket.field_definitions;
     } catch (e) {
         error.value = e.message || 'Failed to load ticket.';
     }

@@ -1,100 +1,190 @@
 <template>
     <div>
-        <!-- View toggle + sort -->
-        <div class="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-                <p class="text-sm font-semibold text-gray-900">Ticket inbox</p>
-                <p class="text-sm text-gray-600">Review requests and follow the latest activity.</p>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-                <div class="flex rounded-md border border-gray-200 bg-gray-100 p-1" aria-label="View options">
-                    <button @click="setView('card')" :aria-pressed="view === 'card'" :class="view === 'card' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'"
-                        class="rounded px-3 py-1.5 text-sm font-semibold">
-                        Cards
-                    </button>
-                    <button @click="setView('list')" :aria-pressed="view === 'list'" :class="view === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'"
-                        class="rounded px-3 py-1.5 text-sm font-semibold">
-                        List
-                    </button>
-                </div>
-                <label class="sr-only" for="ticket-sort">Sort tickets</label>
-                <select id="ticket-sort" v-model="sort" @change="loadTickets" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
-                    <option value="created_at">Newest first</option>
-                    <option value="updated_at">Recently updated</option>
-                    <option value="title">Title</option>
-                    <option value="status">Status</option>
-                    <option value="priority">Priority</option>
-                    <option value="due_date">Due date</option>
-                </select>
-                <button @click="toggleOrder" class="rcmi-button-secondary px-3 py-2 text-sm" :aria-label="order === 'desc' ? 'Sort ascending' : 'Sort descending'">
-                    {{ order === 'desc' ? '↓' : '↑' }}
-                </button>
-            </div>
+        <!-- Queue summary chips -->
+        <div v-if="meta.inbox_summary" class="mb-4 flex flex-wrap gap-2">
+            <button @click="setQueue('all')" :class="['rcmi-queue-chip', queue === 'all' ? 'rcmi-queue-chip-active' : '']">
+                All <span class="rcmi-queue-chip-count">{{ meta.inbox_summary.total }}</span>
+            </button>
+            <button v-if="meta.inbox_summary.pending_approval > 0" @click="setQueue('pending_approval')"
+                :class="['rcmi-queue-chip', queue === 'pending_approval' ? 'rcmi-queue-chip-active-warning' : '']">
+                Needs approval <span class="rcmi-queue-chip-count">{{ meta.inbox_summary.pending_approval }}</span>
+            </button>
+            <button v-if="meta.inbox_summary.received > 0" @click="setQueue('received')"
+                :class="['rcmi-queue-chip', queue === 'received' ? 'rcmi-queue-chip-active' : '']">
+                Received <span class="rcmi-queue-chip-count">{{ meta.inbox_summary.received }}</span>
+            </button>
+            <button v-if="meta.inbox_summary.due_soon > 0" @click="setQueue('due_soon')"
+                :class="['rcmi-queue-chip', queue === 'due_soon' ? 'rcmi-queue-chip-active-warning' : '']">
+                Due soon <span class="rcmi-queue-chip-count">{{ meta.inbox_summary.due_soon }}</span>
+            </button>
+            <button v-if="meta.inbox_summary.overdue > 0" @click="setQueue('overdue')"
+                :class="['rcmi-queue-chip', queue === 'overdue' ? 'rcmi-queue-chip-active-danger' : '']">
+                Overdue <span class="rcmi-queue-chip-count">{{ meta.inbox_summary.overdue }}</span>
+            </button>
         </div>
 
         <!-- Filter bar -->
         <FilterBar v-model="filters" :statuses="meta.statuses" :tags="meta.tags" :assignable-users="meta.assignable_users"
-            class="mb-6" />
+            class="mb-5" />
 
-        <!-- Loading state -->
-        <div v-if="loading" class="rcmi-surface grid gap-3 p-5" aria-live="polite" aria-busy="true">
-            <div v-for="n in 3" :key="n" class="h-20 animate-pulse rounded-lg bg-gray-100"></div>
+        <!-- View toggle + sort -->
+        <div class="mb-4 flex flex-wrap items-center gap-2">
+            <div class="rcmi-view-toggle" aria-label="View options">
+                <button @click="setView('card')" :aria-pressed="view === 'card'" :class="['rcmi-view-toggle-btn', view === 'card' ? 'rcmi-view-toggle-btn-active' : '']" title="Card view" aria-label="Card view">
+                    <Icon name="grid" />
+                </button>
+                <button @click="setView('list')" :aria-pressed="view === 'list'" :class="['rcmi-view-toggle-btn', view === 'list' ? 'rcmi-view-toggle-btn-active' : '']" title="List view" aria-label="List view">
+                    <Icon name="list" />
+                </button>
+            </div>
+            <label class="sr-only" for="ticket-sort">Sort tickets</label>
+            <select id="ticket-sort" v-model="sort" @change="loadTickets" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
+                <option value="created_at">Newest first</option>
+                <option value="updated_at">Recently updated</option>
+                <option value="title">Title</option>
+                <option value="status">Status</option>
+                <option value="priority">Priority</option>
+                <option value="due_date">Due date</option>
+            </select>
+            <button @click="toggleOrder" class="rcmi-button-secondary px-3 py-2 text-sm" :aria-label="order === 'desc' ? 'Sort ascending' : 'Sort descending'" :title="order === 'desc' ? 'Sort ascending' : 'Sort descending'">
+                <Icon :name="order === 'desc' ? 'arrow-down' : 'arrow-up'" />
+            </button>
         </div>
 
-        <!-- Empty state -->
-        <div v-else-if="tickets.length === 0" class="rcmi-surface px-6 py-14 text-center">
-            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-xl text-red-700" aria-hidden="true">+</div>
-            <h2 class="mt-4 text-lg font-semibold text-gray-900">No tickets found</h2>
-            <p class="mx-auto mt-2 max-w-md text-sm text-gray-600">Try adjusting your filters, or create a new ticket to get started.</p>
+        <!-- Loading state -->
+        <div v-if="loading" aria-live="polite" aria-busy="true">
+            <!-- Card skeleton -->
+            <div v-if="view === 'card'" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div v-for="n in 6" :key="n" class="rcmi-card p-5">
+                    <div class="mb-4 flex items-center justify-between">
+                        <div class="h-4 w-16 animate-pulse rounded bg-gray-100"></div>
+                        <div class="h-5 w-20 animate-pulse rounded-full bg-gray-100"></div>
+                    </div>
+                    <div class="mb-3 h-5 w-3/4 animate-pulse rounded bg-gray-100"></div>
+                    <div class="mb-6 h-4 w-1/2 animate-pulse rounded bg-gray-100"></div>
+                    <div class="flex justify-between border-t border-gray-100 pt-3">
+                        <div class="h-3 w-20 animate-pulse rounded bg-gray-100"></div>
+                        <div class="h-3 w-16 animate-pulse rounded bg-gray-100"></div>
+                    </div>
+                </div>
+            </div>
+            <!-- List skeleton -->
+            <div v-else class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+                <div v-for="n in 6" :key="n" class="flex items-center gap-4 border-b border-gray-100 px-5 py-4">
+                    <div class="h-4 w-8 animate-pulse rounded bg-gray-100"></div>
+                    <div class="flex-1"><div class="h-4 w-48 animate-pulse rounded bg-gray-100"></div></div>
+                    <div class="h-5 w-20 animate-pulse rounded-full bg-gray-100"></div>
+                    <div class="h-4 w-16 animate-pulse rounded bg-gray-100"></div>
+                    <div class="h-4 w-20 animate-pulse rounded bg-gray-100"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error state -->
+        <div v-else-if="loadError" class="rcmi-card px-6 py-14 text-center">
+            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-700" aria-hidden="true">
+                <Icon name="alert" />
+            </div>
+            <h2 class="mt-4 text-lg font-semibold text-gray-900">Couldn't load tickets</h2>
+            <p class="mx-auto mt-2 max-w-md text-sm text-gray-600">{{ loadError }}</p>
+            <button @click="loadTickets" class="rcmi-button-primary mt-5 inline-flex px-4 py-2 text-sm">Try again</button>
+        </div>
+
+        <!-- Empty: no tickets at all -->
+        <div v-else-if="tickets.length === 0 && !hasActiveFilters" class="rcmi-card px-6 py-14 text-center">
+            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400" aria-hidden="true">
+                <Icon name="inbox" />
+            </div>
+            <h2 class="mt-4 text-lg font-semibold text-gray-900">No tickets yet</h2>
+            <p class="mx-auto mt-2 max-w-md text-sm text-gray-600">Create your first ticket to get started.</p>
             <router-link to="/create" class="rcmi-button-primary mt-5 inline-flex px-4 py-2 text-sm">Create New Ticket</router-link>
         </div>
 
+        <!-- Empty: filters active, no matches -->
+        <div v-else-if="tickets.length === 0 && hasActiveFilters" class="rcmi-card px-6 py-14 text-center">
+            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400" aria-hidden="true">
+                <Icon name="search" />
+            </div>
+            <h2 class="mt-4 text-lg font-semibold text-gray-900">No tickets match these filters</h2>
+            <p class="mx-auto mt-2 max-w-md text-sm text-gray-600">Try adjusting or clearing your filters.</p>
+            <button @click="clearAllFilters" class="rcmi-button-secondary mt-5 inline-flex px-4 py-2 text-sm">Clear all filters</button>
+        </div>
+
         <!-- Card view -->
-        <div v-else-if="view === 'card'" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div v-else-if="view === 'card'" class="rcmi-ticket-card-grid grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3">
             <router-link v-for="t in tickets" :key="t.id" :to="`/ticket/${t.id}`"
-                class="group block rounded-xl border border-gray-200 border-l-4 border-l-red-700 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md">
-                <div class="mb-5 flex items-start justify-between gap-3">
-                    <span class="text-xs font-semibold tracking-wide text-gray-500">TICKET #{{ t.id }}</span>
+                class="group block rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md">
+                <!-- Header -->
+                <div class="mb-3 flex items-start justify-between gap-3">
+                    <span class="text-xs font-semibold tracking-wide text-gray-500">#{{ t.id }}</span>
                     <StatusBadge :status="t.status" />
                 </div>
-                <h3 class="mb-2 line-clamp-2 text-base font-semibold leading-snug text-gray-900 group-hover:text-red-800">{{ t.title }}</h3>
-                <p class="mb-6 line-clamp-2 min-h-[2.5rem] text-sm leading-relaxed text-gray-600">{{ t.description_text }}</p>
+                <!-- Title -->
+                <h3 class="mb-3 line-clamp-2 text-base font-semibold leading-snug text-gray-900 group-hover:text-red-800">{{ t.title }}</h3>
+                <!-- Approval callout -->
+                <div v-if="t.status === 'Pending Approval' && t.approval_history" class="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    <span v-if="t.current_approval_step">Approval step {{ currentStepNumber(t) }} of {{ t.approval_history.length }}</span>
+                    <span v-else>Awaiting approval</span>
+                </div>
+                <!-- Footer -->
                 <div class="flex items-center justify-between border-t border-gray-100 pt-3 text-xs">
                     <span :class="['rcmi-priority-' + t.priority.toLowerCase(), 'inline-flex items-center font-semibold']">
-                        <span class="rcmi-priority-dot"></span>{{ t.priority }} priority
+                        <span class="rcmi-priority-dot"></span>{{ t.priority }}
                     </span>
-                    <span v-if="t.due_date" class="text-gray-500">Due {{ formatDate(t.due_date) }}</span>
-                    <span v-else class="text-gray-500">No due date</span>
+                    <span v-if="t.due_date" :class="dueDateClass(t.due_date, t.status)" class="font-medium">
+                        {{ dueDateLabel(t.due_date) }}
+                    </span>
+                    <span v-else class="text-gray-400">No due date</span>
                 </div>
             </router-link>
         </div>
 
         <!-- List view (table) -->
         <div v-else class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50/80">
+            <table class="rcmi-inbox-table">
+                <thead>
                     <tr>
-                        <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">#</th>
-                        <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Title</th>
-                        <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
-                        <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Priority</th>
-                        <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Due</th>
-                        <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Created</th>
+                        <th style="width: 3rem"></th>
+                        <th>Ticket</th>
+                        <th>Status</th>
+                        <th>Priority</th>
+                        <th>Owner</th>
+                        <th>Due</th>
+                        <th>Updated</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-100 bg-white">
-                    <tr v-for="t in tickets" :key="t.id" class="transition hover:bg-red-50/30">
-                        <td class="whitespace-nowrap px-5 py-4 text-sm font-semibold text-gray-500">{{ t.id }}</td>
-                        <td class="px-5 py-4 text-sm">
+                <tbody>
+                    <tr v-for="t in tickets" :key="t.id">
+                        <td class="whitespace-nowrap">
+                            <span v-if="isOverdue(t.due_date, t.status)" class="rcmi-row-indicator rcmi-row-indicator-danger" aria-label="Overdue"></span>
+                            <span v-else-if="t.status === 'Pending Approval'" class="rcmi-row-indicator rcmi-row-indicator-warning" aria-label="Pending approval"></span>
+                        </td>
+                        <td>
                             <router-link :to="`/ticket/${t.id}`" class="font-semibold text-gray-900 hover:text-red-800">
                                 {{ t.title }}
                             </router-link>
-                            <p class="mt-0.5 max-w-xs truncate text-xs text-gray-500">{{ t.description_text }}</p>
+                            <span class="ml-2 text-xs text-gray-400">#{{ t.id }}</span>
                         </td>
-                        <td class="whitespace-nowrap px-5 py-4"><StatusBadge :status="t.status" /></td>
-                        <td class="whitespace-nowrap px-5 py-4 text-sm font-semibold" :class="priorityClass(t.priority)">{{ t.priority }}</td>
-                        <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-600">{{ t.due_date ? formatDate(t.due_date) : '—' }}</td>
-                        <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-600">{{ formatDate(t.created_at) }}</td>
+                        <td class="whitespace-nowrap">
+                            <StatusBadge :status="t.status" />
+                            <span v-if="t.status === 'Pending Approval' && t.current_approval_step" class="ml-1.5 text-xs text-gray-500">
+                                {{ currentStepNumber(t) }}/{{ t.approval_history.length }}
+                            </span>
+                        </td>
+                        <td class="whitespace-nowrap font-semibold" :class="priorityClass(t.priority)">
+                            <span class="rcmi-priority-dot"></span>{{ t.priority }}
+                        </td>
+                        <td class="whitespace-nowrap text-gray-600">
+                            <span v-if="t.assignees && t.assignees.length">{{ t.assignees[0].display_name }}</span>
+                            <span v-else class="text-gray-400">Unassigned</span>
+                        </td>
+                        <td class="whitespace-nowrap" :class="dueDateClass(t.due_date, t.status)">
+                            <span v-if="t.due_date" :title="formatDate(t.due_date)">{{ dueDateLabel(t.due_date) }}</span>
+                            <span v-else class="text-gray-400">—</span>
+                        </td>
+                        <td class="whitespace-nowrap text-gray-500" :title="formatDateTime(t.updated_at)">
+                            {{ relativeTime(t.updated_at) }}
+                        </td>
                     </tr>
                 </tbody>
             </table>
@@ -107,15 +197,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue';
+import { ref, reactive, computed, onMounted, watch } from 'vue';
 import { api } from '../api.js';
 import FilterBar from '../components/FilterBar.vue';
 import StatusBadge from '../components/StatusBadge.vue';
 import Pagination from '../components/Pagination.vue';
+import Icon from '../components/Icon.vue';
 
-const meta = reactive({ statuses: [], priorities: [], tags: [], assignable_users: [] });
+const meta = reactive({ statuses: [], priorities: [], tags: [], assignable_users: [], inbox_summary: null });
 const tickets = ref([]);
 const loading = ref(true);
+const loadError = ref('');
 const view = ref(localStorage.getItem('rcmi_tickets_view') || 'card');
 const sort = ref(localStorage.getItem('rcmi_tickets_sort') || 'created_at');
 const order = ref(localStorage.getItem('rcmi_tickets_order') || 'desc');
@@ -124,10 +216,65 @@ const perPage = ref(10);
 const total = ref(0);
 const totalPages = ref(0);
 const filters = ref({ search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '' });
+const queue = ref('all');
+
+const activeFilterCount = computed(() => {
+    let c = 0;
+    if (filters.value.search) c++;
+    if (filters.value.scope !== 'all') c++;
+    if (filters.value.status?.length) c++;
+    if (filters.value.assignee_ids?.length) c++;
+    if (filters.value.tag_ids?.length) c++;
+    if (filters.value.date_from) c++;
+    if (filters.value.date_to) c++;
+    return c;
+});
+
+const hasActiveFilters = computed(() => activeFilterCount.value > 0 || queue.value !== 'all');
 
 function setView(v) {
     view.value = v;
     localStorage.setItem('rcmi_tickets_view', v);
+}
+
+function setQueue(q) {
+    if (queue.value === q) {
+        queue.value = 'all';
+    } else {
+        queue.value = q;
+    }
+    applyQueueFilter();
+    page.value = 1;
+    loadTickets();
+}
+
+function applyQueueFilter() {
+    // Reset status filter then apply queue-specific filters
+    filters.value.status = [];
+    filters.value.date_from = '';
+    filters.value.date_to = '';
+
+    if (queue.value === 'pending_approval') {
+        filters.value.status = ['Pending Approval'];
+    } else if (queue.value === 'received') {
+        filters.value.status = ['Received'];
+    } else if (queue.value === 'due_soon') {
+        const today = new Date();
+        const soon = new Date();
+        soon.setDate(soon.getDate() + 7);
+        filters.value.date_from = today.toISOString().split('T')[0];
+        filters.value.date_to = soon.toISOString().split('T')[0];
+    } else if (queue.value === 'overdue') {
+        const today = new Date();
+        filters.value.date_to = today.toISOString().split('T')[0];
+        // Overdue also needs to exclude Completed/Rejected — but the API doesn't
+        // have an exclude filter. We'll rely on client-side filtering for this.
+    }
+}
+
+function clearAllFilters() {
+    queue.value = 'all';
+    filters.value = { search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '' };
 }
 
 function toggleOrder() {
@@ -145,6 +292,59 @@ function formatDate(d) {
     return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function formatDateTime(d) {
+    if (!d) return '';
+    return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function relativeTime(d) {
+    if (!d) return '';
+    const now = new Date();
+    const then = new Date(d);
+    const diffMs = now - then;
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHr = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    if (diffHr < 24) return `${diffHr}h ago`;
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return formatDate(d);
+}
+
+function isOverdue(dueDate, status) {
+    if (!dueDate || status === 'Completed' || status === 'Rejected') return false;
+    return new Date(dueDate) < new Date(new Date().toDateString());
+}
+
+function dueDateLabel(dueDate) {
+    if (!dueDate) return '';
+    const due = new Date(dueDate);
+    const today = new Date(new Date().toDateString());
+    const diffDays = Math.round((due - today) / 86400000);
+    if (diffDays < 0) return `${Math.abs(diffDays)}d overdue`;
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Tomorrow';
+    if (diffDays <= 7) return `In ${diffDays}d`;
+    return formatDate(dueDate);
+}
+
+function dueDateClass(dueDate, status) {
+    if (!dueDate) return 'text-gray-400';
+    if (isOverdue(dueDate, status)) return 'text-red-700 font-semibold';
+    const due = new Date(dueDate);
+    const today = new Date(new Date().toDateString());
+    const diffDays = Math.round((due - today) / 86400000);
+    if (diffDays >= 0 && diffDays <= 3) return 'text-amber-700 font-medium';
+    return 'text-gray-600';
+}
+
+function currentStepNumber(t) {
+    if (!t.approval_history) return 0;
+    const idx = t.approval_history.findIndex(a => a.status === 'pending');
+    return idx >= 0 ? idx + 1 : 0;
+}
+
 async function loadMeta() {
     try {
         const data = await api('/meta');
@@ -156,6 +356,7 @@ async function loadMeta() {
 
 async function loadTickets() {
     loading.value = true;
+    loadError.value = '';
     try {
         const params = new URLSearchParams();
         params.set('page', page.value);
@@ -171,11 +372,19 @@ async function loadTickets() {
         if (filters.value.date_to) params.set('date_to', filters.value.date_to);
 
         const data = await api('/tickets', { params });
-        tickets.value = data.items || [];
+        let items = data.items || [];
+
+        // Client-side overdue filter (queue=overdue excludes Completed/Rejected)
+        if (queue.value === 'overdue') {
+            items = items.filter(t => isOverdue(t.due_date, t.status));
+        }
+
+        tickets.value = items;
         total.value = data.total || 0;
         totalPages.value = data.total_pages || 0;
     } catch (e) {
         console.error('Failed to load tickets:', e);
+        loadError.value = e.message || 'Something went wrong. Please try again.';
         tickets.value = [];
     } finally {
         loading.value = false;

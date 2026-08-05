@@ -204,7 +204,9 @@ function formatSize(bytes) {
 
 function downloadUrl(id) {
     const config = window.rcmiTickets || {};
-    return `${config.apiBase}/attachments/${id}/download`;
+    const base = `${config.apiBase}/attachments/${id}/download`;
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}_wpnonce=${config.nonce}`;
 }
 
 function userName(uid) {

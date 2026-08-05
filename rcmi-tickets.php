@@ -99,6 +99,10 @@ $rcmi_tickets_includes = [
     'includes/class-rest-comments.php',
     'includes/class-rest-attachments.php',
     'includes/class-rest-meta.php',
+    'includes/class-rest-public.php',
+    'includes/class-rest-form-fields.php',
+    'includes/class-rest-approval-chains.php',
+    'includes/class-rest-approvals.php',
     'includes/class-emails.php',
     'includes/class-updater.php',
     'includes/class-settings.php',
@@ -155,41 +159,24 @@ function rcmi_tickets_deactivate() {
 
 add_shortcode('rcmi_tickets', 'rcmi_tickets_render_shortcode');
 
-function rcmi_tickets_render_shortcode() {
-    if (!is_user_logged_in()) {
-        ob_start();
-        ?>
-        <style>
-            .rcmi-tickets-login{max-width:28rem;margin:2rem auto;padding:2rem;border:1px solid #e5e7eb;border-radius:.75rem;background:#fff;box-shadow:0 10px 25px rgba(15,23,42,.08)}
-            .rcmi-tickets-login h2{margin:0 0 .5rem;font-size:1.5rem;line-height:2rem;color:#111827}
-            .rcmi-tickets-login>p{margin:0 0 1.5rem;color:#6b7280}
-            .rcmi-tickets-login form p{margin:0 0 1rem}
-            .rcmi-tickets-login label{display:block;margin-bottom:.35rem;font-size:.875rem;font-weight:600;color:#374151}
-            .rcmi-tickets-login input[type=text],.rcmi-tickets-login input[type=password]{box-sizing:border-box;width:100%;padding:.625rem .75rem;border:1px solid #d1d5db;border-radius:.375rem}
-            .rcmi-tickets-login .login-remember{display:flex;align-items:center;gap:.4rem;font-size:.875rem;color:#4b5563}
-            .rcmi-tickets-login .login-submit{margin-top:1.25rem}
-            .rcmi-tickets-login input[type=submit]{width:100%;padding:.625rem 1rem;border:0;border-radius:.375rem;background:#b91c1c;color:#fff;font-weight:600;cursor:pointer}
-            .rcmi-tickets-login input[type=submit]:hover{background:#991b1b}
-        </style>
-        <div class="rcmi-tickets-login" role="region" aria-labelledby="rcmi-tickets-login-title">
-            <h2 id="rcmi-tickets-login-title"><?php esc_html_e('Sign in to view tickets', 'rcmi-tickets'); ?></h2>
-            <p><?php esc_html_e('Use your WordPress account to access the ticket system.', 'rcmi-tickets'); ?></p>
-            <?php
-            wp_login_form([
-                'echo'           => true,
-                'redirect'       => get_permalink(),
-                'label_username' => __('Username or Email Address', 'rcmi-tickets'),
-                'label_password' => __('Password', 'rcmi-tickets'),
-                'label_remember' => __('Remember Me', 'rcmi-tickets'),
-                'label_log_in'   => __('Sign In', 'rcmi-tickets'),
-                'remember'       => true,
-            ]);
-            ?>
-        </div>
-        <?php
-        return ob_get_clean();
-    }
+/**
+ * Use a blank template (no theme header/footer) on the tickets page so
+ * the SPA fills the viewport without site chrome.
+ */
+add_filter('template_include', 'rcmi_tickets_blank_template', 99);
 
+function rcmi_tickets_blank_template($template) {
+    if (!is_singular() || !has_shortcode(get_post()->post_content ?? '', 'rcmi_tickets')) {
+        return $template;
+    }
+    $blank = RCMI_TICKETS_DIR . 'includes/template-blank.php';
+    return file_exists($blank) ? $blank : $template;
+}
+
+function rcmi_tickets_render_shortcode() {
+    // Load the Vue app for both logged-in and logged-out users.
+    // Logged-out users get a public submission form (router restricts to /create).
+    // Logged-in users get the full ticket system.
     rcmi_tickets_enqueue_app();
 
     return '<div id="rcmi-tickets-app"></div>';
@@ -231,10 +218,19 @@ function rcmi_tickets_enqueue_app() {
         }
     }
 
+    // Source Sans 3 font for the ticket UI
+    wp_enqueue_style(
+        'rcmi-tickets-source-sans',
+        'https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap',
+        [],
+        null
+    );
+
     wp_localize_script('rcmi-tickets-app', 'rcmiTickets', [
         'apiBase'  => esc_url_raw(rest_url('rcmi/v1')),
         'nonce'    => wp_create_nonce('wp_rest'),
         'loginUrl' => wp_login_url(get_permalink()),
+        'isLoggedIn' => is_user_logged_in(),
     ]);
 }
 

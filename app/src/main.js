@@ -9,6 +9,7 @@ const router = createRouter({
     routes,
 });
 
+// In public mode, restrict all routes to /create only
 publicGuard(router);
 
 const mountEl = document.getElementById('rcmi-tickets-app');

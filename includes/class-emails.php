@@ -15,6 +15,8 @@ if (!defined('ABSPATH')) {
 add_action('rcmi_ticket_created', 'rcmi_tickets_email_ticket_created', 10, 3);
 add_action('rcmi_ticket_status_changed', 'rcmi_tickets_email_status_changed', 10, 4);
 add_action('rcmi_ticket_mention', 'rcmi_tickets_email_mentions', 10, 4);
+add_action('rcmi_ticket_approval_step', 'rcmi_tickets_email_approval_step', 10, 3);
+add_action('rcmi_ticket_approval_rejected', 'rcmi_tickets_email_approval_rejected', 10, 3);
 
 /**
  * Build the canonical frontend URL for a ticket.
@@ -220,4 +222,122 @@ function rcmi_tickets_email_mentions($comment_id, $ticket_id, $from_user_id, $me
     );
 
     rcmi_tickets_send_email($recipients, $subject, $html, $plain);
+}
+
+/**
+ * Build a one-click approve/reject URL for an approval step token.
+ * Uses the REST API with plain-permalink-safe ?rest_route= format.
+ */
+function rcmi_tickets_email_approval_action_url($approval_id, $token, $action) {
+    $base = rest_url('rcmi/v1/approvals/' . (int) $approval_id . '/token-' . $action);
+    return add_query_arg('token', $token, $base);
+}
+
+/**
+ * Notify the approver of a pending step.
+ * Hooked on rcmi_ticket_approval_step($ticket_id, $approval_id, $event).
+ * $event: 'chain_started' | 'approve_advanced' | 'reject_back_one'
+ */
+function rcmi_tickets_email_approval_step($ticket_id, $approval_id, $event) {
+    global $wpdb;
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
+    if (!$ticket) {
+        return;
+    }
+    $approval = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE id = %d",
+        (int) $approval_id
+    ), ARRAY_A);
+    if (!$approval || $approval['status'] !== 'pending') {
+        return;
+    }
+
+    // Resolve recipient
+    $approver_user_id = $approval['approver_user_id'] ? (int) $approval['approver_user_id'] : 0;
+    if (!$approver_user_id) {
+        // Role-based: email all users with that role
+        $users = get_users(['role' => $approval['approver_role'], 'fields' => ['user_email']]);
+        $recipients = array_filter(wp_list_pluck($users, 'user_email'), 'is_email');
+    } else {
+        $u = get_userdata($approver_user_id);
+        $recipients = ($u && is_email($u->user_email)) ? [$u->user_email] : [];
+    }
+    if (!$recipients) {
+        return;
+    }
+
+    $title = rcmi_tickets_email_esc($ticket['title']);
+    $ticket_url = esc_url(rcmi_tickets_email_ticket_url($ticket_id));
+    $step_label = sprintf(__('Step %d', 'rcmi-tickets'), (int) $approval['sort_order']);
+    $approve_url = esc_url(rcmi_tickets_email_approval_action_url($approval_id, $approval['token'], 'approve'));
+    $reject_url = esc_url(rcmi_tickets_email_approval_action_url($approval_id, $approval['token'], 'reject'));
+
+    $subject = sprintf(__('Approval needed: ticket #%d %s', 'rcmi-tickets'), $ticket_id, $ticket['title']);
+
+    $html = '<!doctype html><html><body>'
+        . '<h2>' . sprintf(__('Your approval is requested (ticket #%d)', 'rcmi-tickets'), $ticket_id) . '</h2>'
+        . '<p><strong>' . __('Title:', 'rcmi-tickets') . '</strong> ' . $title . '</p>'
+        . '<p><strong>' . __('Stage:', 'rcmi-tickets') . '</strong> ' . rcmi_tickets_email_esc($step_label) . '</p>'
+        . '<p style="margin-top:1.5rem;">'
+        . '<a href="' . $approve_url . '" style="display:inline-block;padding:.6rem 1.2rem;background:#00866c;color:#fff;text-decoration:none;border-radius:.375rem;margin-right:.5rem;">' . __('Approve', 'rcmi-tickets') . '</a>'
+        . '<a href="' . $reject_url . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('Reject', 'rcmi-tickets') . '</a>'
+        . '</p>'
+        . '<p style="margin-top:1rem;color:#666;font-size:13px;">' . __('Or view the ticket and decide there:', 'rcmi-tickets') . ' <a href="' . $ticket_url . '">' . $ticket_url . '</a></p>'
+        . '</body></html>';
+
+    $plain = sprintf(
+        "Your approval is requested (ticket #%d)\n\nTitle: %s\nStage: %s\n\nApprove: %s\nReject: %s\n\nView ticket: %s",
+        $ticket_id, $ticket['title'], $step_label,
+        wp_strip_all_tags($approve_url),
+        wp_strip_all_tags($reject_url),
+        wp_strip_all_tags($ticket_url)
+    );
+
+    rcmi_tickets_send_email($recipients, $subject, $html, $plain);
+}
+
+/**
+ * Notify the ticket author when a chain rejection occurred.
+ * Hooked on rcmi_ticket_approval_rejected($ticket_id, $mode, $comment).
+ * $mode: 'restart' | 'terminal'
+ */
+function rcmi_tickets_email_approval_rejected($ticket_id, $mode, $comment) {
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
+    if (!$ticket) {
+        return;
+    }
+    $author = get_userdata((int) $ticket['author_id']);
+    if (!$author || !is_email($author->user_email)) {
+        return;
+    }
+
+    $title = rcmi_tickets_email_esc($ticket['title']);
+    $url = esc_url(rcmi_tickets_email_ticket_url($ticket_id));
+    $comment_html = $comment ? '<p><strong>' . __('Reviewer note:', 'rcmi-tickets') . '</strong> ' . nl2br(rcmi_tickets_email_esc($comment)) . '</p>' : '';
+    $comment_plain = $comment ? "\nReviewer note: {$comment}\n" : '';
+
+    if ($mode === 'terminal') {
+        $subject = sprintf(__('Ticket #%d rejected: %s', 'rcmi-tickets'), $ticket_id, $ticket['title']);
+        $headline = __('Your ticket has been rejected', 'rcmi-tickets');
+        $guidance = __('This request has been denied. If you believe this is an error, please contact a ticket manager.', 'rcmi-tickets');
+    } else { // restart
+        $subject = sprintf(__('Ticket #%d sent back for revision: %s', 'rcmi-tickets'), $ticket_id, $ticket['title']);
+        $headline = __('Your ticket needs revision', 'rcmi-tickets');
+        $guidance = __('Please review the reviewer note, edit your ticket, and resubmit. The approval chain will restart from the first step.', 'rcmi-tickets');
+    }
+
+    $html = '<!doctype html><html><body>'
+        . '<h2>' . rcmi_tickets_email_esc($headline) . '</h2>'
+        . '<p><strong>' . __('Ticket:', 'rcmi-tickets') . '</strong> #' . (int) $ticket_id . ' — ' . $title . '</p>'
+        . $comment_html
+        . '<p>' . rcmi_tickets_email_esc($guidance) . '</p>'
+        . '<p><a href="' . $url . '">' . __('View / edit ticket', 'rcmi-tickets') . '</a></p>'
+        . '</body></html>';
+
+    $plain = sprintf(
+        "%s\n\nTicket: #%d — %s%s\n%s\n\nView ticket: %s",
+        $headline, $ticket_id, $ticket['title'], $comment_plain, $guidance, wp_strip_all_tags($url)
+    );
+
+    rcmi_tickets_send_email($author->user_email, $subject, $html, $plain);
 }
