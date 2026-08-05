@@ -1,0 +1,320 @@
+<?php
+/**
+ * Public REST API endpoints for guest ticket submission.
+ *
+ * Endpoints:
+ *   GET  /public/meta    — form fields, priorities, allowed mime types (no auth)
+ *   POST /public/submit  — create a ticket from a guest (no auth, honeypot + rate limit)
+ *
+ * @package RCMI_Tickets
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+function rcmi_tickets_register_public_routes() {
+    $namespace = 'rcmi/v1';
+
+    register_rest_route($namespace, '/public/meta', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'rcmi_tickets_handle_public_meta',
+            'permission_callback' => '__return_true',
+        ],
+    ]);
+
+    register_rest_route($namespace, '/public/submit', [
+        [
+            'methods'             => 'POST',
+            'callback'            => 'rcmi_tickets_handle_public_submit',
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'submitter_name'  => ['type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field'],
+                'submitter_email' => ['type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_email'],
+                'title'           => ['type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field'],
+                'description'     => ['type' => 'string', 'required' => false, 'sanitize_callback' => 'wp_kses_post'],
+                'priority'        => ['type' => 'string', 'default' => 'Medium'],
+                'form_answers'    => ['type' => 'object', 'default' => []],
+                'website'         => ['type' => 'string', 'default' => ''],  // honeypot
+            ],
+        ],
+    ]);
+
+    register_rest_route($namespace, '/public/attachments/(?P<ticket_id>\d+)', [
+        [
+            'methods'             => 'POST',
+            'callback'            => 'rcmi_tickets_handle_public_attachment_upload',
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'ticket_id' => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int'],
+            ],
+        ],
+    ]);
+}
+add_action('rest_api_init', 'rcmi_tickets_register_public_routes');
+
+/**
+ * Public meta: form fields, priorities, allowed mime types.
+ * No user-specific data is exposed.
+ */
+function rcmi_tickets_handle_public_meta() {
+    $form_fields = rcmi_tickets_get_all_form_fields();
+    $allowed_mime = array_keys(rcmi_tickets_allowed_mime_types());
+
+    return new WP_REST_Response([
+        'form_fields'        => $form_fields,
+        'priorities'         => ['Low', 'Medium', 'High', 'Urgent'],
+        'allowed_mime_types' => $allowed_mime,
+        'is_public'          => true,
+    ], 200);
+}
+
+/**
+ * Public ticket submission with honeypot + rate limiting.
+ */
+function rcmi_tickets_handle_public_submit($request) {
+    global $wpdb;
+    $now = current_time('mysql');
+
+    // ── Honeypot: if the hidden "website" field is filled, it's a bot ──
+    $honeypot = $request['website'] ?? '';
+    if (!empty($honeypot)) {
+        // Pretend success so bots don't retry
+        return new WP_REST_Response(['id' => 0, 'message' => 'Thank you for your submission.'], 201);
+    }
+
+    // ── Validate email ──
+    $submitter_email = $request['submitter_email'];
+    if (!is_email($submitter_email)) {
+        return new WP_Error('rcmi_tickets_invalid_email', 'A valid email address is required.', ['status' => 400]);
+    }
+
+    // ── Rate limit: max 5 submissions per IP per hour ──
+    $ip = rcmi_tickets_get_client_ip();
+    $transient_key = 'rcmi_pub_rl_' . md5($ip);
+    $count = (int) get_transient($transient_key);
+    if ($count >= 5) {
+        return new WP_Error('rcmi_tickets_rate_limited', 'Too many submissions from your IP. Please try again later.', ['status' => 429]);
+    }
+
+    $title = $request['title'];
+    $description = $request['description'] ?? '';
+    $priority = $request['priority'] ?? 'Medium';
+    $submitter_name = $request['submitter_name'];
+    $form_answers = $request['form_answers'] ?? [];
+
+    if (empty($title)) {
+        return new WP_Error('rcmi_tickets_missing_title', 'A title is required.', ['status' => 400]);
+    }
+
+    // ── Find or create a "Guest Submitter" user to use as author ──
+    $guest_user_id = rcmi_tickets_get_or_create_guest_user();
+
+    $description_text = wp_strip_all_tags($description);
+
+    // Append submitter info to description so staff can see who submitted
+    $full_description = $description;
+    if ($full_description) {
+        $full_description .= "\n\n---\n";
+    }
+    $full_description .= '<p><em>Submitted by: ' . esc_html($submitter_name) . ' (' . esc_html($submitter_email) . ')</em></p>';
+
+    $full_description_text = $description_text . "\n\n---\nSubmitted by: {$submitter_name} ({$submitter_email})";
+
+    $wpdb->insert($wpdb->prefix . 'rcmi_tickets', [
+        'author_id'        => $guest_user_id,
+        'title'            => $title,
+        'description'      => $full_description,
+        'description_text' => $full_description_text,
+        'status'           => 'Received',
+        'priority'         => $priority,
+        'due_date'         => null,
+        'created_at'       => $now,
+        'updated_at'       => $now,
+    ], ['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']);
+
+    $ticket_id = (int) $wpdb->insert_id;
+    if (!$ticket_id) {
+        return new WP_Error('rcmi_tickets_create_failed', 'Failed to create ticket.', ['status' => 500]);
+    }
+
+    // Store submitter info in ticket meta (via WP post meta on the page? No — use a simple option-based map)
+    // Actually, store as a custom row in the comments table as a "system" note, or use the ticket's own meta.
+    // Simplest: store in a dedicated meta table if one exists, otherwise just keep it in the description.
+    // For now, the description already contains it. Let's also store it as a transient for the email receipt.
+
+    // Save form answers
+    rcmi_tickets_sync_form_answers($ticket_id, $form_answers);
+
+    // Increment rate limit counter (1 hour TTL)
+    set_transient($transient_key, $count + 1, HOUR_IN_SECONDS);
+
+    // ── Send receipt email to submitter ──
+    rcmi_tickets_email_public_receipt($ticket_id, $submitter_name, $submitter_email, $title);
+
+    // ── Notify assignees if any (via do_action) ──
+    do_action('rcmi_ticket_created', $ticket_id, $guest_user_id, []);
+
+    // ── Resolve + init approval chain ──
+    $chain = rcmi_tickets_resolve_approval_chain($form_answers);
+    if ($chain) {
+        rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain);
+    }
+
+    return new WP_REST_Response([
+        'id'      => $ticket_id,
+        'message' => 'Your ticket has been submitted. A confirmation has been sent to your email.',
+    ], 201);
+}
+
+/**
+ * Get or create a "Guest Submitter" user for public ticket authorship.
+ */
+function rcmi_tickets_get_or_create_guest_user() {
+    $guest = get_user_by('login', 'guest_submitter');
+    if ($guest) {
+        return (int) $guest->ID;
+    }
+
+    $user_id = wp_insert_user([
+        'user_login' => 'guest_submitter',
+        'user_email' => 'guest-submitter@noreply.local',
+        'display_name' => 'Guest Submitter',
+        'user_pass' => wp_generate_password(64, true, true),
+        'role' => '',
+    ]);
+
+    if (is_wp_error($user_id)) {
+        // Fallback: use user ID 1 (admin) if guest creation fails
+        return 1;
+    }
+
+    return (int) $user_id;
+}
+
+/**
+ * Get the real client IP address.
+ */
+function rcmi_tickets_get_client_ip() {
+    $headers = [
+        'HTTP_CF_CONNECTING_IP',
+        'HTTP_X_FORWARDED_FOR',
+        'HTTP_X_REAL_IP',
+        'REMOTE_ADDR',
+    ];
+    foreach ($headers as $header) {
+        if (!empty($_SERVER[$header])) {
+            $ip = trim(explode(',', $_SERVER[$header])[0]);
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
+            }
+        }
+    }
+    return '0.0.0.0';
+}
+
+/**
+ * Send a receipt email to the public submitter.
+ */
+function rcmi_tickets_email_public_receipt($ticket_id, $name, $email, $title) {
+    $ticket_url = rcmi_tickets_email_ticket_url($ticket_id);
+
+    $subject = sprintf(__('Ticket submitted: #%d %s', 'rcmi-tickets'), $ticket_id, $title);
+
+    $html = '<!doctype html><html><body>'
+        . '<h2>' . __('Thank you for your submission', 'rcmi-tickets') . '</h2>'
+        . '<p>' . sprintf(__('Hi %s,', 'rcmi-tickets'), esc_html($name)) . '</p>'
+        . '<p>' . __('We have received your ticket and our team will review it shortly.', 'rcmi-tickets') . '</p>'
+        . '<p><strong>' . __('Ticket #:') . '</strong> ' . $ticket_id . '</p>'
+        . '<p><strong>' . __('Title:') . '</strong> ' . esc_html($title) . '</p>'
+        . '<p>' . __('You will receive updates by email as your ticket is processed.', 'rcmi-tickets') . '</p>'
+        . '</body></html>';
+
+    $plain = sprintf(
+        "Thank you for your submission\n\nHi %s,\n\nWe have received your ticket and our team will review it shortly.\n\nTicket #%d\nTitle: %s\n\nYou will receive updates by email as your ticket is processed.",
+        $name,
+        $ticket_id,
+        $title
+    );
+
+    rcmi_tickets_send_email($email, $subject, $html, $plain);
+}
+
+/**
+ * Public attachment upload — allows guest submitters to attach files.
+ * Uses the same storage logic as the authenticated endpoint but with
+ * the guest user as uploader and rate limiting.
+ */
+function rcmi_tickets_handle_public_attachment_upload($request) {
+    global $wpdb;
+    $ticket_id = (int) $request['ticket_id'];
+
+    // Rate limit: max 10 file uploads per IP per hour
+    $ip = rcmi_tickets_get_client_ip();
+    $transient_key = 'rcmi_pub_att_rl_' . md5($ip);
+    $count = (int) get_transient($transient_key);
+    if ($count >= 10) {
+        return new WP_Error('rcmi_tickets_rate_limited', 'Too many uploads from your IP. Please try again later.', ['status' => 429]);
+    }
+
+    $files = $request->get_file_params();
+    if (empty($files['file']) || $files['file']['error'] !== UPLOAD_ERR_OK) {
+        return new WP_Error('rcmi_tickets_no_file', 'No file uploaded.', ['status' => 400]);
+    }
+
+    $file = $files['file'];
+    $original_name = $file['name'];
+    $tmp_path = $file['tmp_name'];
+    $mime = $file['type'];
+    $size = (int) $file['size'];
+
+    // Validate size
+    if ($size > rcmi_tickets_max_upload_size()) {
+        return new WP_Error('rcmi_tickets_file_too_large', 'File exceeds 10MB limit.', ['status' => 413]);
+    }
+
+    // Validate MIME type
+    $allowed = rcmi_tickets_allowed_mime_types();
+    if (!isset($allowed[$mime])) {
+        return new WP_Error('rcmi_tickets_file_type_not_allowed', 'File type not allowed.', ['status' => 415]);
+    }
+
+    // Verify the file is a real upload
+    if (!is_uploaded_file($tmp_path)) {
+        return new WP_Error('rcmi_tickets_invalid_upload', 'Invalid upload.', ['status' => 400]);
+    }
+
+    $guest_user_id = rcmi_tickets_get_or_create_guest_user();
+
+    $dir = rcmi_tickets_upload_dir($ticket_id);
+    $filename = rcmi_tickets_random_filename($original_name);
+    $dest = trailingslashit($dir['path']) . $filename;
+
+    if (!move_uploaded_file($tmp_path, $dest)) {
+        return new WP_Error('rcmi_tickets_upload_failed', 'Failed to move uploaded file.', ['status' => 500]);
+    }
+
+    $wpdb->insert($wpdb->prefix . 'rcmi_ticket_attachments', [
+        'ticket_id'     => $ticket_id,
+        'comment_id'    => null,
+        'uploader_id'   => $guest_user_id,
+        'file_path'     => $filename,
+        'original_name' => $original_name,
+        'mime_type'     => $mime,
+        'size'          => $size,
+    ], ['%d', null, '%d', '%s', '%s', '%s', '%d']);
+
+    $id = (int) $wpdb->insert_id;
+
+    // Increment rate limit
+    set_transient($transient_key, $count + 1, HOUR_IN_SECONDS);
+
+    return new WP_REST_Response([
+        'id'            => $id,
+        'ticket_id'     => $ticket_id,
+        'original_name' => $original_name,
+        'mime_type'     => $mime,
+        'size'          => $size,
+    ], 201);
+}
