@@ -123,6 +123,44 @@ foreach ($rcmi_tickets_includes as $rcmi_inc_file) {
     }
 }
 
+// ============================================================
+// SMTP CONFIGURATION — UH Campus SMTP
+// Configures wp_mail() to send through post-office.uh.edu.
+// This affects ALL WordPress emails (not just tickets):
+//   password resets, admin notifications, Spectra, etc.
+// To disable, comment out this block or remove the add_action.
+// ============================================================
+add_action('phpmailer_init', function ($phpmailer) {
+    $phpmailer->isSMTP();
+    $phpmailer->Host       = 'post-office.uh.edu';
+    $phpmailer->Port       = 25;
+    $phpmailer->SMTPAuth   = false;          // no auth on campus SMTP
+    $phpmailer->SMTPSecure = '';             // no TLS/SSL (port 25 plaintext)
+    $phpmailer->SMTPAutoTLS = false;         // don't auto-upgrade to TLS
+    $phpmailer->SMTPOptions = [
+        'ssl' => [
+            'verify_peer'       => false,
+            'verify_peer_name'  => false,
+            'allow_self_signed' => true,
+        ],
+    ];
+    // EHLO hostname — some SMTP servers reject default localhost
+    $phpmailer->Helo = 'central.uh.edu';
+
+    // From address — overrides WordPress defaults
+    $phpmailer->From     = 'donotreply@uh.edu';
+    $phpmailer->FromName = get_bloginfo('name') ?: 'RCMI';
+});
+
+// Also set the From header at the wp_mail filter level so it's
+// consistent even if phpmailer_init is bypassed by other plugins.
+add_filter('wp_mail_from', function () {
+    return 'donotreply@uh.edu';
+});
+add_filter('wp_mail_from_name', function () {
+    return get_bloginfo('name') ?: 'RCMI';
+});
+
 register_activation_hook(__FILE__, 'rcmi_tickets_activate');
 register_deactivation_hook(__FILE__, 'rcmi_tickets_deactivate');
 
