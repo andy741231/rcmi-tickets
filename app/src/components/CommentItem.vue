@@ -78,6 +78,7 @@
             <!-- Reactions -->
             <div class="mt-3">
                 <ReactionBar :comment-id="comment.id" :reactions="comment.reactions || {}" :current-user-id="currentUserId"
+                    :user-names="userNames"
                     @update:reactions="$emit('update-reactions', comment.id, $event)" />
             </div>
         </div>

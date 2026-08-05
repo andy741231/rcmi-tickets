@@ -627,3 +627,135 @@ function rcmi_tickets_handle_status($request) {
     $row = rcmi_tickets_load_ticket($request['id']);
     return new WP_REST_Response(rcmi_tickets_format_ticket($row), 200);
 }
+
+// ── approval chain helpers ────────────────────────────────────────────
+
+/**
+ * Resolve which approval chain to use for a ticket based on form answers.
+ *
+ * Matches the chain's trigger_field_key / trigger_value against the form
+ * answers. If no trigger is set on a chain, it matches everything. The
+ * first active chain whose trigger matches (or has no trigger) is used.
+ *
+ * @param array $form_answers Map of field_key => value.
+ * @return array|null Chain row (with steps) or null if no chain configured.
+ */
+function rcmi_tickets_resolve_approval_chain($form_answers) {
+    global $wpdb;
+    $chains = $wpdb->get_results(
+        "SELECT * FROM {$wpdb->prefix}rcmi_approval_chains WHERE is_active = 1 ORDER BY id ASC",
+        ARRAY_A
+    );
+    if (!$chains) {
+        return null;
+    }
+
+    foreach ($chains as $chain) {
+        $trigger_key = $chain['trigger_field_key'];
+        $trigger_val = $chain['trigger_value'];
+
+        // No trigger → matches everything
+        if (empty($trigger_key)) {
+            return rcmi_tickets_load_approval_chain($chain['id']);
+        }
+
+        // Check if the form answer for this key matches the trigger value
+        $answer = $form_answers[$trigger_key] ?? null;
+        if ($answer !== null && (string) $answer === (string) $trigger_val) {
+            return rcmi_tickets_load_approval_chain($chain['id']);
+        }
+    }
+
+    // No match — return the first chain as fallback (or null if none)
+    return rcmi_tickets_load_approval_chain($chains[0]['id']);
+}
+
+/**
+ * Initialise the approval chain for a ticket: create one ticket_approvals
+ * row per chain step, all in the given cycle (default 1).
+ *
+ * @param int   $ticket_id
+ * @param array $chain     Chain row (with 'steps' array from rcmi_tickets_load_approval_chain).
+ * @param int   $cycle     Cycle number (1 for initial, incremented on restart).
+ */
+function rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain, $cycle = 1) {
+    global $wpdb;
+    $ticket_id = (int) $ticket_id;
+    $cycle = (int) $cycle;
+    $chain_id = (int) ($chain['id'] ?? 0);
+    $steps = $chain['steps'] ?? [];
+
+    if (!$chain_id || !$steps) {
+        return;
+    }
+
+    $order = 1;
+    foreach ($steps as $step) {
+        $tok = rcmi_tickets_generate_approval_token();
+        $wpdb->insert($wpdb->prefix . 'rcmi_ticket_approvals', [
+            'ticket_id'        => $ticket_id,
+            'chain_id'         => $chain_id,
+            'step_id'          => (int) $step['id'],
+            'sort_order'       => $order,
+            'cycle'            => $cycle,
+            'approver_user_id' => $step['approver_user_id'] !== null ? (int) $step['approver_user_id'] : null,
+            'approver_role'    => $step['approver_role'] ?? null,
+            'status'           => 'pending',
+            'token'            => $tok['token'],
+            'token_expires'    => $tok['expires'],
+        ], ['%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s']);
+        $order++;
+    }
+
+    // Fire action for the first step so notification emails go out
+    $first = $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM {$wpdb->prefix}rcmi_ticket_approvals
+         WHERE ticket_id = %d AND cycle = %d ORDER BY sort_order ASC LIMIT 1",
+        $ticket_id, $cycle
+    ));
+    if ($first) {
+        do_action('rcmi_ticket_approval_step', $ticket_id, (int) $first, 'chain_init');
+    }
+}
+
+/**
+ * Restart the approval chain for a ticket after a rejection.
+ *
+ * Instead of deleting existing rows, this preserves history by:
+ * 1. Finding the current max cycle for the ticket
+ * 2. Marking all pending rows as 'skipped' (token cleared)
+ * 3. Re-initialising the chain at cycle = max_cycle + 1
+ *
+ * @param int $ticket_id
+ */
+function rcmi_tickets_restart_ticket_approval_chain($ticket_id) {
+    global $wpdb;
+    $ticket_id = (int) $ticket_id;
+
+    // Find the chain_id and max cycle from existing approval rows
+    $row = $wpdb->get_row($wpdb->prepare(
+        "SELECT chain_id, MAX(cycle) as max_cycle FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE ticket_id = %d",
+        $ticket_id
+    ), ARRAY_A);
+
+    if (!$row || !$row['chain_id']) {
+        return;
+    }
+
+    $chain_id = (int) $row['chain_id'];
+    $next_cycle = (int) $row['max_cycle'] + 1;
+
+    // Mark all existing pending rows as skipped (preserve history, clear tokens)
+    $wpdb->query($wpdb->prepare(
+        "UPDATE {$wpdb->prefix}rcmi_ticket_approvals
+         SET status = 'skipped', token = NULL
+         WHERE ticket_id = %d AND status = 'pending'",
+        $ticket_id
+    ));
+
+    // Re-init the chain at the next cycle
+    $chain = rcmi_tickets_load_approval_chain($chain_id);
+    if ($chain) {
+        rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain, $next_cycle);
+    }
+}

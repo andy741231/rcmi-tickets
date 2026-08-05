@@ -183,5 +183,73 @@
     .rcmi-priority-high   { color: #c8102e; }
     .rcmi-priority-medium { color: #a66b00; }
     .rcmi-priority-low    { color: #687174; }
+
+    .rcmi-formbuilder-page-header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1.25rem;
+        border-bottom: 1px solid var(--rcmi-border);
+    }
+
+    .rcmi-formbuilder-workspace {
+        display: grid;
+        grid-template-columns: 230px minmax(0, 1fr);
+        gap: 1.25rem;
+        align-items: start;
+    }
+
+    .rcmi-formbuilder-sidebar {
+        display: grid;
+        gap: 1rem;
+        position: sticky;
+        top: 1rem;
+    }
+
+    .rcmi-ticket-detail-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+        gap: 1.5rem;
+        align-items: start;
+    }
+
+    .rcmi-readonly-fields {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+
+    .rcmi-readonly-fields > div {
+        min-width: 0;
+    }
+
+    .rcmi-readonly-fields > div:has(.rcmi-section-label) {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 767px) {
+    .rcmi-ticket-detail-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .rcmi-readonly-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .rcmi-formbuilder-page-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .rcmi-formbuilder-workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .rcmi-formbuilder-sidebar {
+        position: static;
+    }
 }
 

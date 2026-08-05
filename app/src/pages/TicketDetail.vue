@@ -69,7 +69,7 @@
             <!-- Action buttons -->
             <div class="mb-6 flex flex-wrap items-center gap-2 border-b border-gray-200 pb-4">
                 <!-- Status changes -->
-                <template v-if="canChangeStatus('Approved')">
+                <template v-if="canChangeStatus('Approved') && ['Received', 'Pending Approval'].includes(ticket.status)">
                     <button @click="changeStatus('Approved')" :disabled="statusChanging"
                         class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
                         <Icon name="check-circle" /> Approve
@@ -81,7 +81,7 @@
                         <Icon name="x-circle" /> Reject
                     </button>
                 </template>
-                <template v-if="canChangeStatus('Completed')">
+                <template v-if="canChangeStatus('Completed') && ticket.status === 'Approved'">
                     <button @click="changeStatus('Completed')" :disabled="statusChanging"
                         class="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
                         <Icon name="check-badge" /> Complete
@@ -117,13 +117,13 @@
             </div>
 
             <!-- Two-column layout -->
-            <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div class="rcmi-ticket-detail-layout">
                 <!-- Main column -->
-                <div class="lg:col-span-2 space-y-6">
-                    <!-- Description -->
-                    <section class="rcmi-card p-6">
-                        <h3 class="rcmi-section-label mb-4">Description</h3>
-                        <div class="prose-sm text-sm leading-relaxed text-gray-700" v-html="ticket.description"></div>
+                <div class="space-y-6">
+                    <!-- Ticket Details (custom fields) -->
+                    <section v-if="ticket.field_definitions && ticket.field_definitions.length > 0" class="rcmi-card p-6">
+                        <h3 class="rcmi-section-label mb-4">Ticket Details</h3>
+                        <DynamicForm :fields="ticket.field_definitions" :model-value="ticket.field_answers || {}" readonly />
                     </section>
 
                     <!-- Attachments -->
@@ -170,7 +170,13 @@
                             </div>
                             <div>
                                 <dt class="text-xs font-semibold text-gray-500">Author</dt>
-                                <dd class="mt-1 text-sm text-gray-700">{{ ticket.author_name }}</dd>
+                                <dd class="mt-1 flex items-center gap-2 text-sm text-gray-700">
+                                    <span class="rcmi-avatar h-7 w-7 text-xs">{{ initials(ticket.author_name) }}</span>
+                                    <span>{{ ticket.author_name || 'Unknown' }}</span>
+                                </dd>
+                                <dd v-if="ticket.author_email" class="mt-1 pl-9 text-xs text-gray-500">
+                                    <a :href="`mailto:${ticket.author_email}`" class="hover:text-red-700 hover:underline">{{ ticket.author_email }}</a>
+                                </dd>
                             </div>
                             <div v-if="ticket.updated_by_name">
                                 <dt class="text-xs font-semibold text-gray-500">Last Updated By</dt>
@@ -187,18 +193,10 @@
                         </dl>
                     </section>
 
-                    <!-- Assignees card -->
-                    <section class="rcmi-card p-5">
-                        <h3 class="rcmi-section-label mb-4">Assignees</h3>
-                        <div v-if="ticket.assignees && ticket.assignees.length > 0" class="space-y-3">
-                            <div v-for="a in ticket.assignees" :key="a.id" class="flex items-center gap-2.5">
-                                <span class="rcmi-avatar h-8 w-8">
-                                    {{ initials(a.display_name) }}
-                                </span>
-                                <span class="text-sm font-medium text-gray-700">{{ a.display_name }}</span>
-                            </div>
-                        </div>
-                        <p v-else class="text-sm text-gray-500">No assignees yet</p>
+                    <!-- Approval Timeline -->
+                    <section v-if="hasActiveChain" class="rcmi-card p-5">
+                        <h3 class="rcmi-section-label mb-4">Approval Timeline</h3>
+                        <ApprovalTimeline :steps="ticket.approval_history" :chain="ticket.approval_chain" />
                     </section>
 
                     <!-- Tags card -->
@@ -238,6 +236,8 @@ import { useRouter } from 'vue-router';
 import { api } from '../api.js';
 import StatusBadge from '../components/StatusBadge.vue';
 import CommentThread from '../components/CommentThread.vue';
+import DynamicForm from '../components/DynamicForm.vue';
+import ApprovalTimeline from '../components/ApprovalTimeline.vue';
 import Modal from '../components/Modal.vue';
 import Icon from '../components/Icon.vue';
 import { useToast } from '../composables/useToast.js';
@@ -267,6 +267,10 @@ const canEditTicket = computed(() => {
 });
 
 const canDeleteTicket = computed(() => isManager.value);
+
+const hasActiveChain = computed(() => {
+    return ticket.value && ticket.value.approval_history && ticket.value.approval_history.length > 0;
+});
 
 function canChangeStatus(newStatus) {
     if (!ticket.value) return false;

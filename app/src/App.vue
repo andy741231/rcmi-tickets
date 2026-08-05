@@ -6,8 +6,11 @@
                 <h1 class="rcmi-page-title">Tickets</h1>
                 <p class="mt-2 max-w-xl text-sm text-gray-600">Track requests, collaborate with your team, and keep work moving forward.</p>
             </div>
-            <nav class="flex items-center gap-2" aria-label="Ticket navigation">
+            <nav v-if="!isPublic" class="flex flex-wrap items-center gap-2" aria-label="Ticket navigation">
                 <router-link to="/" class="rounded-md px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 hover:text-gray-900">All Tickets</router-link>
+                <router-link to="/approvals" class="rounded-md px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 hover:text-gray-900">Approvals</router-link>
+                <router-link to="/approval-edit" class="rounded-md px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 hover:text-gray-900">Chains</router-link>
+                <router-link to="/form-builder" class="rounded-md px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 hover:text-gray-900">Form Builder</router-link>
                 <router-link to="/create" class="rcmi-button-primary inline-flex items-center px-4 py-2 text-sm shadow-sm">New Ticket</router-link>
             </nav>
         </header>
@@ -20,4 +23,7 @@
 
 <script setup>
 import Toast from './components/Toast.vue';
+
+const config = window.rcmiTickets || {};
+const isPublic = !config.isLoggedIn;
 </script>

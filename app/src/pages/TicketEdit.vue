@@ -23,19 +23,12 @@
             </div>
 
             <form @submit.prevent="submit" class="rcmi-card space-y-6 p-6 sm:p-8">
-                <!-- Title -->
-                <div>
-                    <label for="edit-title" class="rcmi-field-label">Title<span class="rcmi-field-required">*</span></label>
-                    <input id="edit-title" v-model="form.title" type="text" required class="rcmi-input" />
-                </div>
-
-                <!-- Description -->
-                <div>
-                    <label for="edit-description" class="rcmi-field-label">Description<span class="rcmi-field-required">*</span></label>
-                    <textarea id="edit-description" v-model="form.description" required rows="6"
-                        class="rcmi-input resize-y"
-                        @keydown.meta.enter.prevent="submit" @keydown.ctrl.enter.prevent="submit"></textarea>
-                    <p class="rcmi-field-help">Basic HTML allowed. <span class="text-gray-500">⌘/Ctrl + Enter to save.</span></p>
+                <!-- Custom fields -->
+                <div v-if="fieldDefinitions && fieldDefinitions.length > 0">
+                    <span class="rcmi-field-label">Ticket Details</span>
+                    <div class="mt-2">
+                        <DynamicForm :fields="fieldDefinitions" v-model="form.field_answers" />
+                    </div>
                 </div>
 
                 <!-- Priority + Due Date -->
@@ -50,25 +43,6 @@
                         <label for="edit-due-date" class="rcmi-field-label">Due Date</label>
                         <input id="edit-due-date" v-model="form.due_date" type="date" class="rcmi-input" />
                     </div>
-                </div>
-
-                <!-- Assignees -->
-                <div>
-                    <span class="rcmi-field-label">Assignees</span>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                        <label v-for="u in meta.assignable_users" :key="u.id"
-                            class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm transition hover:border-gray-300 has-[:checked]:border-red-300 has-[:checked]:bg-red-50">
-                            <input type="checkbox" :value="u.id" v-model="form.assignee_ids"
-                                class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
-                            <span class="font-medium text-gray-700">{{ u.display_name }}</span>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Tags -->
-                <div>
-                    <label for="edit-tags" class="rcmi-field-label">Tags</label>
-                    <TagInput v-model="selectedTags" :available-tags="meta.tags" />
                 </div>
 
                 <!-- File uploader (ticket already exists, so uploads work) -->
@@ -102,7 +76,7 @@
 import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
-import TagInput from '../components/TagInput.vue';
+import DynamicForm from '../components/DynamicForm.vue';
 import FileUploader from '../components/FileUploader.vue';
 import Icon from '../components/Icon.vue';
 import { useToast } from '../composables/useToast.js';
@@ -110,19 +84,16 @@ import { useToast } from '../composables/useToast.js';
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
 const toast = useToast();
-const meta = reactive({ priorities: [], tags: [], assignable_users: [] });
-const selectedTags = ref([]);
+const meta = reactive({ priorities: [], field_definitions: [] });
+const fieldDefinitions = ref([]);
 const loading = ref(true);
 const submitting = ref(false);
 const error = ref('');
 
 const form = reactive({
-    title: '',
-    description: '',
     priority: 'Medium',
     due_date: '',
-    assignee_ids: [],
-    tag_ids: [],
+    field_answers: {},
     attachments: [],
 });
 
@@ -130,6 +101,7 @@ async function loadMeta() {
     try {
         const data = await api('/meta');
         Object.assign(meta, data);
+        if (data.field_definitions) fieldDefinitions.value = data.field_definitions;
     } catch (e) {
         error.value = 'Failed to load form data.';
     }
@@ -138,13 +110,11 @@ async function loadMeta() {
 async function loadTicket() {
     try {
         const ticket = await api(`/tickets/${props.id}`);
-        form.title = ticket.title || '';
-        form.description = ticket.description || '';
         form.priority = ticket.priority || 'Medium';
         form.due_date = ticket.due_date || '';
-        form.assignee_ids = (ticket.assignees || []).map(a => a.user_id || a.id || a);
+        form.field_answers = ticket.field_answers || {};
         form.attachments = ticket.attachments || [];
-        selectedTags.value = ticket.tags || [];
+        if (ticket.field_definitions) fieldDefinitions.value = ticket.field_definitions;
     } catch (e) {
         error.value = e.message || 'Failed to load ticket.';
     }
@@ -154,7 +124,6 @@ async function submit() {
     submitting.value = true;
     error.value = '';
     try {
-        form.tag_ids = selectedTags.value.map(t => t.id);
         const body = { ...form };
         delete body.attachments;
         await api(`/tickets/${props.id}`, { method: 'PUT', body });
