@@ -76,11 +76,11 @@ function rcmi_tickets_validate_field_config($config, $type) {
                 break;
             case 'cascade_options':
                 if (is_array($v)) {
-                    $co = [];
+                    $co = new stdClass(); // force JSON object, never []
                     foreach ($v as $pv => $subs) {
                         $pv = sanitize_text_field((string) $pv);
                         if (is_array($subs)) {
-                            $co[$pv] = array_values(array_filter(array_map('sanitize_text_field', array_map('strval', $subs))));
+                            $co->{$pv} = array_values(array_filter(array_map('sanitize_text_field', array_map('strval', $subs))));
                         }
                     }
                     $clean['cascade_options'] = $co;
@@ -193,6 +193,14 @@ function rcmi_tickets_load_form_field($id) {
 
 function rcmi_tickets_format_form_field($row) {
     $config = $row['config'] ? json_decode($row['config'], true) : null;
+    if (is_array($config)) {
+        // Force cascade_options to be a JSON object ({}), never an array ([]).
+        // json_decode(..., true) converts {} to [] which then serializes back
+        // as [] — breaking the frontend which expects an object.
+        if (isset($config['cascade_options']) && is_array($config['cascade_options']) && empty($config['cascade_options'])) {
+            $config['cascade_options'] = new stdClass();
+        }
+    }
     return [
         'id'         => (int) $row['id'],
         'field_key'  => $row['field_key'],

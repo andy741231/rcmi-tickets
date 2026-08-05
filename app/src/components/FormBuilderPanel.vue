@@ -243,7 +243,9 @@ watch(() => props.initialFields, (nextFields) => {
         if (!f.config) f.config = {};
         if (!f.config.logic) f.config.logic = { action: 'show', field_key: '', op: 'equals', value: '' };
         if (['dropdown', 'radio', 'checkbox'].includes(f.type) && !f.config.options) f.config.options = [];
-        if (f.type === 'dropdown' && !f.config.cascade_options) f.config.cascade_options = {};
+        if (f.type === 'dropdown') {
+            if (!f.config.cascade_options || Array.isArray(f.config.cascade_options)) f.config.cascade_options = {};
+        }
     }
     editingId.value = null;
 }, { immediate: true, flush: 'pre' });
@@ -382,8 +384,13 @@ function saveField(f) {
             if (['dropdown', 'radio', 'checkbox'].includes(merged.type) && !merged.config.options) {
                 merged.config.options = [];
             }
-            if (merged.type === 'dropdown' && !merged.config.cascade_options) {
-                merged.config.cascade_options = {};
+            if (merged.type === 'dropdown') {
+                // Ensure cascade_options is always a plain object ({}), never an
+                // array ([]). PHP's empty array serializes to JSON [] which loses
+                // string-keyed properties on JSON.stringify in JS.
+                if (!merged.config.cascade_options || Array.isArray(merged.config.cascade_options)) {
+                    merged.config.cascade_options = {};
+                }
             }
             fields.value[idx] = merged;
         }
