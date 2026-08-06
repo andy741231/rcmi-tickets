@@ -30,9 +30,9 @@
         </div>
 
         <!-- Form -->
-        <div v-else class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div v-else>
             <!-- Main form -->
-            <form @submit.prevent="submit" class="rcmi-card space-y-6 p-6 sm:p-8 lg:col-span-2">
+            <form @submit.prevent="submit" class="rcmi-card space-y-6 p-6 sm:p-8">
                 <!-- Public: name + email fields -->
                 <div v-if="isPublic" class="grid grid-cols-1 gap-5 sm:grid-cols-2">
                     <div>
@@ -101,27 +101,6 @@
                     <router-link v-if="!isPublic" to="/" class="rcmi-button-ghost px-3 py-2.5 text-sm">Cancel</router-link>
                 </div>
             </form>
-
-            <!-- Sidebar -->
-            <aside class="space-y-4">
-                <div class="rcmi-card p-5">
-                    <h3 class="rcmi-section-label mb-3">{{ isPublic ? 'What to expect' : 'Tips' }}</h3>
-                    <ul v-if="isPublic" class="space-y-2 text-xs text-gray-600">
-                        <li>• Fill all required fields (marked <span class="text-red-700">*</span>).</li>
-                        <li>• Provide a valid email — you'll receive a confirmation receipt.</li>
-                        <li>• Our team will review your request and follow up by email.</li>
-                    </ul>
-                    <ul v-else class="space-y-2 text-xs text-gray-600">
-                        <li>• Fill all required custom fields (marked <span class="text-red-700">*</span>).</li>
-                        <li>• Attach screenshots or docs to speed up approval.</li>
-                        <li>• Files are kept in your browser until you submit.</li>
-                    </ul>
-                </div>
-                <div v-if="stagedFileCount > 0" class="rcmi-card p-5">
-                    <h3 class="rcmi-section-label mb-3">{{ stagedFileCount }} file(s) staged</h3>
-                    <p class="text-xs text-gray-600">Will upload after you submit.</p>
-                </div>
-            </aside>
         </div>
     </div>
 </template>
