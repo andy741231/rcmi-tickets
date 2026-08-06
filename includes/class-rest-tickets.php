@@ -791,9 +791,10 @@ function rcmi_tickets_handle_update($request) {
         if (isset($request[$field])) {
             $val = $request[$field];
             // Empty string → NULL for DATE columns (strict SQL mode rejects '')
+            // Format must be null (not %s) so $wpdb emits SQL NULL, not ''
             if ($field === 'due_date' && $val === '') {
                 $data[$field] = null;
-                $format[] = '%s';
+                $format[] = null;
             } else {
                 $data[$field] = $val;
                 $format[] = $fmt;
