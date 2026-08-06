@@ -22,7 +22,15 @@ export const routes = [
 ];
 
 export function publicGuard(router) {
-    if (!isPublic) return;
+    // Logged-in user on /login → redirect to ticket list
+    if (!isPublic) {
+        router.beforeEach((to) => {
+            if (to.name === 'login') {
+                return { name: 'ticket-list' };
+            }
+        });
+        return;
+    }
     // In public mode, /create and /login are allowed; everything else
     // redirects to /create (the public submission form).
     router.beforeEach((to) => {
