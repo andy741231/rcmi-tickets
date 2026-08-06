@@ -186,6 +186,45 @@ function rcmi_tickets_user_can_approve_row($user_id, $approval_row) {
 }
 
 /**
+ * Check whether a user is an approver anywhere in the ticket's approval
+ * chain (any step, not just the current pending one). This is used for
+ * view permission so that future-step approvers can see the ticket
+ * before it reaches their step.
+ */
+function rcmi_tickets_user_in_approval_chain($user_id, $ticket_id) {
+    global $wpdb;
+    $user_id = (int) $user_id;
+    if (!$user_id) {
+        return false;
+    }
+
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT approver_user_id, approver_role FROM {$wpdb->prefix}rcmi_ticket_approvals
+         WHERE ticket_id = %d
+         AND cycle = (SELECT MAX(cycle) FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE ticket_id = %d)",
+        (int) $ticket_id, (int) $ticket_id
+    ), ARRAY_A);
+
+    if (!$rows) {
+        return false;
+    }
+
+    $user = get_userdata($user_id);
+    $user_roles = $user ? (array) $user->roles : [];
+
+    foreach ($rows as $r) {
+        if ($r['approver_user_id'] !== null && (int) $r['approver_user_id'] === $user_id) {
+            return true;
+        }
+        if (!empty($r['approver_role']) && in_array($r['approver_role'], $user_roles, true)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
  * Generate a fresh token + expiry for an approval row.
  */
 function rcmi_tickets_generate_approval_token() {

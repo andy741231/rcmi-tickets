@@ -593,7 +593,7 @@ function rcmi_tickets_handle_list($request) {
     $where = ['1=1'];
     $args = [];
 
-    // Scope: non-managers can only see assigned or submitted
+    // Scope: non-managers can only see assigned, submitted, or approval-chain
     $scope = $params['scope'] ?? 'all';
     if (!$is_manager || $scope !== 'all') {
         if ($scope === 'assigned') {
@@ -603,10 +603,28 @@ function rcmi_tickets_handle_list($request) {
             $where[] = 't.author_id = %d';
             $args[] = $user_id;
         } else {
-            // Non-manager default: assigned OR submitted
-            $where[] = "(t.author_id = %d OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d))";
-            $args[] = $user_id;
-            $args[] = $user_id;
+            // Non-manager default: assigned OR submitted OR in approval chain
+            $vis = "(t.author_id = %d OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
+            $vis_args = [$user_id, $user_id];
+
+            // Approval chain: specific user match
+            $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_user_id = %d)";
+            $vis_args[] = $user_id;
+
+            // Approval chain: role-based match
+            $current_user = wp_get_current_user();
+            $user_roles = (array) $current_user->roles;
+            if ($user_roles) {
+                $role_placeholders = implode(',', array_fill(0, count($user_roles), '%s'));
+                $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_role IN ($role_placeholders))";
+                foreach ($user_roles as $role) {
+                    $vis_args[] = $role;
+                }
+            }
+
+            $vis .= ")";
+            $where[] = $vis;
+            $args = array_merge($args, $vis_args);
         }
     }
 

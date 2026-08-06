@@ -91,9 +91,30 @@ function rcmi_tickets_handle_meta() {
 
     // Inbox summary counts (across all visible tickets, not just current page)
     $is_manager = rcmi_tickets_can($user_id, 'manage');
-    $vis_where = $is_manager ? '' : "WHERE t.author_id = %d OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
-    $vis_args = $is_manager ? [] : [$user_id, $user_id];
-    $vis_clause = $is_manager ? '' : $wpdb->prepare($vis_where, $vis_args);
+    if ($is_manager) {
+        $vis_clause = '';
+        $vis_args = [];
+    } else {
+        $vis = "WHERE t.author_id = %d OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
+        $vis_args = [$user_id, $user_id];
+
+        // Approval chain: specific user match
+        $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_user_id = %d)";
+        $vis_args[] = $user_id;
+
+        // Approval chain: role-based match
+        $current_user_obj = get_userdata($user_id);
+        $user_roles = $current_user_obj ? (array) $current_user_obj->roles : [];
+        if ($user_roles) {
+            $role_placeholders = implode(',', array_fill(0, count($user_roles), '%s'));
+            $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_role IN ($role_placeholders))";
+            foreach ($user_roles as $role) {
+                $vis_args[] = $role;
+            }
+        }
+
+        $vis_clause = $wpdb->prepare($vis, $vis_args);
+    }
 
     $status_counts = [];
     $status_rows = $wpdb->get_results(

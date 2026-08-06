@@ -74,9 +74,12 @@ function rcmi_tickets_can($user_id, $action, $ticket = null, $new_status = null)
                 return true;
             }
             // Schema v3: chain approvers can view the ticket (Decision A)
+            // This includes approvers in future steps who haven't been
+            // activated yet — they can see the ticket but not approve until
+            // their step becomes the current pending one.
             $ticket_id = isset($ticket['id']) ? (int) $ticket['id'] : 0;
-            if ($ticket_id && function_exists('rcmi_tickets_user_can_approve_ticket')) {
-                return rcmi_tickets_user_can_approve_ticket($user_id, $ticket_id);
+            if ($ticket_id && function_exists('rcmi_tickets_user_in_approval_chain')) {
+                return rcmi_tickets_user_in_approval_chain($user_id, $ticket_id);
             }
             return false;
 
