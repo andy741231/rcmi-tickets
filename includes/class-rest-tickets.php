@@ -70,6 +70,19 @@ function rcmi_tickets_register_ticket_routes() {
         ],
     ]);
 
+    register_rest_route($namespace, '/tickets/batch-delete', [
+        [
+            'methods'             => 'POST',
+            'callback'            => 'rcmi_tickets_handle_batch_delete',
+            'permission_callback' => function () {
+                return rcmi_tickets_can(get_current_user_id(), 'manage');
+            },
+            'args'                => [
+                'ids' => ['type' => 'array', 'items' => ['type' => 'integer'], 'required' => true],
+            ],
+        ],
+    ]);
+
     register_rest_route($namespace, '/tickets/(?P<id>\d+)/status', [
         [
             'methods'             => 'POST',
@@ -857,9 +870,9 @@ function rcmi_tickets_handle_update($request) {
     return new WP_REST_Response(rcmi_tickets_format_ticket($row), 200);
 }
 
-function rcmi_tickets_handle_delete($request) {
+function rcmi_tickets_delete_ticket_data($ticket_id) {
     global $wpdb;
-    $ticket_id = (int) $request['id'];
+    $ticket_id = (int) $ticket_id;
 
     // Delete attachment files from disk
     $attachments = rcmi_tickets_get_ticket_attachments($ticket_id);
@@ -902,8 +915,27 @@ function rcmi_tickets_handle_delete($request) {
     if (is_dir($dir)) {
         @rmdir($dir);
     }
+}
 
+function rcmi_tickets_handle_delete($request) {
+    $ticket_id = (int) $request['id'];
+    rcmi_tickets_delete_ticket_data($ticket_id);
     return new WP_REST_Response(['deleted' => true, 'id' => $ticket_id], 200);
+}
+
+function rcmi_tickets_handle_batch_delete($request) {
+    $ids = array_filter(array_map('intval', (array) $request['ids']));
+    if (!$ids) {
+        return new WP_Error('rcmi_tickets_no_ids', 'No ticket IDs provided.', ['status' => 400]);
+    }
+
+    $deleted = [];
+    foreach ($ids as $id) {
+        rcmi_tickets_delete_ticket_data($id);
+        $deleted[] = $id;
+    }
+
+    return new WP_REST_Response(['deleted' => true, 'ids' => $deleted, 'count' => count($deleted)], 200);
 }
 
 function rcmi_tickets_handle_status($request) {

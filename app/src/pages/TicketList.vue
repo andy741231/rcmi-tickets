@@ -50,6 +50,18 @@
                 <Icon :name="order === 'desc' ? 'arrow-down' : 'arrow-up'" />
             </button>
             <div class="ml-auto flex items-center gap-2">
+                <template v-if="isManager && tickets.length > 0">
+                    <button v-if="selectedIds.size > 0" @click="confirmBatchDelete = true"
+                        class="rcmi-button-danger inline-flex items-center gap-1.5 px-3 py-2 text-sm">
+                        <Icon name="trash" /> Delete ({{ selectedIds.size }})
+                    </button>
+                    <button v-if="selectMode" @click="clearSelection" class="rcmi-button-ghost px-3 py-2 text-sm">
+                        Cancel
+                    </button>
+                    <button v-else @click="selectMode = true" class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3 py-2 text-sm">
+                        <Icon name="trash" /> Select
+                    </button>
+                </template>
                 <label for="per-page" class="text-sm text-gray-600">Per page</label>
                 <select id="per-page" v-model.number="perPage" @change="onPerPageChange" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
                     <option :value="3">3</option>
@@ -122,15 +134,23 @@
 
         <!-- Card view -->
         <div v-else-if="view === 'card'" class="rcmi-ticket-card-grid grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3">
-            <router-link v-for="t in tickets" :key="t.id" :to="`/ticket/${t.id}`"
-                class="group block rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md">
+            <div v-for="t in tickets" :key="t.id"
+                :class="['group rounded-xl border bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md', selectMode ? 'cursor-default' : '', selectedIds.has(t.id) ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-200']">
                 <!-- Header -->
                 <div class="mb-3 flex items-start justify-between gap-3">
-                    <span class="text-xs font-semibold tracking-wide text-gray-500">#{{ t.id }}</span>
+                    <div class="flex items-center gap-2">
+                        <input v-if="selectMode" type="checkbox" :checked="selectedIds.has(t.id)"
+                            @change="toggleSelect(t.id)"
+                            class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                        <span class="text-xs font-semibold tracking-wide text-gray-500">#{{ t.id }}</span>
+                    </div>
                     <StatusBadge :status="t.status" />
                 </div>
                 <!-- Title -->
-                <h3 class="mb-3 line-clamp-2 text-base font-semibold leading-snug text-gray-900 group-hover:text-red-800">{{ t.title }}</h3>
+                <router-link :to="selectMode ? null : `/ticket/${t.id}`" @click.prevent="selectMode ? toggleSelect(t.id) : null"
+                    class="block mb-3 line-clamp-2 text-base font-semibold leading-snug text-gray-900 group-hover:text-red-800">
+                    {{ t.title }}
+                </router-link>
                 <!-- Approval callout -->
                 <div v-if="t.status === 'Pending Approval' && t.approval_history" class="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
                     <span v-if="t.current_approval_step">Approval step {{ currentStepNumber(t) }} of {{ t.approval_history.length }}</span>
@@ -146,7 +166,7 @@
                     </span>
                     <span v-else class="text-gray-400">No due date</span>
                 </div>
-            </router-link>
+            </div>
         </div>
 
         <!-- List view (table) -->
@@ -154,6 +174,10 @@
             <table class="rcmi-inbox-table">
                 <thead>
                     <tr>
+                        <th v-if="selectMode" style="width: 2.5rem">
+                            <input type="checkbox" :checked="allSelected" @change="toggleSelectAll"
+                                class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                        </th>
                         <th style="width: 3rem"></th>
                         <th>Ticket</th>
                         <th>Status</th>
@@ -164,7 +188,12 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="t in tickets" :key="t.id">
+                    <tr v-for="t in tickets" :key="t.id" :class="selectMode && selectedIds.has(t.id) ? 'bg-red-50' : ''">
+                        <td v-if="selectMode">
+                            <input type="checkbox" :checked="selectedIds.has(t.id)"
+                                @change="toggleSelect(t.id)"
+                                class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                        </td>
                         <td class="whitespace-nowrap">
                             <span v-if="isOverdue(t.due_date, t.status)" class="rcmi-row-indicator rcmi-row-indicator-danger" aria-label="Overdue"></span>
                             <span v-else-if="t.status === 'Pending Approval'" class="rcmi-row-indicator rcmi-row-indicator-warning" aria-label="Pending approval"></span>
@@ -203,6 +232,22 @@
         <!-- Pagination -->
         <Pagination v-if="!loading && tickets.length > 0" :page="page" :per-page="perPage" :total="total"
             :total-pages="totalPages" @change="onPageChange" />
+
+        <!-- Batch delete confirmation modal -->
+        <Modal v-if="confirmBatchDelete" @close="confirmBatchDelete = false" title="Delete tickets">
+            <p class="text-sm text-gray-700">
+                Delete <strong class="text-gray-900">{{ selectedIds.size }} ticket(s)</strong> permanently?
+                This will remove all comments, attachments, and approval history.
+            </p>
+            <template #footer>
+                <button @click="batchDelete" :disabled="batchDeleting"
+                    class="rcmi-button-danger px-4 py-2 text-sm disabled:opacity-50">
+                    {{ batchDeleting ? 'Deleting…' : 'Yes, delete' }}
+                </button>
+                <button @click="confirmBatchDelete = false"
+                    class="rcmi-button-secondary px-4 py-2 text-sm">Cancel</button>
+            </template>
+        </Modal>
     </div>
 </template>
 
@@ -213,8 +258,11 @@ import FilterBar from '../components/FilterBar.vue';
 import StatusBadge from '../components/StatusBadge.vue';
 import Pagination from '../components/Pagination.vue';
 import Icon from '../components/Icon.vue';
+import Modal from '../components/Modal.vue';
+import { useToast } from '../composables/useToast.js';
 
-const meta = reactive({ statuses: [], priorities: [], tags: [], assignable_users: [], inbox_summary: null });
+const toast = useToast();
+const meta = reactive({ statuses: [], priorities: [], tags: [], assignable_users: [], inbox_summary: null, caps: {} });
 const tickets = ref([]);
 const loading = ref(true);
 const loadError = ref('');
@@ -227,6 +275,50 @@ const total = ref(0);
 const totalPages = ref(0);
 const filters = ref({ search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '' });
 const queue = ref('all');
+
+// Batch delete state
+const selectMode = ref(false);
+const selectedIds = ref(new Set());
+const confirmBatchDelete = ref(false);
+const batchDeleting = ref(false);
+
+const isManager = computed(() => meta.caps?.manage === true);
+const allSelected = computed(() => tickets.value.length > 0 && tickets.value.every(t => selectedIds.value.has(t.id)));
+
+function toggleSelect(id) {
+    const next = new Set(selectedIds.value);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    selectedIds.value = next;
+}
+
+function toggleSelectAll() {
+    if (allSelected.value) {
+        selectedIds.value = new Set();
+    } else {
+        selectedIds.value = new Set(tickets.value.map(t => t.id));
+    }
+}
+
+function clearSelection() {
+    selectMode.value = false;
+    selectedIds.value = new Set();
+}
+
+async function batchDelete() {
+    batchDeleting.value = true;
+    try {
+        const ids = [...selectedIds.value];
+        await api('/tickets/batch-delete', { method: 'POST', body: { ids } });
+        toast.success(`${ids.length} ticket(s) deleted`);
+        confirmBatchDelete.value = false;
+        clearSelection();
+        await loadTickets();
+    } catch (e) {
+        toast.error(e.message || 'Failed to delete tickets');
+    } finally {
+        batchDeleting.value = false;
+    }
+}
 
 const activeFilterCount = computed(() => {
     let c = 0;
