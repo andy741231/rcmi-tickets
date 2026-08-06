@@ -269,8 +269,56 @@ function rcmi_tickets_email_approval_step($ticket_id, $approval_id, $event) {
     $title = rcmi_tickets_email_esc($ticket['title']);
     $ticket_url = esc_url(rcmi_tickets_email_ticket_url($ticket_id));
     $step_label = sprintf(__('Step %d', 'rcmi-tickets'), (int) $approval['sort_order']);
-    $approve_url = esc_url(rcmi_tickets_email_approval_action_url($approval_id, $approval['token'], 'approve'));
-    $reject_url = esc_url(rcmi_tickets_email_approval_action_url($approval_id, $approval['token'], 'reject'));
+
+    // Author info
+    $author = get_userdata((int) $ticket['author_id']);
+    $author_name = $author ? $author->display_name : __('Unknown', 'rcmi-tickets');
+    $author_email = $author ? $author->user_email : '';
+    $author_html = rcmi_tickets_email_esc($author_name) . ($author_email ? ' &lt;' . rcmi_tickets_email_esc($author_email) . '&gt;' : '');
+
+    // Form answers
+    $form_answers = rcmi_tickets_get_ticket_form_answers($ticket_id);
+    $form_fields = rcmi_tickets_get_all_form_fields();
+    $field_map = [];
+    foreach ($form_fields as $f) {
+        $field_map[$f['field_key']] = $f;
+    }
+
+    // Build ticket details HTML + plain
+    $details_html = '';
+    $details_plain = '';
+
+    // Core fields
+    $detail_rows = [
+        'Priority'  => $ticket['priority'],
+        'Due date'  => $ticket['due_date'] ?: '—',
+        'Status'    => $ticket['status'],
+    ];
+    foreach ($detail_rows as $label => $val) {
+        $details_html .= '<tr><td style="padding:4px 12px 4px 0;color:#666;font-size:13px;white-space:nowrap;">' . rcmi_tickets_email_esc($label) . ':</td>'
+            . '<td style="padding:4px 0;font-size:13px;">' . rcmi_tickets_email_esc($val) . '</td></tr>';
+        $details_plain .= $label . ': ' . $val . "\n";
+    }
+
+    // Form answers
+    foreach ($form_fields as $f) {
+        $key = $f['field_key'];
+        if (!array_key_exists($key, $form_answers)) continue;
+        $val = $form_answers[$key];
+        if (is_array($val)) $val = implode(', ', $val);
+        if ($val === '' || $val === null) $val = '—';
+        $details_html .= '<tr><td style="padding:4px 12px 4px 0;color:#666;font-size:13px;white-space:nowrap;">' . rcmi_tickets_email_esc($f['label']) . ':</td>'
+            . '<td style="padding:4px 0;font-size:13px;">' . rcmi_tickets_email_esc($val) . '</td></tr>';
+        $details_plain .= $f['label'] . ': ' . $val . "\n";
+    }
+
+    // Description
+    $desc_text = $ticket['description_text'] ?: wp_strip_all_tags($ticket['description']);
+    if ($desc_text) {
+        $details_html .= '<tr><td style="padding:4px 12px 4px 0;color:#666;font-size:13px;white-space:nowrap;vertical-align:top;">Description:</td>'
+            . '<td style="padding:4px 0;font-size:13px;">' . nl2br(rcmi_tickets_email_esc(mb_substr($desc_text, 0, 500))) . (mb_strlen($desc_text) > 500 ? '…' : '') . '</td></tr>';
+        $details_plain .= 'Description: ' . mb_substr($desc_text, 0, 500) . (mb_strlen($desc_text) > 500 ? '…' : '') . "\n";
+    }
 
     $subject = sprintf(__('Approval needed: ticket #%d %s', 'rcmi-tickets'), $ticket_id, $ticket['title']);
 
@@ -278,19 +326,17 @@ function rcmi_tickets_email_approval_step($ticket_id, $approval_id, $event) {
         . '<h2>' . sprintf(__('Your approval is requested (ticket #%d)', 'rcmi-tickets'), $ticket_id) . '</h2>'
         . '<p><strong>' . __('Title:', 'rcmi-tickets') . '</strong> ' . $title . '</p>'
         . '<p><strong>' . __('Stage:', 'rcmi-tickets') . '</strong> ' . rcmi_tickets_email_esc($step_label) . '</p>'
-        . '<p style="margin-top:1.5rem;">'
-        . '<a href="' . $approve_url . '" style="display:inline-block;padding:.6rem 1.2rem;background:#00866c;color:#fff;text-decoration:none;border-radius:.375rem;margin-right:.5rem;">' . __('Approve', 'rcmi-tickets') . '</a>'
-        . '<a href="' . $reject_url . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('Reject', 'rcmi-tickets') . '</a>'
-        . '</p>'
-        . '<p style="margin-top:1rem;color:#666;font-size:13px;">' . __('Or view the ticket and decide there:', 'rcmi-tickets') . ' <a href="' . $ticket_url . '">' . $ticket_url . '</a></p>'
+        . '<p><strong>' . __('Ticket submitted by:', 'rcmi-tickets') . '</strong> ' . $author_html . '</p>'
+        . '<p style="margin-top:1rem;"><a href="' . $ticket_url . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('View ticket', 'rcmi-tickets') . '</a></p>'
+        . '<h3 style="margin-top:1.5rem;font-size:15px;color:#333;">' . __('Ticket details', 'rcmi-tickets') . '</h3>'
+        . '<table style="border-collapse:collapse;margin-top:.5rem;">' . $details_html . '</table>'
         . '</body></html>';
 
     $plain = sprintf(
-        "Your approval is requested (ticket #%d)\n\nTitle: %s\nStage: %s\n\nApprove: %s\nReject: %s\n\nView ticket: %s",
-        $ticket_id, $ticket['title'], $step_label,
-        wp_strip_all_tags($approve_url),
-        wp_strip_all_tags($reject_url),
-        wp_strip_all_tags($ticket_url)
+        "Your approval is requested (ticket #%d)\n\nTitle: %s\nStage: %s\nTicket submitted by: %s <%s>\n\nView ticket: %s\n\nTicket details:\n%s",
+        $ticket_id, $ticket['title'], $step_label, $author_name, $author_email,
+        wp_strip_all_tags($ticket_url),
+        $details_plain
     );
 
     rcmi_tickets_send_email($recipients, $subject, $html, $plain);
