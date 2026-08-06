@@ -11,7 +11,6 @@
             </button>
             <input ref="fileInput" type="file" multiple class="hidden" @change="onFileSelect" />
             <p class="mt-2 text-xs text-gray-500">Max 10MB. Images, PDF, Office docs, ZIP allowed.</p>
-            <p class="mt-1 text-xs text-amber-700">Files stay in your browser until you submit — refreshing the page clears them.</p>
         </div>
 
         <!-- Rejected files toast (inline) -->
