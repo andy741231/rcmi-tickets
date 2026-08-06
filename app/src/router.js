@@ -5,6 +5,7 @@ import TicketEdit from './pages/TicketEdit.vue';
 import ApprovalCenter from './pages/ApprovalCenter.vue';
 import ApprovalChainEditor from './pages/ApprovalChainEditor.vue';
 import FormBuilderPage from './pages/FormBuilderPage.vue';
+import LoginPage from './pages/LoginPage.vue';
 
 const config = window.rcmiTickets || {};
 const isPublic = !config.isLoggedIn;
@@ -17,13 +18,15 @@ export const routes = [
     { path: '/approvals', name: 'approval-center', component: ApprovalCenter },
     { path: '/approval-edit', name: 'approval-chain-editor', component: ApprovalChainEditor },
     { path: '/form-builder', name: 'form-builder', component: FormBuilderPage },
+    { path: '/login', name: 'login', component: LoginPage },
 ];
 
 export function publicGuard(router) {
     if (!isPublic) return;
-    // In public mode, only /create is allowed; everything else redirects to /create
+    // In public mode, /create and /login are allowed; everything else
+    // redirects to /create (the public submission form).
     router.beforeEach((to) => {
-        if (to.name !== 'ticket-create') {
+        if (to.name !== 'ticket-create' && to.name !== 'login') {
             return { name: 'ticket-create' };
         }
     });

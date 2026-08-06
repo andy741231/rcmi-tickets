@@ -37,7 +37,14 @@ export async function api(path, { method = 'GET', body, headers = {}, params } =
     });
 
     if (res.status === 401) {
-        window.location.href = config.loginUrl;
+        // Redirect to the in-app login page (hash route) instead of
+        // the raw WordPress wp-login.php. The login page handles AJAX
+        // auth and reloads with a fresh nonce on success.
+        if (config.isLoggedIn === false) {
+            window.location.hash = '#/login';
+        } else {
+            window.location.href = config.loginUrl;
+        }
         throw new Error('Unauthorized');
     }
 

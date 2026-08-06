@@ -269,7 +269,66 @@ function rcmi_tickets_enqueue_app() {
         'nonce'    => wp_create_nonce('wp_rest'),
         'loginUrl' => wp_login_url(get_permalink()),
         'isLoggedIn' => is_user_logged_in(),
+        'ajaxUrl'  => admin_url('admin-ajax.php'),
+        'appUrl'   => get_permalink(),
     ]);
+}
+
+// ============================================================
+// AJAX LOGIN — allows the Vue login page to authenticate without
+// redirecting to wp-login.php. Returns JSON success/error.
+// ============================================================
+add_action('wp_ajax_nopriv_rcmi_tickets_ajax_login', 'rcmi_tickets_ajax_login');
+add_action('wp_ajax_rcmi_tickets_ajax_login', 'rcmi_tickets_ajax_login');
+
+function rcmi_tickets_ajax_login() {
+    // Verify the wp_rest nonce (same one localized to the app)
+    check_ajax_referer('wp_rest', 'nonce');
+
+    $creds = [
+        'user_login'    => sanitize_user($_POST['user_login'] ?? ''),
+        'user_password' => $_POST['user_password'] ?? '',
+        'remember'      => !empty($_POST['rememberme']) ? true : false,
+    ];
+
+    if (empty($creds['user_login']) || empty($creds['user_password'])) {
+        wp_send_json_error(['message' => 'Please enter both username and password.'], 400);
+    }
+
+    $user = wp_signon($creds, is_ssl());
+
+    if (is_wp_error($user)) {
+        wp_send_json_error(['message' => 'Invalid username or password.'], 401);
+    }
+
+    wp_send_json_success([
+        'user_id'   => $user->ID,
+        'display_name' => $user->display_name,
+    ]);
+}
+
+// ============================================================
+// AJAX PASSWORD RESET — triggers WordPress's lostpassword flow
+// without redirecting to wp-login.php.
+// ============================================================
+add_action('wp_ajax_nopriv_rcmi_tickets_ajax_reset', 'rcmi_tickets_ajax_reset');
+add_action('wp_ajax_rcmi_tickets_ajax_reset', 'rcmi_tickets_ajax_reset');
+
+function rcmi_tickets_ajax_reset() {
+    check_ajax_referer('wp_rest', 'nonce');
+
+    $user_login = sanitize_user($_POST['user_login'] ?? '');
+    if (empty($user_login)) {
+        wp_send_json_error(['message' => 'Please enter a username or email.'], 400);
+    }
+
+    // Use WordPress's retrieve_password which sends the reset email.
+    // It returns WP_Error on failure or true on success.
+    $result = retrieve_password($user_login);
+
+    // Always return a generic success message — don't leak whether
+    // the account exists (security best practice).
+    wp_send_json_success(['message' => 'If an account exists for that email/username, a reset link has been sent.']);
 }
 
 add_filter('script_loader_tag', 'rcmi_tickets_module_script', 10, 3);

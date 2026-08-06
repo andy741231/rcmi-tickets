@@ -157,6 +157,134 @@
         opacity: 0;
     }
 
+    /* ── Login page ──────────────────────────────────────────────── */
+
+    .rcmi-login-page {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 60vh;
+        padding: 2rem 1rem;
+    }
+
+    .rcmi-login-card {
+        width: 100%;
+        max-width: 420px;
+        background: var(--rcmi-surface);
+        border: 1px solid var(--rcmi-border);
+        border-radius: var(--rcmi-radius-lg);
+        box-shadow: var(--rcmi-shadow-md);
+        padding: 2.5rem;
+    }
+
+    .rcmi-login-brand {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+
+    .rcmi-login-brand .rcmi-eyebrow {
+        font-size: 0.625rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--rcmi-muted);
+        margin-bottom: 0.25rem;
+    }
+
+    .rcmi-login-title {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--rcmi-ink);
+    }
+
+    .rcmi-login-form {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+    }
+
+    .rcmi-login-heading {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--rcmi-ink);
+    }
+
+    .rcmi-login-subtitle {
+        font-size: 0.8125rem;
+        color: var(--rcmi-muted);
+        margin-top: -0.75rem;
+    }
+
+    .rcmi-login-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.375rem;
+    }
+
+    .rcmi-login-remember {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.8125rem;
+        color: var(--rcmi-muted);
+        cursor: pointer;
+    }
+
+    .rcmi-login-error {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: 1px solid var(--rcmi-danger);
+        background: var(--rcmi-danger-soft);
+        color: var(--rcmi-danger);
+        border-radius: var(--rcmi-radius-sm);
+        padding: 0.625rem 0.875rem;
+        font-size: 0.8125rem;
+    }
+
+    .rcmi-login-success {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: 1px solid var(--rcmi-success);
+        background: var(--rcmi-success-soft);
+        color: var(--rcmi-success);
+        border-radius: var(--rcmi-radius-sm);
+        padding: 0.625rem 0.875rem;
+        font-size: 0.8125rem;
+    }
+
+    .rcmi-login-link {
+        background: none;
+        border: none;
+        color: var(--rcmi-red);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+        text-align: center;
+        padding: 0.25rem;
+        transition: color 150ms ease;
+    }
+
+    .rcmi-login-link:hover {
+        color: var(--rcmi-red-dark);
+        text-decoration: underline;
+    }
+
+    .rcmi-login-footer {
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--rcmi-border);
+        text-align: center;
+    }
+
+    .rcmi-login-footer p {
+        font-size: 0.8125rem;
+        color: var(--rcmi-muted);
+        margin-bottom: 0.5rem;
+    }
+
     .rcmi-avatar {
         display: inline-flex;
         align-items: center;
