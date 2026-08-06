@@ -68,8 +68,8 @@
 
             <!-- Action buttons -->
             <div class="mb-6 flex flex-wrap items-center gap-2 border-b border-gray-200 pb-4">
-                <!-- Rejected: Pending Resubmission — show message instead of buttons -->
-                <div v-if="ticket.status === 'Rejected: Pending Resubmission'" class="w-full rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <!-- Rejected: Pending Revision — show message instead of buttons -->
+                <div v-if="ticket.status === 'Rejected: Pending Revision'" class="w-full rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                     <span class="inline-flex items-center gap-2">
                         <Icon name="alert" />
                         Please update ticket and resubmit for approval.
@@ -331,7 +331,7 @@ const canEditTicket = computed(() => {
     if (!ticket.value) return false;
     if (isManager.value) return true;
     // Author can edit when status is Received or rejected (pending resubmission)
-    return isAuthor.value && ['Received', 'Rejected: Pending Resubmission'].includes(ticket.value.status);
+    return isAuthor.value && ['Received', 'Rejected: Pending Revision'].includes(ticket.value.status);
 });
 
 const canDeleteTicket = computed(() => isManager.value);

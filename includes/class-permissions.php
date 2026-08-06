@@ -91,7 +91,7 @@ function rcmi_tickets_can($user_id, $action, $ticket = null, $new_status = null)
                 return true;
             }
             $t = rcmi_tickets_normalize_ticket($ticket);
-            return $t['author_id'] === $user_id && in_array($t['status'], ['Received', 'Rejected: Pending Resubmission'], true);
+            return $t['author_id'] === $user_id && in_array($t['status'], ['Received', 'Rejected: Pending Revision'], true);
 
         case 'delete':
         case 'pin':

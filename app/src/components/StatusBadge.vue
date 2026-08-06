@@ -18,7 +18,7 @@ const classes = {
     'Pending Approval':  'bg-purple-50 text-purple-800 ring-1 ring-inset ring-purple-200',
     'Approved':          'bg-blue-50 text-blue-800 ring-1 ring-inset ring-blue-200',
     'Rejected':          'bg-red-50 text-red-800 ring-1 ring-inset ring-red-200',
-    'Rejected: Pending Resubmission': 'bg-orange-50 text-orange-800 ring-1 ring-inset ring-orange-200',
+    'Rejected: Pending Revision': 'bg-orange-50 text-orange-800 ring-1 ring-inset ring-orange-200',
     'Completed':         'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200',
 };
 
@@ -27,7 +27,7 @@ const icons = {
     'Pending Approval':  'bell',
     'Approved':          'check-circle',
     'Rejected':          'x-circle',
-    'Rejected: Pending Resubmission': 'alert',
+    'Rejected: Pending Revision': 'alert',
     'Completed':         'check-badge',
 };
 
