@@ -72,7 +72,7 @@
                 <div v-if="ticket.status === 'Rejected: Pending Revision'" class="w-full rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                     <span class="inline-flex items-center gap-2">
                         <Icon name="alert" />
-                        Ticket has been sent back for revision.
+                        {{ isAuthor ? 'Please update ticket and resubmit.' : 'Ticket has been sent back for revision.' }}
                         <router-link v-if="canEditTicket" :to="`/ticket/${ticket.id}/edit`"
                             class="ml-2 font-semibold text-red-700 underline hover:text-red-800">
                             Edit ticket
