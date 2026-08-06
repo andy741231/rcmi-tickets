@@ -280,6 +280,9 @@ function rcmi_tickets_format_ticket($row) {
         $approval_chain = rcmi_tickets_load_approval_chain($approvals[0]['chain_id']);
     }
 
+    // Whether the current user can approve/reject the current pending step
+    $can_approve_current_step = $current_step && rcmi_tickets_user_can_approve_ticket(get_current_user_id(), (int) $row['id']);
+
     return [
         'id'              => (int) $row['id'],
         'author_id'       => (int) $row['author_id'],
@@ -299,6 +302,7 @@ function rcmi_tickets_format_ticket($row) {
         'form_answers'    => $form_answers,
         'approval_chain'  => $approval_chain,
         'current_approval_step' => $current_step,
+        'can_approve_current_step' => (bool) $can_approve_current_step,
         'approval_history' => $approvals,
         'created_at'      => $row['created_at'],
         'updated_at'      => $row['updated_at'],

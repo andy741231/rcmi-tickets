@@ -319,7 +319,9 @@ const hasActiveChain = computed(() => {
 
 const canApproveChain = computed(() => {
     if (!ticket.value || !ticket.value.current_approval_step) return false;
-    return ticket.value.status === 'Pending Approval';
+    if (ticket.value.status !== 'Pending Approval') return false;
+    // Only the actual approver of the current step should see the buttons
+    return ticket.value.can_approve_current_step === true;
 });
 
 const hasCustomAnswers = computed(() => {
