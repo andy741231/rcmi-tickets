@@ -68,8 +68,20 @@
 
             <!-- Action buttons -->
             <div class="mb-6 flex flex-wrap items-center gap-2 border-b border-gray-200 pb-4">
+                <!-- Rejected: Pending Resubmission — show message instead of buttons -->
+                <div v-if="ticket.status === 'Rejected: Pending Resubmission'" class="w-full rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <span class="inline-flex items-center gap-2">
+                        <Icon name="alert" />
+                        Please update ticket and resubmit for approval.
+                        <router-link v-if="canEditTicket" :to="`/ticket/${ticket.id}/edit`"
+                            class="ml-2 font-semibold text-red-700 underline hover:text-red-800">
+                            Edit ticket
+                        </router-link>
+                    </span>
+                </div>
+
                 <!-- Chain approve/reject (current-step approver only) -->
-                <template v-if="canApproveChain">
+                <template v-else-if="canApproveChain">
                     <button @click="chainApprove" :disabled="approvalBusy"
                         class="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
                         <Icon name="check-circle" /> Approve Step
@@ -318,8 +330,8 @@ const hasCustomAnswers = computed(() => {
 const canEditTicket = computed(() => {
     if (!ticket.value) return false;
     if (isManager.value) return true;
-    // Author can edit when status is Received (includes chain-restart sent-back state)
-    return isAuthor.value && ticket.value.status === 'Received';
+    // Author can edit when status is Received or rejected (pending resubmission)
+    return isAuthor.value && ['Received', 'Rejected: Pending Resubmission'].includes(ticket.value.status);
 });
 
 const canDeleteTicket = computed(() => isManager.value);

@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
  * Valid status and priority values (frozen per §3/§5).
  */
 function rcmi_tickets_valid_statuses() {
-    return ['Received', 'Pending Approval', 'Approved', 'Rejected', 'Completed'];
+    return ['Received', 'Pending Approval', 'Approved', 'Rejected', 'Rejected: Pending Resubmission', 'Completed'];
 }
 
 function rcmi_tickets_valid_priorities() {
@@ -836,10 +836,9 @@ function rcmi_tickets_handle_update($request) {
         rcmi_tickets_sync_form_answers($request['id'], $request['form_answers']);
     }
 
-    // Schema v3: resubmit path. If the ticket was sent back to 'Received' after a
-    // 'restart' rejection (it has existing approval rows), and the author just
-    // edited it, restart the chain → status back to 'Pending Approval'.
-    if ($ticket['status'] === 'Received') {
+    // Schema v3: resubmit path. If the ticket was rejected (restart or back_one)
+    // and the author just edited it, restart the chain → status back to 'Pending Approval'.
+    if ($ticket['status'] === 'Received' || $ticket['status'] === 'Rejected: Pending Resubmission') {
         $has_chain = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE ticket_id = %d",
             (int) $request['id']

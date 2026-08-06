@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
  * re-run on the next admin request to bring tables up to date.
  */
 if (!defined('RCMI_TICKETS_DB_VERSION')) {
-    define('RCMI_TICKETS_DB_VERSION', '3');
+    define('RCMI_TICKETS_DB_VERSION', '4');
 }
 
 /**
@@ -40,7 +40,7 @@ function rcmi_tickets_schema_statements() {
             title VARCHAR(255) NOT NULL,
             description LONGTEXT NULL,
             description_text LONGTEXT NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'Received',
+            status VARCHAR(50) NOT NULL DEFAULT 'Received',
             priority VARCHAR(10) NOT NULL DEFAULT 'Medium',
             due_date DATE NULL,
             updated_by BIGINT UNSIGNED NULL,

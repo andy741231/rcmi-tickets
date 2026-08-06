@@ -413,11 +413,20 @@ function rcmi_tickets_handle_ticket_reject($request) {
 
         if ($prev) {
             rcmi_tickets_reset_approval_to_pending($prev['id']);
+            // Set ticket to "Rejected: Pending Resubmission" so author knows to resubmit
+            $wpdb->update(
+                $wpdb->prefix . 'rcmi_tickets',
+                ['status' => 'Rejected: Pending Resubmission', 'updated_at' => $now, 'updated_by' => $user_id],
+                ['id' => $ticket_id],
+                ['%s', '%s', '%d'],
+                ['%d']
+            );
+            do_action('rcmi_ticket_status_changed', $ticket_id, 'Rejected: Pending Resubmission', 'Pending Approval', $comment);
             do_action('rcmi_ticket_approval_step', $ticket_id, (int) $prev['id'], 'reject_back_one');
             return new WP_REST_Response([
                 'rejected_step'   => (int) $pending['id'],
                 'reopened_step'   => (int) $prev['id'],
-                'ticket_status'   => 'Pending Approval',
+                'ticket_status'   => 'Rejected: Pending Resubmission',
                 'on_reject'       => 'back_one',
             ], 200);
         }
@@ -442,21 +451,21 @@ function rcmi_tickets_handle_ticket_reject($request) {
         rcmi_tickets_reset_approval_to_pending($r['id']);
     }
 
-    // Set ticket back to Received so author can edit/resubmit
+    // Set ticket to "Rejected: Pending Resubmission" so author knows to edit and resubmit
     $wpdb->update(
         $wpdb->prefix . 'rcmi_tickets',
-        ['status' => 'Received', 'updated_at' => $now, 'updated_by' => $user_id],
+        ['status' => 'Rejected: Pending Resubmission', 'updated_at' => $now, 'updated_by' => $user_id],
         ['id' => $ticket_id],
         ['%s', '%s', '%d'],
         ['%d']
     );
 
-    do_action('rcmi_ticket_status_changed', $ticket_id, 'Received', 'Pending Approval', $comment);
+    do_action('rcmi_ticket_status_changed', $ticket_id, 'Rejected: Pending Resubmission', 'Pending Approval', $comment);
     do_action('rcmi_ticket_approval_rejected', $ticket_id, 'restart', $comment);
 
     return new WP_REST_Response([
         'rejected_step' => (int) $pending['id'],
-        'ticket_status' => 'Received',
+        'ticket_status' => 'Rejected: Pending Resubmission',
         'on_reject'     => 'restart',
     ], 200);
 }
@@ -681,11 +690,19 @@ function rcmi_tickets_apply_reject($pending, $user_id, $comment) {
         ), ARRAY_A);
         if ($prev) {
             rcmi_tickets_reset_approval_to_pending($prev['id']);
+            $wpdb->update(
+                $wpdb->prefix . 'rcmi_tickets',
+                ['status' => 'Rejected: Pending Resubmission', 'updated_at' => $now, 'updated_by' => $user_id],
+                ['id' => $ticket_id],
+                ['%s', '%s', '%d'],
+                ['%d']
+            );
+            do_action('rcmi_ticket_status_changed', $ticket_id, 'Rejected: Pending Resubmission', 'Pending Approval', $comment);
             do_action('rcmi_ticket_approval_step', $ticket_id, (int) $prev['id'], 'reject_back_one');
             return new WP_REST_Response([
                 'rejected_step' => (int) $pending['id'],
                 'reopened_step' => (int) $prev['id'],
-                'ticket_status' => 'Pending Approval',
+                'ticket_status' => 'Rejected: Pending Resubmission',
                 'on_reject'     => 'back_one',
             ], 200);
         }
@@ -701,17 +718,17 @@ function rcmi_tickets_apply_reject($pending, $user_id, $comment) {
     }
     $wpdb->update(
         $wpdb->prefix . 'rcmi_tickets',
-        ['status' => 'Received', 'updated_at' => $now, 'updated_by' => $user_id],
+        ['status' => 'Rejected: Pending Resubmission', 'updated_at' => $now, 'updated_by' => $user_id],
         ['id' => $ticket_id],
         ['%s', '%s', '%d'],
         ['%d']
     );
-    do_action('rcmi_ticket_status_changed', $ticket_id, 'Received', 'Pending Approval', $comment);
+    do_action('rcmi_ticket_status_changed', $ticket_id, 'Rejected: Pending Resubmission', 'Pending Approval', $comment);
     do_action('rcmi_ticket_approval_rejected', $ticket_id, 'restart', $comment);
 
     return new WP_REST_Response([
         'rejected_step' => (int) $pending['id'],
-        'ticket_status' => 'Received',
+        'ticket_status' => 'Rejected: Pending Resubmission',
         'on_reject'     => 'restart',
     ], 200);
 }
