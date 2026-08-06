@@ -4,7 +4,7 @@
         <template v-if="isPublic">
             <header v-if="$route.name !== 'login'" class="mb-6 flex items-center justify-between border-b border-gray-200 pb-4">
                 <div>
-                    <p class="rcmi-eyebrow mb-1">Research Capacity &amp; Mentoring Institute</p>
+                    <p class="rcmi-eyebrow mb-1">RCMI</p>
                     <h1 class="rcmi-page-title">Tickets</h1>
                 </div>
                 <router-link to="/login" class="rcmi-button-secondary inline-flex items-center gap-1.5 px-4 py-2 text-sm">
@@ -19,9 +19,9 @@
         <template v-else>
             <header class="mb-8 flex flex-col gap-5 border-b border-gray-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                    <p class="rcmi-eyebrow mb-2">Research Capacity &amp; Mentoring Institute</p>
+                    <p class="rcmi-eyebrow mb-2">RCMI</p>
                     <h1 class="rcmi-page-title">Tickets</h1>
-                    <p class="mt-2 max-w-xl text-sm text-gray-600">Track requests, collaborate with your team, and keep work moving forward.</p>
+                    <p class="mt-2 max-w-xl text-sm text-gray-600">Track Requests</p>
                 </div>
                 <nav class="flex flex-wrap items-center gap-1" aria-label="Ticket navigation">
                     <router-link to="/" class="rcmi-nav-link" active-class="rcmi-nav-link-active" exact>

@@ -3,7 +3,7 @@
         <div class="rcmi-login-card">
             <!-- Branding -->
             <div class="rcmi-login-brand">
-                <p class="rcmi-eyebrow">Research Capacity &amp; Mentoring Institute</p>
+                <p class="rcmi-eyebrow">RCMI</p>
                 <h1 class="rcmi-login-title">Tickets</h1>
             </div>
 
