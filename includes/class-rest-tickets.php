@@ -789,8 +789,15 @@ function rcmi_tickets_handle_update($request) {
     $fields = ['title' => '%s', 'description' => '%s', 'priority' => '%s', 'due_date' => '%s'];
     foreach ($fields as $field => $fmt) {
         if (isset($request[$field])) {
-            $data[$field] = $request[$field];
-            $format[] = $fmt;
+            $val = $request[$field];
+            // Empty string → NULL for DATE columns (strict SQL mode rejects '')
+            if ($field === 'due_date' && $val === '') {
+                $data[$field] = null;
+                $format[] = '%s';
+            } else {
+                $data[$field] = $val;
+                $format[] = $fmt;
+            }
         }
     }
 
