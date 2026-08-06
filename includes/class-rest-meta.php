@@ -104,13 +104,15 @@ function rcmi_tickets_handle_meta() {
     }
 
     $today = current_time('Y-m-d');
+    // Note: $vis_clause is already a fully-prepared string (values baked in),
+    // so we must NOT pass $vis_args again to prepare() — only the %s for dates.
     $due_soon_count = (int) $wpdb->get_var($wpdb->prepare(
         "SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_tickets t {$vis_clause}" . ($vis_clause ? " AND" : " WHERE") . " t.due_date IS NOT NULL AND t.due_date >= %s AND t.due_date <= DATE_ADD(%s, INTERVAL 7 DAY) AND t.status NOT IN ('Completed','Rejected')",
-        array_merge($vis_args, [$today, $today])
+        $today, $today
     ));
     $overdue_count = (int) $wpdb->get_var($wpdb->prepare(
         "SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_tickets t {$vis_clause}" . ($vis_clause ? " AND" : " WHERE") . " t.due_date IS NOT NULL AND t.due_date < %s AND t.status NOT IN ('Completed','Rejected')",
-        array_merge($vis_args, [$today])
+        $today
     ));
     $total_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_tickets t {$vis_clause}");
 
