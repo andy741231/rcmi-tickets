@@ -49,6 +49,16 @@
             <button @click="toggleOrder" class="rcmi-button-secondary px-3 py-2 text-sm" :aria-label="order === 'desc' ? 'Sort ascending' : 'Sort descending'" :title="order === 'desc' ? 'Sort ascending' : 'Sort descending'">
                 <Icon :name="order === 'desc' ? 'arrow-down' : 'arrow-up'" />
             </button>
+            <div class="ml-auto flex items-center gap-2">
+                <label for="per-page" class="text-sm text-gray-600">Per page</label>
+                <select id="per-page" v-model.number="perPage" @change="onPerPageChange" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
+                    <option :value="3">3</option>
+                    <option :value="6">6</option>
+                    <option :value="9">9</option>
+                    <option :value="12">12</option>
+                    <option :value="24">24</option>
+                </select>
+            </div>
         </div>
 
         <!-- Loading state -->
@@ -212,7 +222,7 @@ const view = ref(localStorage.getItem('rcmi_tickets_view') || 'card');
 const sort = ref(localStorage.getItem('rcmi_tickets_sort') || 'created_at');
 const order = ref(localStorage.getItem('rcmi_tickets_order') || 'desc');
 const page = ref(1);
-const perPage = ref(10);
+const perPage = ref(parseInt(localStorage.getItem('rcmi_tickets_per_page'), 10) || 9);
 const total = ref(0);
 const totalPages = ref(0);
 const filters = ref({ search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '' });
@@ -393,6 +403,12 @@ async function loadTickets() {
 
 function onPageChange(p) {
     page.value = p;
+    loadTickets();
+}
+
+function onPerPageChange() {
+    localStorage.setItem('rcmi_tickets_per_page', perPage.value);
+    page.value = 1;
     loadTickets();
 }
 
