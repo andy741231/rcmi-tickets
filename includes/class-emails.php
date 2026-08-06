@@ -38,24 +38,13 @@ function rcmi_tickets_email_ticket_url($ticket_id) {
  * @param string          $plain
  * @return bool
  */
-function rcmi_tickets_send_email($to, $subject, $html, $plain) {
-    $boundary = '=_rcmi_tickets_' . wp_generate_password(16, false, false);
-    $body = "--{$boundary}\r\n"
-        . "Content-Type: text/plain; charset=UTF-8\r\n"
-        . "Content-Transfer-Encoding: 8bit\r\n\r\n"
-        . $plain . "\r\n\r\n"
-        . "--{$boundary}\r\n"
-        . "Content-Type: text/html; charset=UTF-8\r\n"
-        . "Content-Transfer-Encoding: 8bit\r\n\r\n"
-        . $html . "\r\n\r\n"
-        . "--{$boundary}--\r\n";
-
+function rcmi_tickets_send_email($to, $subject, $html, $plain = '') {
     $headers = [
         'MIME-Version: 1.0',
-        'Content-Type: multipart/alternative; boundary="' . $boundary . '"',
+        'Content-Type: text/html; charset=UTF-8',
     ];
 
-    return wp_mail($to, $subject, $body, $headers);
+    return wp_mail($to, $subject, $html, $headers);
 }
 
 /**
