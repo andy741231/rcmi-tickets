@@ -193,8 +193,20 @@ function dropdownOptions(field) {
 function dateMin(field) {
     const minDays = field.config?.min_days;
     if (minDays == null || minDays === '' || isNaN(minDays)) return undefined;
+    const days = parseInt(minDays, 10);
+    const includeWeekend = field.config?.include_weekend !== false; // default true
     const d = new Date();
-    d.setDate(d.getDate() + parseInt(minDays, 10));
+    if (includeWeekend) {
+        d.setDate(d.getDate() + days);
+    } else {
+        // Count only business days (Mon–Fri)
+        let added = 0;
+        while (added < days) {
+            d.setDate(d.getDate() + 1);
+            const day = d.getDay();
+            if (day !== 0 && day !== 6) added++;
+        }
+    }
     return d.toISOString().split('T')[0];
 }
 

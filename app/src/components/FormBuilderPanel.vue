@@ -187,6 +187,11 @@
                                         <label class="rcmi-field-label">Minimum date (days from today)</label>
                                         <input v-model.number="f.config.min_days" type="number" min="0" class="rcmi-input" placeholder="e.g. 3 blocks dates before 3 days from today" />
                                         <p class="mt-1 text-xs text-gray-500">Leave empty for no restriction. 0 = today or later, 3 = 3 days from today or later.</p>
+                                        <label class="mt-2 inline-flex items-center gap-2 text-sm text-gray-700">
+                                            <input type="checkbox" v-model="f.config.include_weekend" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                                            Include weekends
+                                        </label>
+                                        <p class="mt-1 text-xs text-gray-500">When unchecked, min days count only business days (Mon–Fri).</p>
                                     </div>
 
                                     <div class="flex justify-end gap-2 pt-2">

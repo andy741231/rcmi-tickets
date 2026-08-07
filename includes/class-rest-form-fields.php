@@ -43,7 +43,7 @@ function rcmi_tickets_allowed_config_keys($type) {
         'dropdown'  => array_merge($common, ['options', 'cascades_from', 'cascade_options']),
         'checkbox'  => array_merge($common, ['options']),
         'radio'     => array_merge($common, ['options']),
-        'date'      => array_merge($common, ['min_days']),
+        'date'      => array_merge($common, ['min_days', 'include_weekend']),
         'number'    => array_merge($common, ['placeholder', 'min', 'max', 'step']),
         'section'   => [],
     ];
@@ -98,6 +98,9 @@ function rcmi_tickets_validate_field_config($config, $type) {
             case 'step':
             case 'min_days':
                 $clean[$k] = is_numeric($v) ? 0 + $v : null;
+                break;
+            case 'include_weekend':
+                $clean[$k] = !empty($v);
                 break;
             case 'logic':
                 if (is_array($v) && isset($v['field_key'], $v['op'], $v['value'], $v['action'])) {
