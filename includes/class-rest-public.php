@@ -34,7 +34,6 @@ function rcmi_tickets_register_public_routes() {
                 'submitter_email' => ['type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_email'],
                 'title'           => ['type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field'],
                 'description'     => ['type' => 'string', 'required' => false, 'sanitize_callback' => 'wp_kses_post'],
-                'priority'        => ['type' => 'string', 'default' => 'Medium'],
                 'form_answers'    => ['type' => 'object', 'default' => []],
                 'website'         => ['type' => 'string', 'default' => ''],  // honeypot
             ],
@@ -100,7 +99,6 @@ function rcmi_tickets_handle_public_submit($request) {
 
     $title = $request['title'];
     $description = $request['description'] ?? '';
-    $priority = $request['priority'] ?? 'Medium';
     $submitter_name = $request['submitter_name'];
     $form_answers = $request['form_answers'] ?? [];
 
@@ -128,11 +126,10 @@ function rcmi_tickets_handle_public_submit($request) {
         'description'      => $full_description,
         'description_text' => $full_description_text,
         'status'           => 'Received',
-        'priority'         => $priority,
         'due_date'         => null,
         'created_at'       => $now,
         'updated_at'       => $now,
-    ], ['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']);
+    ], ['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s']);
 
     $ticket_id = (int) $wpdb->insert_id;
     if (!$ticket_id) {

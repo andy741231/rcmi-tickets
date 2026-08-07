@@ -18,14 +18,10 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Valid status and priority values (frozen per §3/§5).
+ * Valid status values (frozen per §3/§5).
  */
 function rcmi_tickets_valid_statuses() {
     return ['Received', 'Pending Approval', 'Approved', 'Rejected', 'Rejected: Pending Revision', 'Completed'];
-}
-
-function rcmi_tickets_valid_priorities() {
-    return ['Low', 'Medium', 'High'];
 }
 
 /**
@@ -130,7 +126,6 @@ function rcmi_tickets_write_args($is_update = false) {
     $args = [
         'title'          => ['type' => 'string', 'required' => !$is_update, 'sanitize_callback' => 'sanitize_text_field'],
         'description'    => ['type' => 'string', 'required' => false, 'sanitize_callback' => 'wp_kses_post'],
-        'priority'       => ['type' => 'string', 'validate_callback' => function ($v) { return in_array($v, rcmi_tickets_valid_priorities(), true); }],
         'due_date'       => ['type' => 'string', 'validate_callback' => function ($v) { return $v === '' || strtotime($v) !== false; }],
         'assignee_ids'   => ['type' => 'array', 'items' => ['type' => 'integer']],
         'tag_ids'        => ['type' => 'array', 'items' => ['type' => 'integer']],
@@ -291,7 +286,6 @@ function rcmi_tickets_format_ticket($row) {
         'title'           => $row['title'],
         'description'     => $row['description'],
         'status'          => $row['status'],
-        'priority'        => $row['priority'],
         'due_date'        => $row['due_date'],
         'updated_by'      => $row['updated_by'],
         'updated_by_name' => $updater ? $updater->display_name : null,
@@ -696,7 +690,7 @@ function rcmi_tickets_handle_list($request) {
     }
 
     // Sorting (whitelist columns to prevent SQL injection)
-    $valid_sort = ['id', 'title', 'status', 'priority', 'due_date', 'created_at', 'updated_at'];
+    $valid_sort = ['id', 'title', 'status', 'due_date', 'created_at', 'updated_at'];
     $sort = in_array($params['sort'] ?? 'created_at', $valid_sort, true) ? $params['sort'] : 'created_at';
     $order = strtolower($params['order'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
 
@@ -742,7 +736,6 @@ function rcmi_tickets_handle_create($request) {
 
     $title = $request['title'] ?? '';
     $description = $request['description'] ?? '';
-    $priority = $request['priority'] ?? 'Medium';
     $due_date = !empty($request['due_date']) ? $request['due_date'] : null;
     $assignee_ids = $request['assignee_ids'] ?? [];
     $tag_ids = $request['tag_ids'] ?? [];
@@ -761,11 +754,10 @@ function rcmi_tickets_handle_create($request) {
         'description'      => $description,
         'description_text' => $description_text,
         'status'           => 'Received',
-        'priority'         => $priority,
         'due_date'         => $due_date,
         'created_at'       => $now,
         'updated_at'       => $now,
-    ], ['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']);
+    ], ['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s']);
 
     $ticket_id = (int) $wpdb->insert_id;
     if (!$ticket_id) {
@@ -803,7 +795,7 @@ function rcmi_tickets_handle_update($request) {
     $data = [];
     $format = [];
 
-    $fields = ['title' => '%s', 'description' => '%s', 'priority' => '%s', 'due_date' => '%s'];
+    $fields = ['title' => '%s', 'description' => '%s', 'due_date' => '%s'];
     foreach ($fields as $field => $fmt) {
         if (isset($request[$field])) {
             $val = $request[$field];

@@ -56,9 +56,6 @@
                         <span class="font-semibold text-gray-600">{{ ticket.author_name }}</span>
                         <span aria-hidden="true">·</span>
                         <span>{{ formatDateTime(ticket.created_at) }}</span>
-                        <span :class="['rcmi-priority-' + ticket.priority.toLowerCase(), 'inline-flex items-center font-semibold']">
-                            <span class="rcmi-priority-dot"></span>{{ ticket.priority }} priority
-                        </span>
                     </div>
                 </div>
                 <div class="flex flex-shrink-0 items-center gap-2">
@@ -208,12 +205,6 @@
                     <section class="rcmi-card p-5">
                         <h3 class="rcmi-section-label mb-4">Details</h3>
                         <dl class="space-y-4">
-                            <div>
-                                <dt class="text-xs font-semibold text-gray-500">Priority</dt>
-                                <dd class="mt-1 text-sm font-semibold" :class="['rcmi-priority-' + ticket.priority.toLowerCase()]">
-                                    <span class="rcmi-priority-dot"></span>{{ ticket.priority }}
-                                </dd>
-                            </div>
                             <div v-if="ticket.due_date">
                                 <dt class="text-xs font-semibold text-gray-500">Due Date</dt>
                                 <dd class="mt-1 text-sm text-gray-700">{{ formatDate(ticket.due_date) }}</dd>

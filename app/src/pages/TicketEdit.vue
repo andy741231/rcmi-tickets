@@ -29,14 +29,8 @@
                     <DynamicForm :fields="meta.form_fields" v-model="form.form_answers" />
                 </div>
 
-                <!-- Priority + Due Date -->
+                <!-- Due Date -->
                 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 border-t border-gray-100 pt-5">
-                    <div>
-                        <label for="edit-priority" class="rcmi-field-label">Priority</label>
-                        <select id="edit-priority" v-model="form.priority" class="rcmi-input">
-                            <option v-for="p in meta.priorities" :key="p" :value="p">{{ p }}</option>
-                        </select>
-                    </div>
                     <div>
                         <label for="edit-due-date" class="rcmi-field-label">Due Date</label>
                         <input id="edit-due-date" v-model="form.due_date" type="date" class="rcmi-input" />
@@ -88,7 +82,6 @@ const submitting = ref(false);
 const error = ref('');
 
 const form = reactive({
-    priority: 'Medium',
     due_date: '',
     form_answers: {},
     attachments: [],
@@ -106,7 +99,6 @@ async function loadMeta() {
 async function loadTicket() {
     try {
         const ticket = await api(`/tickets/${props.id}`);
-        form.priority = ticket.priority || 'Medium';
         form.due_date = ticket.due_date || '';
         form.form_answers = ticket.form_answers || {};
         form.attachments = ticket.attachments || [];

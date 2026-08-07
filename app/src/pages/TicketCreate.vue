@@ -53,14 +53,8 @@
                     <DynamicForm :fields="meta.form_fields" v-model="form.form_answers" />
                 </div>
 
-                <!-- Priority (logged-in only, public defaults to Medium) -->
+                <!-- Due Date (logged-in only) -->
                 <div v-if="!isPublic" class="border-t border-gray-100 grid grid-cols-1 gap-5 pt-5 sm:grid-cols-2">
-                    <div>
-                        <label for="ticket-priority" class="rcmi-field-label">Priority</label>
-                        <select id="ticket-priority" v-model="form.priority" class="rcmi-input">
-                            <option v-for="p in meta.priorities" :key="p" :value="p">{{ p }}</option>
-                        </select>
-                    </div>
                     <div>
                         <label for="ticket-due-date" class="rcmi-field-label">Due Date</label>
                         <input id="ticket-due-date" v-model="form.due_date" type="date" class="rcmi-input" />
@@ -139,7 +133,6 @@ const publicForm = reactive({
 const form = reactive({
     title: '',
     description: '',
-    priority: 'Medium',
     due_date: '',
     assignee_ids: [],
     tag_ids: [],
@@ -232,7 +225,6 @@ async function submit() {
                 submitter_email: publicForm.submitter_email,
                 title: form.title,
                 description: form.description,
-                priority: 'Medium',
                 form_answers: form.form_answers,
                 website: publicForm.website, // honeypot
             };

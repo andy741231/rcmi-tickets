@@ -67,7 +67,6 @@ function rcmi_tickets_email_ticket_details($ticket) {
 
     // Core fields
     $detail_rows = [
-        'Priority'  => $ticket['priority'],
         'Due date'  => $ticket['due_date'] ?: '—',
         'Status'    => $ticket['status'],
     ];

@@ -2,7 +2,7 @@
 /**
  * REST API: GET /meta — bootstrap endpoint for the SPA frontend (§5).
  *
- * Returns statuses, priorities, current user info, capabilities, tags,
+ * Returns statuses, current user info, capabilities, tags,
  * and assignable users in a single round-trip.
  */
 
@@ -150,7 +150,6 @@ function rcmi_tickets_handle_meta() {
 
     return new WP_REST_Response([
         'statuses'  => rcmi_tickets_valid_statuses(),
-        'priorities' => rcmi_tickets_valid_priorities(),
         'current_user' => [
             'id'           => (int) $user_id,
             'display_name' => $user ? $user->display_name : '',

@@ -43,7 +43,6 @@
                 <option value="updated_at">Recently updated</option>
                 <option value="title">Title</option>
                 <option value="status">Status</option>
-                <option value="priority">Priority</option>
                 <option value="due_date">Due date</option>
             </select>
             <button @click="toggleOrder" class="rcmi-button-secondary px-3 py-2 text-sm" :aria-label="order === 'desc' ? 'Sort ascending' : 'Sort descending'" :title="order === 'desc' ? 'Sort ascending' : 'Sort descending'">
@@ -158,9 +157,7 @@
                 </div>
                 <!-- Footer -->
                 <div class="flex items-center justify-between border-t border-gray-100 pt-3 text-xs">
-                    <span :class="['rcmi-priority-' + t.priority.toLowerCase(), 'inline-flex items-center font-semibold']">
-                        <span class="rcmi-priority-dot"></span>{{ t.priority }}
-                    </span>
+                    <span class="text-gray-400">{{ t.author_name || 'Unknown' }}</span>
                     <span v-if="t.due_date" :class="dueDateClass(t.due_date, t.status)" class="font-medium">
                         {{ dueDateLabel(t.due_date) }}
                     </span>
@@ -181,7 +178,6 @@
                         <th style="width: 3rem"></th>
                         <th>Ticket</th>
                         <th>Status</th>
-                        <th>Priority</th>
                         <th>Owner</th>
                         <th>Due</th>
                         <th>Updated</th>
@@ -209,9 +205,6 @@
                             <span v-if="t.status === 'Pending Approval' && t.current_approval_step" class="ml-1.5 text-xs text-gray-500">
                                 {{ currentStepNumber(t) }}/{{ t.approval_history.length }}
                             </span>
-                        </td>
-                        <td class="whitespace-nowrap font-semibold" :class="priorityClass(t.priority)">
-                            <span class="rcmi-priority-dot"></span>{{ t.priority }}
                         </td>
                         <td class="whitespace-nowrap text-gray-600">
                             <span v-if="t.assignees && t.assignees.length">{{ t.assignees[0].display_name }}</span>
@@ -383,10 +376,6 @@ function toggleOrder() {
     order.value = order.value === 'desc' ? 'asc' : 'desc';
     localStorage.setItem('rcmi_tickets_order', order.value);
     loadTickets();
-}
-
-function priorityClass(p) {
-    return { High: 'rcmi-priority-high', Medium: 'rcmi-priority-medium', Low: 'rcmi-priority-low' }[p] || 'rcmi-priority-low';
 }
 
 function formatDate(d) {
