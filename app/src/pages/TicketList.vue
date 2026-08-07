@@ -221,8 +221,8 @@
                             <span v-if="t.due_date" :title="formatDate(t.due_date)">{{ dueDateLabel(t.due_date) }}</span>
                             <span v-else class="text-gray-400">—</span>
                         </td>
-                        <td class="whitespace-nowrap text-gray-500" :title="formatDateTime(t.updated_at)">
-                            {{ relativeTime(t.updated_at) }}
+                        <td class="whitespace-nowrap text-gray-500">
+                            {{ formatDateTime(t.updated_at) }}
                         </td>
                     </tr>
                 </tbody>
