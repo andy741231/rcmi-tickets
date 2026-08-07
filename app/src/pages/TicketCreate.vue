@@ -53,14 +53,6 @@
                     <DynamicForm :fields="meta.form_fields" v-model="form.form_answers" />
                 </div>
 
-                <!-- Due Date (logged-in only) -->
-                <div v-if="!isPublic" class="border-t border-gray-100 grid grid-cols-1 gap-5 pt-5 sm:grid-cols-2">
-                    <div>
-                        <label for="ticket-due-date" class="rcmi-field-label">Due Date</label>
-                        <input id="ticket-due-date" v-model="form.due_date" type="date" class="rcmi-input" />
-                    </div>
-                </div>
-
                 <!-- Attachments (FileStager — client-side only until submit) -->
                 <div class="border-t border-gray-100 pt-5">
                     <span class="rcmi-field-label">Attachments</span>
@@ -133,7 +125,6 @@ const publicForm = reactive({
 const form = reactive({
     title: '',
     description: '',
-    due_date: '',
     assignee_ids: [],
     tag_ids: [],
     form_answers: {},

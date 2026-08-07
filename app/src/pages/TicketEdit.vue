@@ -29,14 +29,6 @@
                     <DynamicForm :fields="meta.form_fields" v-model="form.form_answers" />
                 </div>
 
-                <!-- Due Date -->
-                <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 border-t border-gray-100 pt-5">
-                    <div>
-                        <label for="edit-due-date" class="rcmi-field-label">Due Date</label>
-                        <input id="edit-due-date" v-model="form.due_date" type="date" class="rcmi-input" />
-                    </div>
-                </div>
-
                 <!-- File uploader (ticket already exists, so uploads work) -->
                 <div>
                     <span class="rcmi-field-label">Attachments</span>
@@ -82,7 +74,6 @@ const submitting = ref(false);
 const error = ref('');
 
 const form = reactive({
-    due_date: '',
     form_answers: {},
     attachments: [],
 });
@@ -99,7 +90,6 @@ async function loadMeta() {
 async function loadTicket() {
     try {
         const ticket = await api(`/tickets/${props.id}`);
-        form.due_date = ticket.due_date || '';
         form.form_answers = ticket.form_answers || {};
         form.attachments = ticket.attachments || [];
     } catch (e) {
