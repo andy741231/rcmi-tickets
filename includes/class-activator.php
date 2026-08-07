@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
  * re-run on the next admin request to bring tables up to date.
  */
 if (!defined('RCMI_TICKETS_DB_VERSION')) {
-    define('RCMI_TICKETS_DB_VERSION', '5');
+    define('RCMI_TICKETS_DB_VERSION', '6');
 }
 
 /**
@@ -183,6 +183,22 @@ function rcmi_tickets_schema_statements() {
             KEY chain_id (chain_id),
             KEY approver_user_id (approver_user_id),
             KEY status (status)
+        ) {$charset_collate};",
+
+        // ── Schema v6: auto-tag rules ───────────────────────────────────
+
+        'tag_rules' => "CREATE TABLE {$prefix}rcmi_tag_rules (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            field_key VARCHAR(100) NOT NULL,
+            operator VARCHAR(20) NOT NULL DEFAULT 'equals',
+            value VARCHAR(255) NOT NULL,
+            tag_name VARCHAR(100) NOT NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            KEY field_key (field_key),
+            KEY is_active (is_active)
         ) {$charset_collate};",
     ];
 }

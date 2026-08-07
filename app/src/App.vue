@@ -34,6 +34,9 @@
                     <router-link v-if="meta.caps.manage" to="/approval-edit" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
                         <Icon name="flow" /> Chains
                     </router-link>
+                    <router-link v-if="meta.caps.manage" to="/tag-rules" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
+                        <Icon name="tag" /> Tag Rules
+                    </router-link>
                     <router-link to="/create" class="rcmi-button-primary inline-flex items-center gap-1.5 px-4 py-2 text-sm shadow-sm">
                         <Icon name="plus" /> New Ticket
                     </router-link>

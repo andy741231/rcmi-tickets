@@ -71,6 +71,16 @@ function rcmi_tickets_handle_meta() {
     $approval_chains = rcmi_tickets_get_all_approval_chains();
     $allowed_mime = array_keys(rcmi_tickets_allowed_mime_types());
 
+    // Schema v6: auto-tag rules
+    $tag_rules = [];
+    if (rcmi_tickets_can($user_id, 'manage')) {
+        global $wpdb;
+        $rule_rows = $wpdb->get_results(
+            "SELECT * FROM {$wpdb->prefix}rcmi_tag_rules ORDER BY created_at DESC"
+        , ARRAY_A);
+        $tag_rules = array_map('rcmi_tickets_format_tag_rule', $rule_rows);
+    }
+
     // Count tickets pending current user's approval
     $pending_approval_count = 0;
     $pending_rows = $wpdb->get_results(
@@ -161,6 +171,7 @@ function rcmi_tickets_handle_meta() {
         'assignable_users' => $assignable_users,
         'form_fields'      => $form_fields,
         'approval_chains'  => $approval_chains,
+        'tag_rules'        => $tag_rules,
         'allowed_mime_types' => $allowed_mime,
         'pending_approval_count' => $pending_approval_count,
         'inbox_summary'    => $inbox_summary,

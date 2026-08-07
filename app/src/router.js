@@ -5,6 +5,7 @@ import TicketEdit from './pages/TicketEdit.vue';
 import ApprovalCenter from './pages/ApprovalCenter.vue';
 import ApprovalChainEditor from './pages/ApprovalChainEditor.vue';
 import FormBuilderPage from './pages/FormBuilderPage.vue';
+import TagRulesPage from './pages/TagRulesPage.vue';
 import LoginPage from './pages/LoginPage.vue';
 
 const config = window.rcmiTickets || {};
@@ -18,6 +19,7 @@ export const routes = [
     { path: '/approvals', name: 'approval-center', component: ApprovalCenter },
     { path: '/approval-edit', name: 'approval-chain-editor', component: ApprovalChainEditor },
     { path: '/form-builder', name: 'form-builder', component: FormBuilderPage },
+    { path: '/tag-rules', name: 'tag-rules', component: TagRulesPage },
     { path: '/login', name: 'login', component: LoginPage },
 ];
 

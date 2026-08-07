@@ -768,6 +768,9 @@ function rcmi_tickets_handle_create($request) {
     rcmi_tickets_sync_tags($ticket_id, $tag_ids);
     rcmi_tickets_sync_form_answers($ticket_id, $form_answers);
 
+    // Auto-tag: evaluate rules against form answers and merge in matching tags
+    rcmi_tickets_apply_auto_tags($ticket_id, $form_answers);
+
     do_action('rcmi_ticket_created', $ticket_id, get_current_user_id(), $assignee_ids);
 
     // Schema v3: resolve + init approval chain (flips status to 'Pending Approval' if matched)
@@ -843,6 +846,8 @@ function rcmi_tickets_handle_update($request) {
     }
     if (isset($request['form_answers'])) {
         rcmi_tickets_sync_form_answers($request['id'], $request['form_answers']);
+        // Re-evaluate auto-tags when form answers change
+        rcmi_tickets_apply_auto_tags((int) $request['id'], $request['form_answers']);
     }
 
     // Schema v3: resubmit path. If the ticket was rejected (restart or back_one)

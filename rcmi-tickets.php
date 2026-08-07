@@ -96,6 +96,7 @@ $rcmi_tickets_includes = [
     'includes/class-deactivator.php',
     'includes/class-rest-tickets.php',
     'includes/class-rest-tags.php',
+    'includes/class-rest-tag-rules.php',
     'includes/class-rest-comments.php',
     'includes/class-rest-attachments.php',
     'includes/class-rest-meta.php',
