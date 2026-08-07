@@ -266,7 +266,7 @@ function rcmi_tickets_enqueue_app() {
     );
 
     wp_localize_script('rcmi-tickets-app', 'rcmiTickets', [
-        'apiBase'  => esc_url_raw(rest_url('rcmi/v1')),
+        'apiBase'  => esc_url_raw(home_url('/wp-json/rcmi/v1')),
         'nonce'    => wp_create_nonce('wp_rest'),
         'loginUrl' => wp_login_url(get_permalink()),
         'isLoggedIn' => is_user_logged_in(),

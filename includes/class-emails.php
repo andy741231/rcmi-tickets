@@ -306,7 +306,7 @@ function rcmi_tickets_email_mentions($comment_id, $ticket_id, $from_user_id, $me
  * Uses the REST API with plain-permalink-safe ?rest_route= format.
  */
 function rcmi_tickets_email_approval_action_url($approval_id, $token, $action) {
-    $base = rest_url('rcmi/v1/approvals/' . (int) $approval_id . '/token-' . $action);
+    $base = home_url('/wp-json/rcmi/v1/approvals/' . (int) $approval_id . '/token-' . $action);
     return add_query_arg('token', $token, $base);
 }
 
