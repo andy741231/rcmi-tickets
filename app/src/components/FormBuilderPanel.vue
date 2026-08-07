@@ -182,6 +182,13 @@
                                         <input v-model="f.config.placeholder" class="rcmi-input" placeholder="Placeholder text" />
                                     </div>
 
+                                    <!-- Date config: min days from today -->
+                                    <div v-if="f.type === 'date'">
+                                        <label class="rcmi-field-label">Minimum date (days from today)</label>
+                                        <input v-model.number="f.config.min_days" type="number" min="0" class="rcmi-input" placeholder="e.g. 3 blocks dates before 3 days from today" />
+                                        <p class="mt-1 text-xs text-gray-500">Leave empty for no restriction. 0 = today or later, 3 = 3 days from today or later.</p>
+                                    </div>
+
                                     <div class="flex justify-end gap-2 pt-2">
                                         <button @click="saveField(f)" :disabled="saving === f.id"
                                             class="rcmi-button-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50">

@@ -65,6 +65,7 @@
                 <!-- date -->
                 <input v-else-if="f.type === 'date'" :id="'field-' + f.field_key"
                     v-model="answers[f.field_key]" type="date"
+                    :min="dateMin(f)"
                     :required="f.required" class="rcmi-input" />
 
                 <!-- dropdown (with optional cascading) -->
@@ -186,6 +187,15 @@ function dropdownOptions(field) {
         return config.cascade_options[parentVal] || [];
     }
     return config.options || [];
+}
+
+// Compute min date for date fields with min_days config
+function dateMin(field) {
+    const minDays = field.config?.min_days;
+    if (minDays == null || minDays === '' || isNaN(minDays)) return undefined;
+    const d = new Date();
+    d.setDate(d.getDate() + parseInt(minDays, 10));
+    return d.toISOString().split('T')[0];
 }
 
 // Watch cascading dropdowns: when parent changes, reset child
