@@ -38,7 +38,17 @@
                 <div class="rcmi-formbuilder-canvas-header">
                     <div>
                         <h2 class="text-base font-bold text-gray-900">Fields</h2>
-                        <p class="text-xs text-gray-500">{{ fields.length }} field{{ fields.length === 1 ? '' : 's' }} · Drag the handle to reorder</p>
+                        <p class="text-xs text-gray-500">{{ fields.length }} field{{ fields.length === 1 ? '' : 's' }} · {{ searchQuery ? 'Clear search to reorder' : 'Drag the handle to reorder' }}</p>
+                    </div>
+                    <div class="rcmi-formbuilder-toolbar">
+                        <label class="rcmi-formbuilder-search">
+                            <span class="sr-only">Search fields</span>
+                            <Icon name="search" />
+                            <input v-model.trim="searchQuery" type="search" placeholder="Search fields or conditions" />
+                        </label>
+                        <button type="button" class="rcmi-button-secondary px-2.5 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50" :disabled="Boolean(searchQuery)" @click="toggleAllGroups">
+                            {{ allGroupsCollapsed ? 'Expand all' : 'Collapse all' }}
+                        </button>
                     </div>
                 </div>
                 <!-- Field list -->
@@ -46,31 +56,44 @@
                         <p v-if="fields.length === 0" class="text-center text-sm text-gray-500 py-8">
                             No custom fields yet. Add one from the palette above.
                         </p>
+                        <p v-else-if="visibleFieldEntries.length === 0" class="text-center text-sm text-gray-500 py-8">
+                            No fields match “{{ searchQuery }}”.
+                        </p>
                         <ul v-else class="space-y-2">
-                            <template v-for="(f, idx) in fields" :key="f.id">
-                                <li v-if="idx === 0 || groupKey(f) !== groupKey(fields[idx - 1])" class="rcmi-formbuilder-group-label">
-                                    {{ groupLabel(f) }}
+                            <template v-for="({ field: f, index: idx }, visibleIdx) in visibleFieldEntries" :key="f.id">
+                                <li v-if="isVisibleGroupStart(idx, visibleIdx)" class="rcmi-formbuilder-group-header">
+                                    <button type="button" class="rcmi-formbuilder-group-toggle"
+                                        :aria-expanded="!isGroupCollapsed(groupMeta(idx).id) || Boolean(searchQuery)"
+                                        :disabled="Boolean(searchQuery)"
+                                        @click="toggleGroup(groupMeta(idx).id)">
+                                        <Icon name="chevron-right" :class="{ 'rcmi-formbuilder-chevron-open': !isGroupCollapsed(groupMeta(idx).id) || searchQuery }" />
+                                        <span class="flex-1">
+                                            <strong>{{ groupMeta(idx).label }}</strong>
+                                            <small>{{ groupMeta(idx).count }} field{{ groupMeta(idx).count === 1 ? '' : 's' }}</small>
+                                        </span>
+                                    </button>
                                 </li>
-                                <li class="rcmi-formbuilder-drop-zone"
+                                <template v-if="!isGroupCollapsed(groupMeta(idx).id) || searchQuery">
+                                <li v-if="!searchQuery" class="rcmi-formbuilder-drop-zone"
                                     :class="{ 'rcmi-formbuilder-drop-zone-active': dragOverIdx === idx && dragOverSide === 'above' }"
                                     @dragover.prevent="onDragOver(idx, 'above')"
                                     @drop.prevent="onDrop(idx, 'above')">
                                     <span v-if="dragOverIdx === idx && dragOverSide === 'above'">Drop above {{ f.label || 'this field' }}</span>
                                 </li>
-                                <li :class="['rcmi-formbuilder-field', { 'rcmi-formbuilder-field-dragging': dragIdx === idx }]">
+                                <li :class="['rcmi-formbuilder-field', { 'rcmi-formbuilder-field-dragging': dragIdx === idx, 'rcmi-formbuilder-field-conditional': groupMeta(idx).key !== 'always' }]">
                                 <!-- Field header -->
                                 <div class="flex items-center gap-2">
-                                    <span class="cursor-grab text-gray-400" aria-label="Drag to reorder"
-                                        draggable="true"
+                                    <span :class="searchQuery ? 'cursor-not-allowed text-gray-300' : 'cursor-grab text-gray-400'" aria-label="Drag to reorder"
+                                        :draggable="!searchQuery"
                                         @dragstart="onDragStart(idx)"
                                         @dragend="onDragEnd"><Icon name="grip" /></span>
                                     <span class="flex h-7 w-7 items-center justify-center rounded bg-gray-100 text-gray-500">
                                         <Icon :name="typeIcon(f.type)" />
                                     </span>
-                                    <span class="flex-1 truncate text-sm font-semibold text-gray-800">{{ f.label || '(untitled)' }}</span>
+                                    <span class="min-w-0 flex-1 truncate text-sm font-semibold text-gray-800">{{ f.label || '(untitled)' }}</span>
                                     <span class="text-xs text-gray-400">{{ f.type }}</span>
-                                    <span v-if="f.config.logic && f.config.logic.field_key" class="rcmi-formbuilder-condition-chip">
-                                        Shown when {{ dependencyLabel(f) }}
+                                    <span v-if="f.config.logic && f.config.logic.field_key" class="rcmi-formbuilder-condition-chip" :title="conditionSummary(f)">
+                                        {{ conditionSummary(f) }}
                                     </span>
                                     <button @click="toggleEdit(f.id)" class="rcmi-button-ghost px-2 py-1 text-xs">{{ editingId === f.id ? 'Done' : 'Edit' }}</button>
                                     <button @click="deleteField(f.id)" class="rcmi-button-ghost px-2 py-1 text-xs text-red-700 hover:text-red-800"><Icon name="trash" /></button>
@@ -203,7 +226,8 @@
                                 </div>
                             </li>
                             </template>
-                            <li class="rcmi-formbuilder-drop-zone"
+                            </template>
+                            <li v-if="!searchQuery" class="rcmi-formbuilder-drop-zone"
                                 :class="{ 'rcmi-formbuilder-drop-zone-active': dragOverIdx === fields.length && dragOverSide === 'below' }"
                                 @dragover.prevent="onDragOver(fields.length, 'below')"
                                 @drop.prevent="onDrop(fields.length, 'below')">
@@ -217,7 +241,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue';
+import { computed, ref, reactive, watch } from 'vue';
 import { api } from '../api.js';
 import Icon from './Icon.vue';
 import { useToast } from '../composables/useToast.js';
@@ -235,6 +259,8 @@ const dragIdx = ref(null);
 const dragOverIdx = ref(null);
 const dragOverSide = ref(null);
 const cascadeInput = reactive({});
+const searchQuery = ref('');
+const collapsedGroups = ref([]);
 
 const paletteTypes = [
     { type: 'text',      label: 'Text',        icon: 'text' },
@@ -271,19 +297,67 @@ function groupKey(f) {
     return f.config?.logic?.field_key || 'always';
 }
 
-function groupLabel(f) {
-    const key = groupKey(f);
-    if (key === 'always') return 'Always shown';
-    const parent = fields.value.find(x => x.field_key === key);
-    return `Conditional · ${parent?.label || key}`;
+const fieldGroupMeta = computed(() => {
+    let segment = -1;
+    let previousKey = null;
+    let id = '';
+    const counts = {};
+    const metadata = fields.value.map((field) => {
+        const key = groupKey(field);
+        if (key !== previousKey) {
+            segment++;
+            previousKey = key;
+            id = `${key}:${segment}`;
+        }
+        counts[id] = (counts[id] || 0) + 1;
+        const parent = fields.value.find(x => x.field_key === key);
+        return { id, key, label: key === 'always' ? 'Always shown' : `Conditional · ${parent?.label || key}` };
+    });
+    return metadata.map(meta => ({ ...meta, count: counts[meta.id] }));
+});
+
+function conditionSummary(f) {
+    const logic = f.config?.logic;
+    if (!logic?.field_key) return '';
+    const parent = fields.value.find(x => x.field_key === logic.field_key);
+    const operators = { equals: 'is', not_equals: 'is not', contains: 'contains', not_contains: 'does not contain' };
+    const action = logic.action === 'hide' ? 'Hide if' : 'Show if';
+    return `${action} ${parent?.label || logic.field_key} ${operators[logic.op] || logic.op} “${logic.value || '…'}”`;
 }
 
-function dependencyLabel(f) {
-    const key = f.config?.logic?.field_key;
-    const parent = fields.value.find(x => x.field_key === key);
-    const op = f.config?.logic?.op || 'equals';
-    const value = f.config?.logic?.value || '…';
-    return `${parent?.label || key} ${op.replace('_', ' ')} ${value}`;
+const visibleFieldEntries = computed(() => {
+    const query = searchQuery.value.toLowerCase();
+    return fields.value
+        .map((field, index) => ({ field, index }))
+        .filter(({ field }) => !query || [field.label, field.field_key, field.type, conditionSummary(field)]
+            .some(value => String(value || '').toLowerCase().includes(query)));
+});
+
+const groupIds = computed(() => [...new Set(fieldGroupMeta.value.map(meta => meta.id))]);
+const allGroupsCollapsed = computed(() => groupIds.value.length > 0 && groupIds.value.every(id => collapsedGroups.value.includes(id)));
+
+function groupMeta(index) {
+    return fieldGroupMeta.value[index];
+}
+
+function isVisibleGroupStart(index, visibleIndex) {
+    if (visibleIndex === 0) return true;
+    const previousIndex = visibleFieldEntries.value[visibleIndex - 1].index;
+    return groupMeta(index).id !== groupMeta(previousIndex).id;
+}
+
+function isGroupCollapsed(id) {
+    return collapsedGroups.value.includes(id);
+}
+
+function toggleGroup(id) {
+    collapsedGroups.value = isGroupCollapsed(id)
+        ? collapsedGroups.value.filter(groupId => groupId !== id)
+        : [...collapsedGroups.value, id];
+}
+
+function toggleAllGroups() {
+    collapsedGroups.value = allGroupsCollapsed.value ? [] : [...groupIds.value];
 }
 
 function autoKey(f) {
