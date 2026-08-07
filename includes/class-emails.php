@@ -149,6 +149,8 @@ function rcmi_tickets_email_ticket_created($ticket_id, $author_id, $assignee_ids
 
 /**
  * Send status notifications to assignees or the ticket author.
+ * When status is 'Completed', includes the custom completion message
+ * from the approval chain that processed the ticket (if any).
  */
 function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status, $message = null) {
     $ticket = rcmi_tickets_load_ticket($ticket_id);
@@ -178,6 +180,12 @@ function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status,
         return;
     }
 
+    // For Completed status, fetch the chain's custom completion message
+    $completion_message = '';
+    if ($new_status === 'Completed') {
+        $completion_message = rcmi_tickets_get_chain_completion_message($ticket_id);
+    }
+
     $title = rcmi_tickets_email_esc($ticket['title']);
     $url = esc_url(rcmi_tickets_email_ticket_url($ticket_id));
     $status_html = rcmi_tickets_email_esc($new_status);
@@ -188,23 +196,58 @@ function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status,
         : '';
     $message_plain = $message !== '' ? "\nMessage: {$message}\n" : '';
 
+    // Completion message from the chain (if any)
+    $completion_html = '';
+    $completion_plain = '';
+    if ($completion_message !== '') {
+        $completion_html = '<div style="margin-top:1rem;padding:1rem;background:#f0fdf4;border-left:4px solid #00B388;border-radius:.375rem;">'
+            . '<p style="margin:0;font-size:14px;color:#166534;">' . nl2br(rcmi_tickets_email_esc($completion_message)) . '</p>'
+            . '</div>';
+        $completion_plain = "\n" . $completion_message . "\n";
+    }
+
     $html = '<!doctype html><html><body>'
         . '<h2>' . sprintf(__('Ticket status updated to %s', 'rcmi-tickets'), $status_html) . '</h2>'
         . '<p><strong>' . __('Ticket:', 'rcmi-tickets') . '</strong> #' . (int) $ticket_id . ' — ' . $title . '</p>'
         . $message_html
+        . $completion_html
         . '<p><a href="' . $url . '">' . __('View ticket', 'rcmi-tickets') . '</a></p>'
         . '</body></html>';
 
     $plain = sprintf(
-        "Ticket status updated to %s\n\nTicket: #%d — %s%s\nView ticket: %s",
+        "Ticket status updated to %s\n\nTicket: #%d — %s%s%s\nView ticket: %s",
         $new_status,
         $ticket_id,
         $ticket['title'],
         $message_plain,
+        $completion_plain,
         wp_strip_all_tags($url)
     );
 
     rcmi_tickets_send_email($recipients, $subject, $html, $plain);
+}
+
+/**
+ * Get the completion message from the approval chain that processed
+ * a given ticket. Looks up the chain via the ticket_approvals table.
+ *
+ * @param int $ticket_id
+ * @return string Completion message (empty string if no chain or no message)
+ */
+function rcmi_tickets_get_chain_completion_message($ticket_id) {
+    global $wpdb;
+    $chain_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT chain_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE ticket_id = %d ORDER BY id DESC LIMIT 1",
+        (int) $ticket_id
+    ));
+    if (!$chain_id) {
+        return '';
+    }
+    $message = $wpdb->get_var($wpdb->prepare(
+        "SELECT completion_message FROM {$wpdb->prefix}rcmi_approval_chains WHERE id = %d",
+        (int) $chain_id
+    ));
+    return $message ?: '';
 }
 
 /**

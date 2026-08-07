@@ -78,13 +78,14 @@ function rcmi_tickets_perm_approval_chains_write() {
 
 function rcmi_tickets_approval_chain_write_args($is_update = false) {
     return [
-        'name'              => ['type' => 'string', 'required' => !$is_update, 'sanitize_callback' => 'sanitize_text_field'],
-        'description'       => ['type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field'],
-        'trigger_field_key' => ['type' => 'string', 'sanitize_callback' => 'sanitize_key'],
-        'trigger_value'     => ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field'],
-        'on_reject'         => ['type' => 'string', 'default' => 'restart', 'validate_callback' => function ($v) { return in_array($v, rcmi_tickets_valid_on_reject_modes(), true); }],
-        'is_active'         => ['type' => 'boolean', 'default' => true],
-        'steps'             => ['type' => 'array', 'required' => !$is_update],
+        'name'                => ['type' => 'string', 'required' => !$is_update, 'sanitize_callback' => 'sanitize_text_field'],
+        'description'         => ['type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field'],
+        'trigger_field_key'   => ['type' => 'string', 'sanitize_callback' => 'sanitize_key'],
+        'trigger_value'       => ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field'],
+        'on_reject'           => ['type' => 'string', 'default' => 'restart', 'validate_callback' => function ($v) { return in_array($v, rcmi_tickets_valid_on_reject_modes(), true); }],
+        'completion_message'  => ['type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field'],
+        'is_active'           => ['type' => 'boolean', 'default' => true],
+        'steps'               => ['type' => 'array', 'required' => !$is_update],
     ];
 }
 
@@ -122,16 +123,17 @@ function rcmi_tickets_format_approval_chain($row) {
     }, $steps);
 
     return [
-        'id'                => (int) $row['id'],
-        'name'              => $row['name'],
-        'description'       => $row['description'],
-        'trigger_field_key' => $row['trigger_field_key'],
-        'trigger_value'     => $row['trigger_value'],
-        'on_reject'         => $row['on_reject'],
-        'is_active'         => (bool) $row['is_active'],
-        'steps'             => $formatted_steps,
-        'created_at'        => $row['created_at'],
-        'updated_at'        => $row['updated_at'],
+        'id'                  => (int) $row['id'],
+        'name'                => $row['name'],
+        'description'         => $row['description'],
+        'trigger_field_key'   => $row['trigger_field_key'],
+        'trigger_value'       => $row['trigger_value'],
+        'on_reject'           => $row['on_reject'],
+        'completion_message'  => $row['completion_message'] ?? '',
+        'is_active'           => (bool) $row['is_active'],
+        'steps'               => $formatted_steps,
+        'created_at'          => $row['created_at'],
+        'updated_at'          => $row['updated_at'],
     ];
 }
 
@@ -220,18 +222,20 @@ function rcmi_tickets_handle_approval_chain_create($request) {
     $trigger_field_key = $request['trigger_field_key'] ?? null;
     $trigger_value = $request['trigger_value'] ?? null;
     $on_reject = $request['on_reject'] ?? 'restart';
+    $completion_message = $request['completion_message'] ?? '';
     $is_active = !empty($request['is_active']);
 
     $wpdb->insert($wpdb->prefix . 'rcmi_approval_chains', [
-        'name'              => $name,
-        'description'       => $description,
-        'trigger_field_key' => $trigger_field_key ?: null,
-        'trigger_value'     => $trigger_value ?: null,
-        'on_reject'         => $on_reject,
-        'is_active'         => $is_active ? 1 : 0,
-        'created_at'        => $now,
-        'updated_at'        => $now,
-    ], ['%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s']);
+        'name'                => $name,
+        'description'         => $description,
+        'trigger_field_key'   => $trigger_field_key ?: null,
+        'trigger_value'       => $trigger_value ?: null,
+        'on_reject'           => $on_reject,
+        'completion_message'  => $completion_message ?: null,
+        'is_active'           => $is_active ? 1 : 0,
+        'created_at'          => $now,
+        'updated_at'          => $now,
+    ], ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s']);
 
     $id = (int) $wpdb->insert_id;
     if (!$id) {
@@ -275,6 +279,10 @@ function rcmi_tickets_handle_approval_chain_update($request) {
             return new WP_Error('rcmi_tickets_bad_on_reject', 'Invalid on_reject value.', ['status' => 400]);
         }
         $data['on_reject'] = $request['on_reject'];
+        $format[] = '%s';
+    }
+    if (isset($request['completion_message'])) {
+        $data['completion_message'] = $request['completion_message'] ?: null;
         $format[] = '%s';
     }
     if (isset($request['is_active'])) {

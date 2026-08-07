@@ -136,6 +136,14 @@
                         Active
                     </label>
 
+                    <!-- Completion message -->
+                    <div class="rounded-md border border-gray-200 p-4">
+                        <h4 class="rcmi-section-label mb-3">Completion Message</h4>
+                        <textarea v-model="selectedChain.completion_message" rows="3" class="rcmi-input resize-y"
+                            placeholder="Custom message emailed to the ticket author when this ticket is marked Completed. Leave blank to send a default notification."></textarea>
+                        <p class="rcmi-field-help">This message is included in the completion email sent to the ticket author. Use it to provide next steps, contact info, or a thank-you note specific to this approval chain.</p>
+                    </div>
+
                     <!-- Save / Delete -->
                     <div class="flex items-center gap-3 border-t border-gray-100 pt-4">
                         <button @click="saveChain" :disabled="saving"
@@ -206,6 +214,7 @@ function newChain() {
         trigger_field_key: '',
         trigger_value: '',
         on_reject: 'restart',
+        completion_message: '',
         is_active: true,
         steps: [
             { name: 'Step 1', approver_type: 'user', approver_user_id: null, approver_role: '' },
@@ -236,6 +245,7 @@ async function saveChain() {
             trigger_field_key: selectedChain.value.trigger_field_key || '',
             trigger_value: selectedChain.value.trigger_value || '',
             on_reject: selectedChain.value.on_reject,
+            completion_message: selectedChain.value.completion_message || '',
             is_active: selectedChain.value.is_active,
             steps: selectedChain.value.steps.map((s, i) => ({
                 name: s.name || ('Step ' + (i + 1)),
