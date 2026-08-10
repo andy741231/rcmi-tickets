@@ -89,6 +89,15 @@ function rcmi_tickets_register_ticket_routes() {
         ],
     ]);
 
+    register_rest_route($namespace, '/tickets/export', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'rcmi_tickets_handle_csv_export',
+            'permission_callback' => 'rcmi_tickets_perm_list',
+            'args'                => rcmi_tickets_list_args(),
+        ],
+    ]);
+
     register_rest_route($namespace, '/tickets/(?P<id>\d+)/status', [
         [
             'methods'             => 'POST',
@@ -741,6 +750,166 @@ function rcmi_tickets_handle_list($request) {
         'per_page'   => $per_page,
         'total_pages' => (int) ceil($total / $per_page),
     ], 200);
+}
+
+/**
+ * CSV export: returns all matching tickets (same filters as list) as a
+ * CSV download. Includes core fields + dynamic form field columns.
+ */
+function rcmi_tickets_handle_csv_export($request) {
+    global $wpdb;
+
+    $params = $request->get_params();
+    $user_id = get_current_user_id();
+    $is_manager = rcmi_tickets_can($user_id, 'manage');
+
+    // Build the same WHERE clause as the list handler
+    $where = ['1=1'];
+    $args = [];
+
+    $scope = $params['scope'] ?? 'all';
+    if (!$is_manager || $scope !== 'all') {
+        if ($scope === 'assigned') {
+            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
+            $args[] = $user_id;
+        } elseif ($scope === 'submitted') {
+            $where[] = 't.author_id = %d';
+            $args[] = $user_id;
+        } else {
+            $vis = "(t.author_id = %d OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
+            $vis_args = [$user_id, $user_id];
+            $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_user_id = %d)";
+            $vis_args[] = $user_id;
+            $current_user = wp_get_current_user();
+            $user_roles = (array) $current_user->roles;
+            if ($user_roles) {
+                $role_placeholders = implode(',', array_fill(0, count($user_roles), '%s'));
+                $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_role IN ($role_placeholders))";
+                foreach ($user_roles as $role) {
+                    $vis_args[] = $role;
+                }
+            }
+            $vis .= ")";
+            $where[] = $vis;
+            $args = array_merge($args, $vis_args);
+        }
+    }
+
+    if (!empty($params['search'])) {
+        $search = '%' . $wpdb->esc_like(sanitize_text_field($params['search'])) . '%';
+        $where[] = '(t.title LIKE %s OR t.description_text LIKE %s)';
+        $args[] = $search;
+        $args[] = $search;
+    }
+    if (!empty($params['status']) && is_array($params['status'])) {
+        $statuses = array_filter($params['status'], function ($s) {
+            return in_array($s, rcmi_tickets_valid_statuses(), true);
+        });
+        if ($statuses) {
+            $placeholders = implode(',', array_fill(0, count($statuses), '%s'));
+            $where[] = "t.status IN ($placeholders)";
+            $args = array_merge($args, $statuses);
+        }
+    }
+    if (!empty($params['tag_ids']) && is_array($params['tag_ids'])) {
+        $tag_ids = array_filter(array_map('intval', $params['tag_ids']));
+        if ($tag_ids) {
+            $placeholders = implode(',', array_fill(0, count($tag_ids), '%d'));
+            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_tag_map WHERE tag_id IN ($placeholders))";
+            $args = array_merge($args, $tag_ids);
+        }
+    }
+    if (!empty($params['assignee_ids']) && is_array($params['assignee_ids'])) {
+        $assignee_ids = array_filter(array_map('intval', $params['assignee_ids']));
+        if ($assignee_ids) {
+            $placeholders = implode(',', array_fill(0, count($assignee_ids), '%d'));
+            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id IN ($placeholders))";
+            $args = array_merge($args, $assignee_ids);
+        }
+    }
+    if (!empty($params['date_from'])) {
+        $where[] = 't.created_at >= %s';
+        $args[] = $params['date_from'] . ' 00:00:00';
+    }
+    if (!empty($params['date_to'])) {
+        $where[] = 't.created_at <= %s';
+        $args[] = $params['date_to'] . ' 23:59:59';
+    }
+
+    $valid_sort = ['id', 'title', 'status', 'due_date', 'created_at', 'updated_at'];
+    $sort = in_array($params['sort'] ?? 'created_at', $valid_sort, true) ? ($params['sort'] ?? 'created_at') : 'created_at';
+    $order = strtolower($params['order'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
+    $where_clause = implode(' AND ', $where);
+
+    // Fetch ALL matching rows (no pagination for export)
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT t.* FROM {$wpdb->prefix}rcmi_tickets t WHERE {$where_clause} ORDER BY t.{$sort} {$order}",
+        $args
+    ), ARRAY_A);
+
+    // Get form field definitions for dynamic columns
+    $form_fields = rcmi_tickets_get_all_form_fields();
+
+    // Build CSV
+    $core_headers = ['ID', 'Title', 'Status', 'Author', 'Author Email', 'Assignees', 'Tags', 'Due Date', 'Created', 'Updated'];
+    $field_headers = array_map(function ($f) { return $f['label']; }, $form_fields);
+    $all_headers = array_merge($core_headers, $field_headers);
+
+    $output = fopen('php://temp', 'r+');
+    // BOM for Excel UTF-8 compatibility
+    fwrite($output, "\xEF\xBB\xBF");
+    fputcsv($output, $all_headers);
+
+    foreach ($rows as $row) {
+        $row['id'] = (int) $row['id'];
+        $row['author_id'] = (int) $row['author_id'];
+        $row['assignee_ids'] = rcmi_tickets_get_assignee_ids($row['id']);
+        $row['tag_ids'] = rcmi_tickets_get_ticket_tag_ids($row['id']);
+        $formatted = rcmi_tickets_format_ticket($row);
+
+        // Assignee names
+        $assignee_names = implode('; ', array_map(function ($a) { return $a['display_name']; }, $formatted['assignees']));
+        // Tag names
+        $tag_names = implode('; ', array_map(function ($t) { return $t['name']; }, $formatted['tags']));
+
+        $core_row = [
+            $formatted['id'],
+            $formatted['title'],
+            $formatted['status'],
+            $formatted['author_name'],
+            $formatted['author_email'],
+            $assignee_names,
+            $tag_names,
+            $formatted['due_date'] ?: '',
+            $formatted['created_at'],
+            $formatted['updated_at'],
+        ];
+
+        // Form answer values
+        $field_values = [];
+        foreach ($form_fields as $f) {
+            $key = $f['field_key'];
+            $val = $formatted['form_answers'][$key] ?? '';
+            if (is_array($val)) {
+                $val = implode('; ', $val);
+            }
+            $field_values[] = $val;
+        }
+
+        fputcsv($output, array_merge($core_row, $field_values));
+    }
+
+    rewind($output);
+    $csv = stream_get_contents($output);
+    fclose($output);
+
+    $filename = 'tickets-export-' . current_time('Y-m-d-His') . '.csv';
+
+    return new WP_REST_Response($csv, 200, [
+        'Content-Type'        => 'text/csv; charset=UTF-8',
+        'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        'Cache-Control'       => 'no-cache, no-store, must-revalidate',
+    ]);
 }
 
 function rcmi_tickets_handle_create($request) {

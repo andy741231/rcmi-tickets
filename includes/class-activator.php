@@ -250,5 +250,13 @@ function rcmi_tickets_maybe_upgrade_schema() {
     if (version_compare((string) $installed, RCMI_TICKETS_DB_VERSION, '<')) {
         rcmi_tickets_create_tables();
     }
+
+    // Ensure WordPress timezone is set to Houston (America/Chicago) so
+    // current_time('mysql') returns local time for all ticket timestamps.
+    // Only set if the site has no timezone configured (don't override an
+    // intentional setting).
+    if (!get_option('timezone_string')) {
+        update_option('timezone_string', 'America/Chicago');
+    }
 }
 add_action('admin_init', 'rcmi_tickets_maybe_upgrade_schema');

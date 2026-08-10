@@ -49,6 +49,10 @@
                 <Icon :name="order === 'desc' ? 'arrow-down' : 'arrow-up'" />
             </button>
             <div class="ml-auto flex items-center gap-2">
+                <button @click="exportCsv" :disabled="exporting"
+                    class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3 py-2 text-sm disabled:opacity-50">
+                    <Icon name="download" /> {{ exporting ? 'Exporting…' : 'Export CSV' }}
+                </button>
                 <template v-if="isManager && tickets.length > 0">
                     <button v-if="selectedIds.size > 0" @click="confirmBatchDelete = true"
                         class="rcmi-button-danger inline-flex items-center gap-1.5 px-3 py-2 text-sm">
@@ -274,6 +278,7 @@ const selectMode = ref(false);
 const selectedIds = ref(new Set());
 const confirmBatchDelete = ref(false);
 const batchDeleting = ref(false);
+const exporting = ref(false);
 
 const isManager = computed(() => meta.caps?.manage === true);
 const allSelected = computed(() => tickets.value.length > 0 && tickets.value.every(t => selectedIds.value.has(t.id)));
@@ -485,6 +490,50 @@ async function loadTickets() {
 function onPageChange(p) {
     page.value = p;
     loadTickets();
+}
+
+async function exportCsv() {
+    exporting.value = true;
+    try {
+        const params = new URLSearchParams();
+        params.set('sort', sort.value);
+        params.set('order', order.value);
+        if (filters.value.search) params.set('search', filters.value.search);
+        if (filters.value.scope !== 'all') params.set('scope', filters.value.scope);
+        if (filters.value.status?.length) filters.value.status.forEach(s => params.append('status[]', s));
+        if (filters.value.assignee_ids?.length) filters.value.assignee_ids.forEach(id => params.append('assignee_ids[]', id));
+        if (filters.value.tag_ids?.length) filters.value.tag_ids.forEach(id => params.append('tag_ids[]', id));
+        if (filters.value.date_from) params.set('date_from', filters.value.date_from);
+        if (filters.value.date_to) params.set('date_to', filters.value.date_to);
+
+        const config = window.rcmiTickets || {};
+        const sep = config.apiBase.includes('?') ? '&' : '?';
+        const url = `${config.apiBase}/tickets/export${sep}${params.toString()}`;
+
+        const res = await fetch(url, {
+            headers: { 'X-WP-Nonce': config.nonce },
+            credentials: 'same-origin',
+        });
+        if (!res.ok) throw new Error(`Export failed (${res.status})`);
+        const blob = await res.blob();
+        const disposition = res.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="?([^"]+)"?/);
+        const filename = match ? match[1] : 'tickets-export.csv';
+        const objUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(objUrl);
+        toast.success('CSV exported');
+    } catch (e) {
+        console.error('CSV export failed:', e);
+        toast.error('Failed to export CSV. Please try again.');
+    } finally {
+        exporting.value = false;
+    }
 }
 
 function onPerPageChange() {
