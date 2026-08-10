@@ -389,12 +389,21 @@ function rcmi_tickets_email_approval_rejected($ticket_id, $mode, $comment) {
         return;
     }
     $author = get_userdata((int) $ticket['author_id']);
-    if (!$author || !is_email($author->user_email)) {
+    $formatted_ticket = rcmi_tickets_format_ticket($ticket);
+    $recipient_email = $formatted_ticket['author_email'];
+    if (!$author || !is_email($recipient_email)) {
         return;
     }
 
     $title = rcmi_tickets_email_esc($ticket['title']);
-    $url = esc_url(rcmi_tickets_email_ticket_url($ticket_id));
+    $url = rcmi_tickets_email_ticket_url($ticket_id);
+    if ($mode === 'restart' && function_exists('rcmi_tickets_create_revision_token')) {
+        $token = rcmi_tickets_create_revision_token($ticket_id);
+        if ($token) {
+            $url = rcmi_tickets_public_revision_url($ticket_id, $token);
+        }
+    }
+    $url = esc_url($url);
     $comment_html = $comment ? '<p><strong>' . __('Reviewer note:', 'rcmi-tickets') . '</strong> ' . nl2br(rcmi_tickets_email_esc($comment)) . '</p>' : '';
     $comment_plain = $comment ? "\nReviewer note: {$comment}\n" : '';
 
@@ -427,5 +436,5 @@ function rcmi_tickets_email_approval_rejected($ticket_id, $mode, $comment) {
         $details['plain']
     );
 
-    rcmi_tickets_send_email($author->user_email, $subject, $html, $plain);
+    rcmi_tickets_send_email($recipient_email, $subject, $html, $plain);
 }

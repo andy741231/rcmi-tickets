@@ -40,6 +40,28 @@ function rcmi_tickets_register_public_routes() {
         ],
     ]);
 
+    register_rest_route($namespace, '/public/tickets/(?P<ticket_id>\d+)/revision', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'rcmi_tickets_handle_public_revision_get',
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'ticket_id' => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int'],
+                'token'     => ['required' => true, 'type' => 'string'],
+            ],
+        ],
+        [
+            'methods'             => 'PUT',
+            'callback'            => 'rcmi_tickets_handle_public_revision_update',
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'ticket_id'    => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int'],
+                'token'        => ['required' => true, 'type' => 'string'],
+                'form_answers' => ['required' => true, 'type' => 'object'],
+            ],
+        ],
+    ]);
+
     register_rest_route($namespace, '/public/attachments/(?P<ticket_id>\d+)', [
         [
             'methods'             => 'POST',
@@ -163,6 +185,90 @@ function rcmi_tickets_handle_public_submit($request) {
         'id'      => $ticket_id,
         'message' => 'Your ticket has been submitted. A confirmation has been sent to your email.',
     ], 201);
+}
+
+function rcmi_tickets_is_public_ticket($ticket) {
+    $author = get_userdata((int) $ticket['author_id']);
+    return $author && $author->user_login === 'guest_submitter';
+}
+
+function rcmi_tickets_create_revision_token($ticket_id) {
+    global $wpdb;
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
+    if (!$ticket || !rcmi_tickets_is_public_ticket($ticket) || $ticket['status'] !== 'Rejected: Pending Revision') {
+        return '';
+    }
+
+    $token = bin2hex(random_bytes(32));
+    $wpdb->update($wpdb->prefix . 'rcmi_tickets', [
+        'revision_token_hash'    => hash('sha256', $token),
+        'revision_token_expires' => gmdate('Y-m-d H:i:s', time() + WEEK_IN_SECONDS),
+    ], ['id' => (int) $ticket_id], ['%s', '%s'], ['%d']);
+
+    return $token;
+}
+
+function rcmi_tickets_public_revision_url($ticket_id, $token) {
+    $base = function_exists('rcmi_tickets_get_app_url') ? rcmi_tickets_get_app_url() : home_url('/');
+    return untrailingslashit($base) . '#/revision/' . (int) $ticket_id . '?token=' . rawurlencode($token);
+}
+
+function rcmi_tickets_validate_revision_token($ticket_id, $token) {
+    global $wpdb;
+    $ticket = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM {$wpdb->prefix}rcmi_tickets WHERE id = %d",
+        (int) $ticket_id
+    ), ARRAY_A);
+    if (!$ticket || !rcmi_tickets_is_public_ticket($ticket) || $ticket['status'] !== 'Rejected: Pending Revision') {
+        return new WP_Error('rcmi_tickets_revision_unavailable', 'This revision link is no longer available.', ['status' => 404]);
+    }
+    if (!$ticket['revision_token_hash'] || !$ticket['revision_token_expires'] || strtotime($ticket['revision_token_expires'] . ' UTC') < time() || !hash_equals($ticket['revision_token_hash'], hash('sha256', (string) $token))) {
+        return new WP_Error('rcmi_tickets_bad_revision_token', 'This revision link is invalid or has expired.', ['status' => 403]);
+    }
+    return rcmi_tickets_load_ticket($ticket_id);
+}
+
+function rcmi_tickets_handle_public_revision_get($request) {
+    $ticket = rcmi_tickets_validate_revision_token((int) $request['ticket_id'], (string) $request['token']);
+    if (is_wp_error($ticket)) {
+        return $ticket;
+    }
+
+    return new WP_REST_Response([
+        'id'           => (int) $ticket['id'],
+        'title'        => $ticket['title'],
+        'form_answers' => rcmi_tickets_get_ticket_form_answers((int) $ticket['id']),
+    ], 200);
+}
+
+function rcmi_tickets_handle_public_revision_update($request) {
+    global $wpdb;
+    $ticket = rcmi_tickets_validate_revision_token((int) $request['ticket_id'], (string) $request['token']);
+    if (is_wp_error($ticket)) {
+        return $ticket;
+    }
+
+    $ticket_id = (int) $ticket['id'];
+    $form_answers = $request['form_answers'];
+    rcmi_tickets_sync_form_answers($ticket_id, $form_answers);
+    rcmi_tickets_apply_auto_tags($ticket_id, $form_answers);
+    $restarted = rcmi_tickets_restart_ticket_approval_chain($ticket_id);
+    $data = [
+        'revision_token_hash'    => null,
+        'revision_token_expires' => null,
+        'updated_at'             => current_time('mysql'),
+    ];
+    $format = [null, null, '%s'];
+    if (!$restarted) {
+        $data['status'] = 'Received';
+        $format[] = '%s';
+    }
+    $wpdb->update($wpdb->prefix . 'rcmi_tickets', $data, ['id' => $ticket_id], $format, ['%d']);
+
+    return new WP_REST_Response([
+        'id'      => $ticket_id,
+        'message' => 'Your revised ticket has been resubmitted for approval.',
+    ], 200);
 }
 
 /**

@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
  * re-run on the next admin request to bring tables up to date.
  */
 if (!defined('RCMI_TICKETS_DB_VERSION')) {
-    define('RCMI_TICKETS_DB_VERSION', '8');
+    define('RCMI_TICKETS_DB_VERSION', '9');
 }
 
 /**
@@ -42,6 +42,8 @@ function rcmi_tickets_schema_statements() {
             description_text LONGTEXT NULL,
             status VARCHAR(50) NOT NULL DEFAULT 'Received',
             due_date DATE NULL,
+            revision_token_hash VARCHAR(64) NULL,
+            revision_token_expires DATETIME NULL,
             updated_by BIGINT UNSIGNED NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
@@ -238,6 +240,15 @@ function rcmi_tickets_run_schema_migrations() {
     $has_completion_assignee = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_approval_chains LIKE 'completion_assignee_id'");
     if (!$has_completion_assignee) {
         $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_approval_chains ADD COLUMN completion_assignee_id BIGINT UNSIGNED NULL AFTER completion_message");
+    }
+
+    $has_revision_token_hash = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'revision_token_hash'");
+    if (!$has_revision_token_hash) {
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN revision_token_hash VARCHAR(64) NULL AFTER due_date");
+    }
+    $has_revision_token_expires = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'revision_token_expires'");
+    if (!$has_revision_token_expires) {
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN revision_token_expires DATETIME NULL AFTER revision_token");
     }
 }
 
