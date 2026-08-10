@@ -105,7 +105,11 @@ function rcmi_tickets_can($user_id, $action, $ticket = null, $new_status = null)
                 return true;
             }
             $t = rcmi_tickets_normalize_ticket($ticket);
-            return $new_status === 'Completed' && in_array($user_id, $t['assignee_ids'], true);
+            if (!in_array($user_id, $t['assignee_ids'], true)) {
+                return false;
+            }
+            return ($t['status'] === 'Approved' && $new_status === 'In Progress')
+                || ($t['status'] === 'In Progress' && $new_status === 'Completed');
 
         case 'approve':
             // Schema v3: current-step approver can approve/reject.

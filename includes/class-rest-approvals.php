@@ -281,6 +281,30 @@ function rcmi_tickets_perm_ticket_approvals_view($request) {
 
 // ── handlers ─────────────────────────────────────────────────────────
 
+function rcmi_tickets_assign_completion_assignee($ticket_id, $chain_id) {
+    global $wpdb;
+    $assignee_id = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT completion_assignee_id FROM {$wpdb->prefix}rcmi_approval_chains WHERE id = %d",
+        (int) $chain_id
+    ));
+
+    if (!$assignee_id || !get_userdata($assignee_id)) {
+        return;
+    }
+
+    $already_assigned = $wpdb->get_var($wpdb->prepare(
+        "SELECT 1 FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE ticket_id = %d AND user_id = %d",
+        (int) $ticket_id,
+        $assignee_id
+    ));
+    if (!$already_assigned) {
+        $wpdb->insert($wpdb->prefix . 'rcmi_ticket_assignees', [
+            'ticket_id' => (int) $ticket_id,
+            'user_id'   => $assignee_id,
+        ], ['%d', '%d']);
+    }
+}
+
 function rcmi_tickets_handle_ticket_approve($request) {
     global $wpdb;
     $ticket_id = (int) $request['id'];
@@ -327,6 +351,7 @@ function rcmi_tickets_handle_ticket_approve($request) {
     }
 
     // No more steps → ticket Approved
+    rcmi_tickets_assign_completion_assignee($ticket_id, (int) $pending['chain_id']);
     $wpdb->update(
         $wpdb->prefix . 'rcmi_tickets',
         ['status' => 'Approved', 'updated_at' => $now, 'updated_by' => $user_id],

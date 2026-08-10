@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
  * re-run on the next admin request to bring tables up to date.
  */
 if (!defined('RCMI_TICKETS_DB_VERSION')) {
-    define('RCMI_TICKETS_DB_VERSION', '7');
+    define('RCMI_TICKETS_DB_VERSION', '8');
 }
 
 /**
@@ -143,6 +143,7 @@ function rcmi_tickets_schema_statements() {
             trigger_value VARCHAR(255) NULL,
             on_reject VARCHAR(20) NOT NULL DEFAULT 'restart',
             completion_message TEXT NULL,
+            completion_assignee_id BIGINT UNSIGNED NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
@@ -232,6 +233,11 @@ function rcmi_tickets_run_schema_migrations() {
     $has_completion = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_approval_chains LIKE 'completion_message'");
     if (!$has_completion) {
         $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_approval_chains ADD COLUMN completion_message TEXT NULL AFTER on_reject");
+    }
+
+    $has_completion_assignee = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_approval_chains LIKE 'completion_assignee_id'");
+    if (!$has_completion_assignee) {
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_approval_chains ADD COLUMN completion_assignee_id BIGINT UNSIGNED NULL AFTER completion_message");
     }
 }
 

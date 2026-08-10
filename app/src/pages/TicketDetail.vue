@@ -127,7 +127,14 @@
                         </button>
                     </template>
                 </template>
-                <div v-if="canChangeStatus('Completed') && ticket.status === 'Approved'" class="mt-2 flex w-full items-center gap-2 border-t border-gray-200 pt-3">
+                <div v-if="canChangeStatus('In Progress') && ticket.status === 'Approved'" class="mt-2 flex w-full items-center gap-2 border-t border-gray-200 pt-3">
+                    <span class="mr-1 text-xs text-gray-500">Ticket actions</span>
+                    <button @click="changeStatus('In Progress')" :disabled="statusChanging"
+                        class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50">
+                        <Icon name="arrow-right" /> Start work
+                    </button>
+                </div>
+                <div v-if="canChangeStatus('Completed') && ticket.status === 'In Progress'" class="mt-2 flex w-full items-center gap-2 border-t border-gray-200 pt-3">
                     <span class="mr-1 text-xs text-gray-500">Ticket actions</span>
                     <button @click="changeStatus('Completed')" :disabled="statusChanging"
                         class="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50">
@@ -333,8 +340,9 @@ function canChangeStatus(newStatus) {
     if (!ticket.value) return false;
     const current = ticket.value.status;
     if (isManager.value) return newStatus !== current;
-    if (isAssignee.value && newStatus === 'Completed' && current === 'Approved') return true;
-    return false;
+    if (!isAssignee.value) return false;
+    return (current === 'Approved' && newStatus === 'In Progress')
+        || (current === 'In Progress' && newStatus === 'Completed');
 }
 
 async function changeStatus(newStatus) {

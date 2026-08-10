@@ -83,8 +83,9 @@ function rcmi_tickets_approval_chain_write_args($is_update = false) {
         'trigger_field_key'   => ['type' => 'string', 'sanitize_callback' => 'sanitize_key'],
         'trigger_value'       => ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field'],
         'on_reject'           => ['type' => 'string', 'default' => 'restart', 'validate_callback' => function ($v) { return in_array($v, rcmi_tickets_valid_on_reject_modes(), true); }],
-        'completion_message'  => ['type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field'],
-        'is_active'           => ['type' => 'boolean', 'default' => true],
+        'completion_message'     => ['type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field'],
+        'completion_assignee_id' => ['type' => 'integer', 'validate_callback' => function ($v) { return !(int) $v || (bool) get_userdata((int) $v); }],
+        'is_active'              => ['type' => 'boolean', 'default' => true],
         'steps'               => ['type' => 'array', 'required' => !$is_update],
     ];
 }
@@ -129,8 +130,9 @@ function rcmi_tickets_format_approval_chain($row) {
         'trigger_field_key'   => $row['trigger_field_key'],
         'trigger_value'       => $row['trigger_value'],
         'on_reject'           => $row['on_reject'],
-        'completion_message'  => $row['completion_message'] ?? '',
-        'is_active'           => (bool) $row['is_active'],
+        'completion_message'     => $row['completion_message'] ?? '',
+        'completion_assignee_id' => $row['completion_assignee_id'] !== null ? (int) $row['completion_assignee_id'] : null,
+        'is_active'              => (bool) $row['is_active'],
         'steps'               => $formatted_steps,
         'created_at'          => $row['created_at'],
         'updated_at'          => $row['updated_at'],
@@ -223,19 +225,21 @@ function rcmi_tickets_handle_approval_chain_create($request) {
     $trigger_value = $request['trigger_value'] ?? null;
     $on_reject = $request['on_reject'] ?? 'restart';
     $completion_message = $request['completion_message'] ?? '';
+    $completion_assignee_id = !empty($request['completion_assignee_id']) ? (int) $request['completion_assignee_id'] : null;
     $is_active = !empty($request['is_active']);
 
     $wpdb->insert($wpdb->prefix . 'rcmi_approval_chains', [
-        'name'                => $name,
-        'description'         => $description,
-        'trigger_field_key'   => $trigger_field_key ?: null,
-        'trigger_value'       => $trigger_value ?: null,
-        'on_reject'           => $on_reject,
-        'completion_message'  => $completion_message ?: null,
-        'is_active'           => $is_active ? 1 : 0,
-        'created_at'          => $now,
-        'updated_at'          => $now,
-    ], ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s']);
+        'name'                   => $name,
+        'description'            => $description,
+        'trigger_field_key'      => $trigger_field_key ?: null,
+        'trigger_value'          => $trigger_value ?: null,
+        'on_reject'              => $on_reject,
+        'completion_message'     => $completion_message ?: null,
+        'completion_assignee_id' => $completion_assignee_id,
+        'is_active'              => $is_active ? 1 : 0,
+        'created_at'             => $now,
+        'updated_at'             => $now,
+    ], ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s']);
 
     $id = (int) $wpdb->insert_id;
     if (!$id) {
@@ -284,6 +288,14 @@ function rcmi_tickets_handle_approval_chain_update($request) {
     if (isset($request['completion_message'])) {
         $data['completion_message'] = $request['completion_message'] ?: null;
         $format[] = '%s';
+    }
+    if (isset($request['completion_assignee_id'])) {
+        $assignee_id = (int) $request['completion_assignee_id'];
+        if ($assignee_id && !get_userdata($assignee_id)) {
+            return new WP_Error('rcmi_tickets_bad_completion_assignee', 'Invalid completion assignee.', ['status' => 400]);
+        }
+        $data['completion_assignee_id'] = $assignee_id ?: null;
+        $format[] = '%d';
     }
     if (isset($request['is_active'])) {
         $data['is_active'] = !empty($request['is_active']) ? 1 : 0;

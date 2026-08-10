@@ -136,6 +136,17 @@
                         Active
                     </label>
 
+                    <!-- Completion assignment -->
+                    <div class="rounded-md border border-gray-200 p-4">
+                        <h4 class="rcmi-section-label mb-3">After Final Approval</h4>
+                        <label class="rcmi-field-label">Assign ticket to</label>
+                        <select v-model="selectedChain.completion_assignee_id" class="rcmi-input">
+                            <option :value="null">Keep current assignees</option>
+                            <option v-for="u in assignableUsers" :key="u.id" :value="u.id">{{ u.display_name }} ({{ u.user_login }})</option>
+                        </select>
+                        <p class="rcmi-field-help">The selected person is added as an assignee after the final approval and receives the Approved notification. They can then move the ticket to In Progress and Complete.</p>
+                    </div>
+
                     <!-- Completion message -->
                     <div class="rounded-md border border-gray-200 p-4">
                         <h4 class="rcmi-section-label mb-3">Completion Message</h4>
@@ -214,6 +225,7 @@ function newChain() {
         trigger_field_key: '',
         trigger_value: '',
         on_reject: 'restart',
+        completion_assignee_id: null,
         completion_message: '',
         is_active: true,
         steps: [
@@ -245,6 +257,7 @@ async function saveChain() {
             trigger_field_key: selectedChain.value.trigger_field_key || '',
             trigger_value: selectedChain.value.trigger_value || '',
             on_reject: selectedChain.value.on_reject,
+            completion_assignee_id: selectedChain.value.completion_assignee_id || 0,
             completion_message: selectedChain.value.completion_message || '',
             is_active: selectedChain.value.is_active,
             steps: selectedChain.value.steps.map((s, i) => ({

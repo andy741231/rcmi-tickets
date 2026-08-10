@@ -21,7 +21,17 @@ if (!defined('ABSPATH')) {
  * Valid status values (frozen per §3/§5).
  */
 function rcmi_tickets_valid_statuses() {
-    return ['Received', 'Pending Approval', 'Approved', 'Rejected', 'Rejected: Pending Revision', 'Completed'];
+    return ['Received', 'Pending Approval', 'Approved', 'In Progress', 'Rejected', 'Rejected: Pending Revision', 'Completed'];
+}
+
+function rcmi_tickets_status_transition_allowed($old_status, $new_status) {
+    $transitions = [
+        'Received' => ['Approved', 'Rejected'],
+        'Pending Approval' => ['Approved', 'Rejected'],
+        'Approved' => ['In Progress'],
+        'In Progress' => ['Completed'],
+    ];
+    return in_array($new_status, $transitions[$old_status] ?? [], true);
 }
 
 /**
@@ -589,6 +599,9 @@ function rcmi_tickets_perm_status($request) {
         return new WP_Error('rcmi_tickets_not_found', 'Ticket not found.', ['status' => 404]);
     }
     $new_status = isset($request['status']) ? (string) $request['status'] : '';
+    if (!rcmi_tickets_status_transition_allowed($ticket['status'], $new_status)) {
+        return new WP_Error('rcmi_tickets_invalid_status_transition', 'This status change is not allowed.', ['status' => 409]);
+    }
     return rcmi_tickets_can(get_current_user_id(), 'change_status', $ticket, $new_status);
 }
 
