@@ -253,14 +253,21 @@ function rcmi_tickets_format_ticket($row) {
     $author_email = $author ? $author->user_email : '';
 
     // Public submissions share a guest author account; recover the submitter's
-    // actual name and email from the receipt line stored in the description.
+    // actual name and email. Prefer the dedicated submitter_name/submitter_email
+    // columns (DB v11+); fall back to parsing the description text for older
+    // tickets that predate the columns.
     if ($author && $author->user_login === 'guest_submitter') {
-        $source = wp_strip_all_tags((string) ($row['description_text'] ?: $row['description']));
-        if (preg_match('/Submitted by:\s*(.*?)\s*\(([^)]+)\)/i', $source, $matches)) {
-            $candidate_email = trim($matches[2]);
-            if (is_email($candidate_email)) {
-                $author_name = trim($matches[1]) ?: $author_name;
-                $author_email = $candidate_email;
+        if (!empty($row['submitter_email']) && is_email($row['submitter_email'])) {
+            $author_email = $row['submitter_email'];
+            $author_name = !empty($row['submitter_name']) ? $row['submitter_name'] : $author_name;
+        } else {
+            $source = wp_strip_all_tags((string) ($row['description_text'] ?: $row['description']));
+            if (preg_match('/Submitted by:\s*(.*?)\s*\(([^)]+)\)/i', $source, $matches)) {
+                $candidate_email = trim($matches[2]);
+                if (is_email($candidate_email)) {
+                    $author_name = trim($matches[1]) ?: $author_name;
+                    $author_email = $candidate_email;
+                }
             }
         }
     }

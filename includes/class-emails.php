@@ -160,6 +160,7 @@ function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status,
 
     $recipients = [];
     $event_label = $new_status;
+    $is_public_ticket = function_exists('rcmi_tickets_is_public_ticket') && rcmi_tickets_is_public_ticket($ticket);
 
     if ($new_status === 'Approved') {
         foreach ($ticket['assignee_ids'] as $user_id) {
@@ -169,9 +170,16 @@ function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status,
             }
         }
     } elseif (in_array($new_status, ['Rejected', 'Completed'], true)) {
-        $author = get_userdata($ticket['author_id']);
-        if ($author && is_email($author->user_email)) {
-            $recipients[] = $author->user_email;
+        // Public tickets share a "Guest Submitter" account as author, so the
+        // author's WP user_email is a fake placeholder. Use the per-ticket
+        // submitter_email column instead.
+        if ($is_public_ticket && !empty($ticket['submitter_email']) && is_email($ticket['submitter_email'])) {
+            $recipients[] = $ticket['submitter_email'];
+        } else {
+            $author = get_userdata($ticket['author_id']);
+            if ($author && is_email($author->user_email)) {
+                $recipients[] = $author->user_email;
+            }
         }
     }
 
@@ -187,7 +195,15 @@ function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status,
     }
 
     $title = rcmi_tickets_email_esc($ticket['title']);
+    // Public submitters can't access the internal ticket URL — use their
+    // tokenized public view link instead.
     $url = esc_url(rcmi_tickets_email_ticket_url($ticket_id));
+    if ($is_public_ticket && function_exists('rcmi_tickets_create_view_token') && function_exists('rcmi_tickets_public_view_url')) {
+        $fresh_token = rcmi_tickets_create_view_token($ticket_id);
+        if ($fresh_token) {
+            $url = esc_url(rcmi_tickets_public_view_url($ticket_id, $fresh_token));
+        }
+    }
     $status_html = rcmi_tickets_email_esc($new_status);
     $subject = sprintf(__('Ticket #%d %s: %s', 'rcmi-tickets'), $ticket_id, $event_label, $ticket['title']);
     $message = $message ? sanitize_textarea_field($message) : '';
@@ -436,10 +452,18 @@ function rcmi_tickets_email_approval_rejected($ticket_id, $mode, $comment) {
 
     $title = rcmi_tickets_email_esc($ticket['title']);
     $url = rcmi_tickets_email_ticket_url($ticket_id);
+    $is_public = function_exists('rcmi_tickets_is_public_ticket') && rcmi_tickets_is_public_ticket($ticket);
     if ($mode === 'restart' && function_exists('rcmi_tickets_create_revision_token')) {
         $token = rcmi_tickets_create_revision_token($ticket_id);
         if ($token) {
             $url = rcmi_tickets_public_revision_url($ticket_id, $token);
+        }
+    } elseif ($is_public && $mode === 'terminal' && function_exists('rcmi_tickets_create_view_token') && function_exists('rcmi_tickets_public_view_url')) {
+        // Public submitters can't access the internal ticket URL — give them
+        // a tokenized read-only view link instead.
+        $view_token = rcmi_tickets_create_view_token($ticket_id);
+        if ($view_token) {
+            $url = rcmi_tickets_public_view_url($ticket_id, $view_token);
         }
     }
     $url = esc_url($url);
