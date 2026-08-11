@@ -200,10 +200,16 @@ function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status,
     $completion_html = '';
     $completion_plain = '';
     if ($completion_message !== '') {
+        $allowed_html = [
+            'p' => [], 'br' => [], 'strong' => [], 'em' => [], 'b' => [], 'i' => [],
+            'a' => ['href' => true, 'title' => true],
+            'ul' => [], 'ol' => [], 'li' => [],
+        ];
+        $safe_html = wp_kses($completion_message, $allowed_html);
+        $completion_plain = "\n" . wp_strip_all_tags($completion_message) . "\n";
         $completion_html = '<div style="margin-top:1rem;padding:1rem;background:#f0fdf4;border-left:4px solid #00B388;border-radius:.375rem;">'
-            . '<p style="margin:0;font-size:14px;color:#166534;">' . nl2br(rcmi_tickets_email_esc($completion_message)) . '</p>'
+            . '<div style="font-size:14px;color:#166534;">' . $safe_html . '</div>'
             . '</div>';
-        $completion_plain = "\n" . $completion_message . "\n";
     }
 
     $html = '<!doctype html><html><body>'

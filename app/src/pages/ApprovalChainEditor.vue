@@ -150,9 +150,8 @@
                     <!-- Completion message -->
                     <div class="rounded-md border border-gray-200 p-4">
                         <h4 class="rcmi-section-label mb-3">Completion Message</h4>
-                        <textarea v-model="selectedChain.completion_message" rows="3" class="rcmi-input resize-y"
-                            placeholder="Custom message emailed to the ticket author when this ticket is marked Completed. Leave blank to send a default notification."></textarea>
-                        <p class="rcmi-field-help">This message is included in the completion email sent to the ticket author. Use it to provide next steps, contact info, or a thank-you note specific to this approval chain.</p>
+                        <RichTextEditor v-model="selectedChain.completion_message" />
+                        <p class="rcmi-field-help mt-2">This message is included in the completion email sent to the ticket author. Use it to provide next steps, contact info, links, or a thank-you note specific to this approval chain. Leave blank to send a default notification.</p>
                     </div>
 
                     <!-- Save / Delete -->
@@ -176,6 +175,7 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { api } from '../api.js';
 import Icon from '../components/Icon.vue';
+import RichTextEditor from '../components/RichTextEditor.vue';
 import { useToast } from '../composables/useToast.js';
 
 const toast = useToast();
