@@ -50,6 +50,7 @@
                     :ticket-id="ticketId"
                     :reply-to="replyTarget"
                     :mentionable-users="mentionableUsers"
+                    :public-token="publicToken"
                     @posted="onPosted"
                     @cancel-reply="replyTarget = null"
                 />
@@ -60,6 +61,7 @@
                 <CommentComposer
                     :ticket-id="ticketId"
                     :mentionable-users="mentionableUsers"
+                    :public-token="publicToken"
                     @posted="onPosted"
                 />
             </div>
@@ -79,6 +81,7 @@ const props = defineProps({
     ticketId:      { type: Number, required: true },
     currentUserId: { type: Number, required: true },
     canManage:     { type: Boolean, default: false },
+    publicToken:   { type: String, default: '' },
 });
 
 const toast = useToast();
@@ -114,7 +117,12 @@ const userNames = computed(() => {
 
 async function loadComments() {
     try {
-        const data = await api(`/tickets/${props.ticketId}/comments`);
+        const params = new URLSearchParams();
+        if (props.publicToken) params.set('token', props.publicToken);
+        const path = props.publicToken
+            ? `/public/tickets/${props.ticketId}/comments`
+            : `/tickets/${props.ticketId}/comments`;
+        const data = await api(path, { params });
         comments.value = data.items || [];
     } catch (e) {
         console.error('Failed to load comments:', e);
@@ -124,6 +132,11 @@ async function loadComments() {
 }
 
 async function loadMentionableUsers() {
+    // Public users don't have mentionable users
+    if (props.publicToken) {
+        mentionableUsers.value = [];
+        return;
+    }
     try {
         mentionableUsers.value = await api(`/tickets/${props.ticketId}/mentionable-users`);
     } catch (e) {

@@ -77,6 +77,7 @@ const props = defineProps({
     ticketId:         { type: Number, required: true },
     replyTo:          { type: Object, default: null },
     mentionableUsers: { type: Array, default: () => [] },
+    publicToken:      { type: String, default: '' },
 });
 const emit = defineEmits(['posted', 'cancel-reply']);
 
@@ -224,9 +225,19 @@ async function submit() {
             ...(attachmentIds.length ? { attachment_ids: attachmentIds } : {}),
         };
 
-        const comment = await api(`/tickets/${props.ticketId}/comments`, {
+        const params = new URLSearchParams();
+        if (props.publicToken) {
+            params.set('token', props.publicToken);
+            payload.token = props.publicToken;
+        }
+        const path = props.publicToken
+            ? `/public/tickets/${props.ticketId}/comments`
+            : `/tickets/${props.ticketId}/comments`;
+
+        const comment = await api(path, {
             method: 'POST',
             body: payload,
+            params,
         });
 
         body.value = '';

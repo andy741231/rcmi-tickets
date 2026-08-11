@@ -85,7 +85,32 @@ function rcmi_tickets_register_public_routes() {
             ],
         ],
     ]);
+
+    // Public comment endpoints (token-based auth for external users)
+    register_rest_route($namespace, '/public/tickets/(?P<ticket_id>\d+)/comments', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'rcmi_tickets_handle_public_comment_list',
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'ticket_id' => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int'],
+                'token'     => ['required' => true, 'type' => 'string'],
+            ],
+        ],
+        [
+            'methods'             => 'POST',
+            'callback'            => 'rcmi_tickets_handle_public_comment_create',
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'ticket_id' => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int'],
+                'token'     => ['required' => true, 'type' => 'string'],
+                'body'      => ['type' => 'string', 'sanitize_callback' => 'wp_kses_post'],
+                'parent_id' => ['type' => 'integer'],
+            ],
+        ],
+    ]);
 }
+
 add_action('rest_api_init', 'rcmi_tickets_register_public_routes');
 
 /**
@@ -520,4 +545,72 @@ function rcmi_tickets_handle_public_attachment_upload($request) {
         'mime_type'     => $mime,
         'size'          => $size,
     ], 201);
+}
+
+/**
+ * Public comment list: returns threaded comments for a ticket (read-only).
+ * Authenticated via view token.
+ */
+function rcmi_tickets_handle_public_comment_list($request) {
+    $ticket = rcmi_tickets_validate_view_token((int) $request['ticket_id'], (string) $request['token']);
+    if (is_wp_error($ticket)) {
+        return $ticket;
+    }
+
+    $tree = rcmi_tickets_fetch_comment_tree((int) $ticket['id'], null);
+    return new WP_REST_Response(['items' => $tree], 200);
+}
+
+/**
+ * Public comment create: external user posts a comment using view token auth.
+ * The guest user is used as the comment author.
+ */
+function rcmi_tickets_handle_public_comment_create($request) {
+    global $wpdb;
+    $ticket = rcmi_tickets_validate_view_token((int) $request['ticket_id'], (string) $request['token']);
+    if (is_wp_error($ticket)) {
+        return $ticket;
+    }
+
+    $ticket_id = (int) $ticket['id'];
+    $body = $request['body'] ?? '';
+    $parent_id = isset($request['parent_id']) && $request['parent_id'] ? (int) $request['parent_id'] : null;
+    $now = current_time('mysql');
+
+    if (trim(wp_strip_all_tags($body)) === '') {
+        return new WP_Error('rcmi_tickets_comment_empty', 'Comment body cannot be empty.', ['status' => 400]);
+    }
+
+    if ($parent_id !== null) {
+        $parent = rcmi_tickets_load_comment($parent_id);
+        if (!$parent) {
+            return new WP_Error('rcmi_tickets_parent_not_found', 'Parent comment not found.', ['status' => 404]);
+        }
+        if ($parent['ticket_id'] !== $ticket_id) {
+            return new WP_Error('rcmi_tickets_parent_mismatch', 'Parent comment belongs to a different ticket.', ['status' => 400]);
+        }
+    }
+
+    // Use the guest user as author
+    $guest_user_id = rcmi_tickets_get_guest_user_id();
+    $wpdb->insert($wpdb->prefix . 'rcmi_ticket_comments', [
+        'ticket_id'  => $ticket_id,
+        'user_id'    => $guest_user_id,
+        'body'       => $body,
+        'parent_id'  => $parent_id,
+        'pinned'     => 0,
+        'mentions'   => '[]',
+        'created_at' => $now,
+        'updated_at' => $now,
+    ], ['%d', '%d', '%s', $parent_id === null ? null : '%d', '%d', '%s', '%s', '%s']);
+
+    $comment_id = (int) $wpdb->insert_id;
+    if (!$comment_id) {
+        return new WP_Error('rcmi_tickets_comment_create_failed', 'Failed to create comment.', ['status' => 500]);
+    }
+
+    $row = rcmi_tickets_load_comment($comment_id);
+    $formatted = rcmi_tickets_format_comment($row);
+    $formatted['replies'] = [];
+    return new WP_REST_Response($formatted, 201);
 }
