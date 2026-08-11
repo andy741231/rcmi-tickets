@@ -18,8 +18,81 @@ function rcmi_tickets_register_meta_route() {
             'permission_callback' => 'rcmi_tickets_perm_meta',
         ],
     ]);
+
+    // Settings endpoint — manager only
+    register_rest_route('rcmi/v1', '/settings', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'rcmi_tickets_handle_settings_get',
+            'permission_callback' => 'rcmi_tickets_perm_settings',
+        ],
+        [
+            'methods'             => 'PUT',
+            'callback'            => 'rcmi_tickets_handle_settings_update',
+            'permission_callback' => 'rcmi_tickets_perm_settings',
+        ],
+    ]);
 }
 add_action('rest_api_init', 'rcmi_tickets_register_meta_route');
+
+function rcmi_tickets_perm_settings() {
+    return rcmi_tickets_can(get_current_user_id(), 'manage');
+}
+
+/**
+ * Default public success message (heading + body).
+ */
+function rcmi_tickets_default_success_message() {
+    return [
+        'heading' => 'Thank you for your submission',
+        'message' => 'Your ticket has been submitted. A confirmation has been sent to your email.',
+    ];
+}
+
+/**
+ * Get the public success message, merged with defaults.
+ */
+function rcmi_tickets_get_success_message() {
+    $stored = get_option('rcmi_tickets_public_success', []);
+    if (!is_array($stored)) $stored = [];
+    $defaults = rcmi_tickets_default_success_message();
+    return [
+        'heading' => !empty($stored['heading']) ? $stored['heading'] : $defaults['heading'],
+        'message' => !empty($stored['message']) ? $stored['message'] : $defaults['message'],
+    ];
+}
+
+function rcmi_tickets_handle_settings_get() {
+    return new WP_REST_Response([
+        'public_success' => rcmi_tickets_get_success_message(),
+    ], 200);
+}
+
+function rcmi_tickets_handle_settings_update($request) {
+    $params = $request->get_json_params() ?: [];
+
+    $current = rcmi_tickets_get_success_message();
+    $heading = isset($params['public_success']['heading'])
+        ? sanitize_text_field($params['public_success']['heading'])
+        : $current['heading'];
+    $message = isset($params['public_success']['message'])
+        ? sanitize_textarea_field($params['public_success']['message'])
+        : $current['message'];
+
+    // Allow empty to reset to defaults
+    if ($heading === '' && $message === '') {
+        delete_option('rcmi_tickets_public_success');
+    } else {
+        update_option('rcmi_tickets_public_success', [
+            'heading' => $heading,
+            'message' => $message,
+        ]);
+    }
+
+    return new WP_REST_Response([
+        'public_success' => rcmi_tickets_get_success_message(),
+    ], 200);
+}
 
 function rcmi_tickets_perm_meta() {
     return rcmi_tickets_can(get_current_user_id(), 'view_any');
@@ -175,5 +248,6 @@ function rcmi_tickets_handle_meta() {
         'allowed_mime_types' => $allowed_mime,
         'pending_approval_count' => $pending_approval_count,
         'inbox_summary'    => $inbox_summary,
+        'public_success'   => rcmi_tickets_get_success_message(),
     ], 200);
 }

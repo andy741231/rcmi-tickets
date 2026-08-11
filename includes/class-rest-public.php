@@ -88,6 +88,7 @@ function rcmi_tickets_handle_public_meta() {
         'priorities'         => ['Low', 'Medium', 'High', 'Urgent'],
         'allowed_mime_types' => $allowed_mime,
         'is_public'          => true,
+        'public_success'     => rcmi_tickets_get_success_message(),
     ], 200);
 }
 
@@ -181,9 +182,11 @@ function rcmi_tickets_handle_public_submit($request) {
         rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain);
     }
 
+    $success = rcmi_tickets_get_success_message();
+
     return new WP_REST_Response([
         'id'      => $ticket_id,
-        'message' => 'Your ticket has been submitted. A confirmation has been sent to your email.',
+        'message' => $success['message'],
     ], 201);
 }
 

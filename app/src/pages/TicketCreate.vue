@@ -22,7 +22,7 @@
             <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-teal-100">
                 <Icon name="check" />
             </div>
-            <h3 class="text-lg font-bold text-gray-900">Thank you for your submission</h3>
+            <h3 class="text-lg font-bold text-gray-900">{{ successHeading }}</h3>
             <p class="mt-2 text-sm text-gray-600">{{ publicSuccessMessage }}</p>
             <button @click="resetPublicForm" class="rcmi-button-secondary mt-6 inline-flex items-center gap-1.5 px-4 py-2 text-sm">
                 <Icon name="plus" /> Submit another request
@@ -112,6 +112,7 @@ const error = ref('');
 const uploadProgress = ref('');
 const publicSuccess = ref(false);
 const publicSuccessMessage = ref('');
+const successHeading = computed(() => meta.public_success?.heading || 'Thank you for your submission');
 
 const staged = useStagedFiles([]);
 const stagedFileCount = computed(() => staged.files.value.length);
@@ -222,7 +223,7 @@ async function submit() {
             const result = await api('/public/submit', { method: 'POST', body });
             await uploadStagedFiles(result.id);
             publicSuccess.value = true;
-            publicSuccessMessage.value = result.message || 'Your ticket has been submitted. A confirmation has been sent to your email.';
+            publicSuccessMessage.value = result.message || meta.public_success?.message || 'Your ticket has been submitted. A confirmation has been sent to your email.';
             toast.success('Request submitted');
         } else {
             // Logged-in submission

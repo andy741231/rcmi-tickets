@@ -16,6 +16,30 @@
         </header>
         <div class="rcmi-formbuilder-workspace">
             <aside class="rcmi-formbuilder-sidebar">
+                <!-- Public success message editor -->
+                <div class="rcmi-card p-4">
+                    <details>
+                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">Public Success Message</summary>
+                        <p class="mt-2 text-xs text-gray-500">Shown to external users after they submit a ticket.</p>
+                        <div class="mt-3 space-y-3">
+                            <div>
+                                <label class="rcmi-field-label">Heading</label>
+                                <input v-model="successConfig.heading" class="rcmi-input" placeholder="Thank you for your submission" />
+                            </div>
+                            <div>
+                                <label class="rcmi-field-label">Message</label>
+                                <textarea v-model="successConfig.message" rows="3" class="rcmi-input" placeholder="Your ticket has been submitted. A confirmation has been sent to your email."></textarea>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button @click="saveSuccessMessage" :disabled="savingSuccess"
+                                    class="rcmi-button-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50">
+                                    <Icon name="save" /> {{ savingSuccess ? 'Saving…' : 'Save' }}
+                                </button>
+                                <button @click="resetSuccessMessage" class="rcmi-button-ghost px-2 py-1.5 text-xs">Reset to default</button>
+                            </div>
+                        </div>
+                    </details>
+                </div>
                 <div class="rcmi-card p-4">
                     <p class="rcmi-section-label mb-3">Add field</p>
                     <div class="grid grid-cols-2 gap-2">
@@ -248,6 +272,7 @@ import { useToast } from '../composables/useToast.js';
 
 const props = defineProps({
     initialFields: { type: Array, default: () => [] },
+    initialSuccess: { type: Object, default: () => ({ heading: '', message: '' }) },
 });
 const emit = defineEmits(['updated']);
 
@@ -261,6 +286,15 @@ const dragOverSide = ref(null);
 const cascadeInput = reactive({});
 const searchQuery = ref('');
 const collapsedGroups = ref([]);
+
+// Public success message editor
+const successConfig = reactive({ heading: '', message: '' });
+const savingSuccess = ref(false);
+
+const DEFAULT_SUCCESS = {
+    heading: 'Thank you for your submission',
+    message: 'Your ticket has been submitted. A confirmation has been sent to your email.',
+};
 
 const paletteTypes = [
     { type: 'text',      label: 'Text',        icon: 'text' },
@@ -287,6 +321,12 @@ watch(() => props.initialFields, (nextFields) => {
     }
     editingId.value = null;
 }, { immediate: true, flush: 'pre' });
+
+// Sync success message from parent when meta loads
+watch(() => props.initialSuccess, (next) => {
+    successConfig.heading = next?.heading || DEFAULT_SUCCESS.heading;
+    successConfig.message = next?.message || DEFAULT_SUCCESS.message;
+}, { immediate: true });
 
 function typeIcon(type) {
     const map = { text: 'text', longtext: 'textarea', dropdown: 'dropdown', checkbox: 'checkbox-icon', radio: 'radio-icon', date: 'calendar', number: 'hashtag', section: 'divider' };
@@ -499,6 +539,29 @@ function deleteField(id) {
         fields.value = fields.value.filter(f => f.id !== id);
         toast.success('Field deleted');
     }).catch((e) => toast.error(e.message || 'Failed to delete field'));
+}
+
+// Public success message save / reset
+async function saveSuccessMessage() {
+    savingSuccess.value = true;
+    try {
+        const updated = await api('/settings', {
+            method: 'PUT',
+            body: { public_success: { heading: successConfig.heading, message: successConfig.message } },
+        });
+        successConfig.heading = updated.public_success.heading;
+        successConfig.message = updated.public_success.message;
+        toast.success('Success message saved');
+    } catch (e) {
+        toast.error(e.message || 'Failed to save success message');
+    } finally {
+        savingSuccess.value = false;
+    }
+}
+
+function resetSuccessMessage() {
+    successConfig.heading = DEFAULT_SUCCESS.heading;
+    successConfig.message = DEFAULT_SUCCESS.message;
 }
 
 // Drag-and-drop reorder (only the grip handle is draggable)

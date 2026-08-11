@@ -850,10 +850,13 @@ function rcmi_tickets_handle_csv_export($request) {
     // Get form field definitions for dynamic columns
     $form_fields = rcmi_tickets_get_all_form_fields();
 
-    // Build CSV
-    $core_headers = ['ID', 'Title', 'Status', 'Author', 'Author Email', 'Assignees', 'Tags', 'Due Date', 'Created', 'Updated'];
-    $field_headers = array_map(function ($f) { return $f['label']; }, $form_fields);
-    $all_headers = array_merge($core_headers, $field_headers);
+    // Build CSV — primary columns mirror the on-screen TicketList table
+    // (Ticket, Status, Owner, Due, Updated), followed by dynamic form
+    // fields, then supplementary audit columns at the end.
+    $primary_headers   = ['ID', 'Title', 'Status', 'Owner', 'Due Date', 'Updated'];
+    $field_headers     = array_map(function ($f) { return $f['label']; }, $form_fields);
+    $extra_headers     = ['Author', 'Author Email', 'Tags', 'Created'];
+    $all_headers       = array_merge($primary_headers, $field_headers, $extra_headers);
 
     $output = fopen('php://temp', 'r+');
     // BOM for Excel UTF-8 compatibility
@@ -867,21 +870,17 @@ function rcmi_tickets_handle_csv_export($request) {
         $row['tag_ids'] = rcmi_tickets_get_ticket_tag_ids($row['id']);
         $formatted = rcmi_tickets_format_ticket($row);
 
-        // Assignee names
+        // Assignee names (Owner column — matches UI "Owner")
         $assignee_names = implode('; ', array_map(function ($a) { return $a['display_name']; }, $formatted['assignees']));
         // Tag names
         $tag_names = implode('; ', array_map(function ($t) { return $t['name']; }, $formatted['tags']));
 
-        $core_row = [
+        $primary_row = [
             $formatted['id'],
             $formatted['title'],
             $formatted['status'],
-            $formatted['author_name'],
-            $formatted['author_email'],
             $assignee_names,
-            $tag_names,
             $formatted['due_date'] ?: '',
-            $formatted['created_at'],
             $formatted['updated_at'],
         ];
 
@@ -896,7 +895,14 @@ function rcmi_tickets_handle_csv_export($request) {
             $field_values[] = $val;
         }
 
-        fputcsv($output, array_merge($core_row, $field_values));
+        $extra_row = [
+            $formatted['author_name'],
+            $formatted['author_email'],
+            $tag_names,
+            $formatted['created_at'],
+        ];
+
+        fputcsv($output, array_merge($primary_row, $field_values, $extra_row));
     }
 
     rewind($output);
@@ -905,11 +911,15 @@ function rcmi_tickets_handle_csv_export($request) {
 
     $filename = 'tickets-export-' . current_time('Y-m-d-His') . '.csv';
 
-    return new WP_REST_Response($csv, 200, [
-        'Content-Type'        => 'text/csv; charset=UTF-8',
-        'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        'Cache-Control'       => 'no-cache, no-store, must-revalidate',
-    ]);
+    // Serve as a raw file download — must echo directly and exit to
+    // prevent WP REST from JSON-encoding the CSV body (which turns
+    // real newlines into literal "\n" text).
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    header('Content-Length: ' . strlen($csv));
+    echo $csv;
+    exit;
 }
 
 function rcmi_tickets_handle_create($request) {
