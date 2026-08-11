@@ -150,11 +150,11 @@ function rcmi_tickets_handle_public_submit($request) {
         return new WP_Error('rcmi_tickets_invalid_email', 'A valid email address is required.', ['status' => 400]);
     }
 
-    // ── Rate limit: max 5 submissions per IP per hour ──
+    // ── Rate limit: max 25 submissions per IP per hour ──
     $ip = rcmi_tickets_get_client_ip();
     $transient_key = 'rcmi_pub_rl_' . md5($ip);
     $count = (int) get_transient($transient_key);
-    if ($count >= 5) {
+    if ($count >= 25) {
         return new WP_Error('rcmi_tickets_rate_limited', 'Too many submissions from your IP. Please try again later.', ['status' => 429]);
     }
 
