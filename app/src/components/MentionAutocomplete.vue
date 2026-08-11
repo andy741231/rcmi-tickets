@@ -8,7 +8,8 @@
             class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-red-50"
             role="option" :aria-selected="i === highlighted">
             <span class="font-semibold">{{ u.display_name }}</span>
-            <span class="text-xs text-gray-500">{{ u.user_login }}</span>
+            <span v-if="u.is_submitter" class="rounded bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">Submitter</span>
+            <span v-else class="text-xs text-gray-500">{{ u.user_login }}</span>
         </button>
     </div>
 </template>

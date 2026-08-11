@@ -139,6 +139,24 @@ function rcmi_tickets_format_comment($row) {
     $user = get_userdata($row['user_id']);
     $comment_id = (int) $row['id'];
 
+    // Comments authored by the shared "Guest Submitter" account should show
+    // that specific ticket's real submitter name/email, not the generic
+    // placeholder account (which is reused across every public ticket).
+    $user_name = $user ? $user->display_name : '';
+    $user_email = $user ? $user->user_email : '';
+    $guest_user_id = rcmi_tickets_get_or_create_guest_user();
+    if ((int) $row['user_id'] === $guest_user_id) {
+        $ticket = rcmi_tickets_load_ticket($row['ticket_id']);
+        if ($ticket) {
+            if (!empty($ticket['submitter_name'])) {
+                $user_name = $ticket['submitter_name'];
+            }
+            if (!empty($ticket['submitter_email'])) {
+                $user_email = $ticket['submitter_email'];
+            }
+        }
+    }
+
     // Include comment attachments
     $att_rows = $wpdb->get_results($wpdb->prepare(
         "SELECT id, original_name, mime_type, size FROM {$wpdb->prefix}rcmi_ticket_attachments
@@ -158,8 +176,8 @@ function rcmi_tickets_format_comment($row) {
         'id'          => $comment_id,
         'ticket_id'   => (int) $row['ticket_id'],
         'user_id'     => (int) $row['user_id'],
-        'user_name'   => $user ? $user->display_name : '',
-        'user_email'  => $user ? $user->user_email : '',
+        'user_name'   => $user_name,
+        'user_email'  => $user_email,
         'body'        => $row['body'],
         'parent_id'   => $row['parent_id'],
         'pinned'      => (bool) $row['pinned'],
@@ -263,11 +281,42 @@ function rcmi_tickets_get_mentionable_user_ids(array $ticket) {
  * Variants: display_name, user_login, first_name, last_name, "first last", "last first".
  *
  * @param int[] $user_ids
+ * @param array|null $ticket Optional ticket row. When the shared "Guest Submitter"
+ *                           account is in $user_ids and the ticket has its own
+ *                           submitter_name, that ticket's real submitter name is
+ *                           used instead of the generic account name — this keeps
+ *                           mentions scoped to the actual submitter of THIS ticket
+ *                           rather than every external submitter system-wide.
  * @return array Map of lowercase name string => user ID.
  */
-function rcmi_tickets_build_mention_lookup(array $user_ids) {
+function rcmi_tickets_build_mention_lookup(array $user_ids, $ticket = null) {
     $lookup = [];
+    $guest_user_id = rcmi_tickets_get_or_create_guest_user();
+
     foreach ($user_ids as $uid) {
+        $uid = (int) $uid;
+
+        // Shared guest account: only mentionable via THIS ticket's own
+        // submitter name (not the generic "Guest Submitter" account name).
+        if ($uid === $guest_user_id) {
+            $submitter_name = $ticket['submitter_name'] ?? '';
+            if ($submitter_name === '') {
+                continue;
+            }
+            $words = preg_split('/\s+/', trim($submitter_name));
+            $variants = [$submitter_name];
+            if (count($words) >= 2) {
+                $variants[] = implode(' ', $words); // full name, already added but kept for clarity
+            }
+            foreach ($variants as $v) {
+                $v = trim($v);
+                if ($v !== '') {
+                    $lookup[mb_strtolower($v)] = $uid;
+                }
+            }
+            continue;
+        }
+
         $user = get_userdata($uid);
         if (!$user) {
             continue;
@@ -289,7 +338,7 @@ function rcmi_tickets_build_mention_lookup(array $user_ids) {
         foreach ($variants as $v) {
             $v = trim($v);
             if ($v !== '') {
-                $lookup[mb_strtolower($v)] = (int) $uid;
+                $lookup[mb_strtolower($v)] = $uid;
             }
         }
     }
@@ -304,15 +353,18 @@ function rcmi_tickets_build_mention_lookup(array $user_ids) {
  * (up to 4 words) against the mention lookup. Longest match wins — this
  * handles both "@John" and "@John Smith" correctly.
  *
- * @param string $body    Raw comment body (may contain HTML).
- * @param array  $ticket  Ticket row for mention validation.
+ * @param string $body      Raw comment body (may contain HTML).
+ * @param array  $ticket    Ticket row for mention validation.
+ * @param int    $commenter Optional explicit commenter ID (defaults to current user;
+ *                           needed for public/guest comment creation where there is
+ *                           no logged-in user).
  * @return int[] Validated mentioned user IDs.
  */
-function rcmi_tickets_parse_mentions($body, array $ticket) {
+function rcmi_tickets_parse_mentions($body, array $ticket, $commenter = null) {
     // Strip HTML so we match against plain text
     $text = wp_strip_all_tags($body);
     $mentionable_ids = rcmi_tickets_get_mentionable_user_ids($ticket);
-    $lookup = rcmi_tickets_build_mention_lookup($mentionable_ids);
+    $lookup = rcmi_tickets_build_mention_lookup($mentionable_ids, $ticket);
 
     if (empty($lookup)) {
         return [];
@@ -340,9 +392,9 @@ function rcmi_tickets_parse_mentions($body, array $ticket) {
 
     // Deduplicate and exclude the commenter (self-mention is pointless)
     $mentioned = array_unique($mentioned);
-    $commenter = get_current_user_id();
+    $commenter = $commenter !== null ? (int) $commenter : get_current_user_id();
     $mentioned = array_filter($mentioned, function ($uid) use ($commenter) {
-        return (int) $uid !== (int) $commenter;
+        return (int) $uid !== $commenter;
     });
 
     return array_values($mentioned);
@@ -625,15 +677,37 @@ function rcmi_tickets_handle_mentionable_users($request) {
         return new WP_Error('rcmi_tickets_not_found', 'Ticket not found.', ['status' => 404]);
     }
 
+    $guest_user_id = rcmi_tickets_get_or_create_guest_user();
     $user_ids = rcmi_tickets_get_mentionable_user_ids($ticket);
     $users = [];
     foreach ($user_ids as $uid) {
+        $uid = (int) $uid;
+
+        // Shared guest account: show THIS ticket's own submitter name/email
+        // instead of the generic "Guest Submitter" account, and only if we
+        // actually have a submitter name recorded for this ticket.
+        if ($uid === $guest_user_id) {
+            $submitter_name = $ticket['submitter_name'] ?? '';
+            if ($submitter_name === '') {
+                continue;
+            }
+            $users[] = [
+                'id'           => $uid,
+                'display_name' => $submitter_name,
+                'user_login'   => 'submitter',
+                'first_name'   => '',
+                'last_name'    => '',
+                'is_submitter' => true,
+            ];
+            continue;
+        }
+
         $user = get_userdata($uid);
         if (!$user) {
             continue;
         }
         $users[] = [
-            'id'           => (int) $uid,
+            'id'           => $uid,
             'display_name' => $user->display_name,
             'user_login'   => $user->user_login,
             'first_name'   => get_user_meta($uid, 'first_name', true),

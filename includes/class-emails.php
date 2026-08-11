@@ -267,44 +267,77 @@ function rcmi_tickets_email_mentions($comment_id, $ticket_id, $from_user_id, $me
         return;
     }
 
-    $commenter_name = $from_user->display_name;
-    $recipients = [];
+    $guest_user_id = function_exists('rcmi_tickets_get_or_create_guest_user') ? rcmi_tickets_get_or_create_guest_user() : 0;
+    $commenter_name = ($guest_user_id && (int) $from_user_id === $guest_user_id && !empty($ticket['submitter_name']))
+        ? $ticket['submitter_name']
+        : $from_user->display_name;
+
+    // Staff recipients get the internal ticket URL. The external submitter
+    // (shared "Guest Submitter" account) gets their own tokenized view URL
+    // and their real email/name from the ticket row — never the generic
+    // guest account's placeholder email.
+    $staff_recipients = [];
+    $submitter_recipient = '';
     foreach ((array) $mentioned_ids as $user_id) {
-        $user = get_userdata((int) $user_id);
+        $user_id = (int) $user_id;
+        if ($guest_user_id && $user_id === $guest_user_id) {
+            if (!empty($ticket['submitter_email']) && is_email($ticket['submitter_email'])) {
+                $submitter_recipient = $ticket['submitter_email'];
+            }
+            continue;
+        }
+        $user = get_userdata($user_id);
         if ($user && is_email($user->user_email)) {
-            $recipients[] = $user->user_email;
+            $staff_recipients[] = $user->user_email;
         }
     }
-    $recipients = array_values(array_unique($recipients));
-    if (!$recipients) {
-        return;
-    }
+    $staff_recipients = array_values(array_unique($staff_recipients));
 
     $title = rcmi_tickets_email_esc($ticket['title']);
     $excerpt = wp_trim_words(wp_strip_all_tags($comment['body']), 40, '…');
-    $url = esc_url(rcmi_tickets_email_ticket_url($ticket_id));
     $commenter_html = rcmi_tickets_email_esc($commenter_name);
     $excerpt_html = rcmi_tickets_email_esc($excerpt);
     $subject = sprintf(__('You were mentioned on ticket #%d: %s', 'rcmi-tickets'), $ticket_id, $ticket['title']);
 
-    $html = '<!doctype html><html><body>'
-        . '<h2>' . __('You were mentioned in a ticket comment', 'rcmi-tickets') . '</h2>'
-        . '<p>' . sprintf(__('%s mentioned you on ticket #%d.', 'rcmi-tickets'), $commenter_html, $ticket_id) . '</p>'
-        . '<p><strong>' . __('Ticket:', 'rcmi-tickets') . '</strong> ' . $title . '</p>'
-        . '<blockquote>' . $excerpt_html . '</blockquote>'
-        . '<p><a href="' . $url . '">' . __('View comment', 'rcmi-tickets') . '</a></p>'
-        . '</body></html>';
+    $send_mention_email = function ($recipients, $url) use ($title, $excerpt, $excerpt_html, $commenter_html, $commenter_name, $subject, $ticket_id, $ticket) {
+        $url_esc = esc_url($url);
+        $html = '<!doctype html><html><body>'
+            . '<h2>' . __('You were mentioned in a ticket comment', 'rcmi-tickets') . '</h2>'
+            . '<p>' . sprintf(__('%s mentioned you on ticket #%d.', 'rcmi-tickets'), $commenter_html, $ticket_id) . '</p>'
+            . '<p><strong>' . __('Ticket:', 'rcmi-tickets') . '</strong> ' . $title . '</p>'
+            . '<blockquote>' . $excerpt_html . '</blockquote>'
+            . '<p><a href="' . $url_esc . '">' . __('View comment', 'rcmi-tickets') . '</a></p>'
+            . '</body></html>';
 
-    $plain = sprintf(
-        "%s mentioned you on ticket #%d.\nTicket: %s\n\nComment:\n%s\n\nView comment: %s",
-        $commenter_name,
-        $ticket_id,
-        $ticket['title'],
-        $excerpt,
-        wp_strip_all_tags($url)
-    );
+        $plain = sprintf(
+            "%s mentioned you on ticket #%d.\nTicket: %s\n\nComment:\n%s\n\nView comment: %s",
+            $commenter_name,
+            $ticket_id,
+            $ticket['title'],
+            $excerpt,
+            wp_strip_all_tags($url)
+        );
 
-    rcmi_tickets_send_email($recipients, $subject, $html, $plain);
+        rcmi_tickets_send_email($recipients, $subject, $html, $plain);
+    };
+
+    if ($staff_recipients) {
+        $send_mention_email($staff_recipients, rcmi_tickets_email_ticket_url($ticket_id));
+    }
+
+    if ($submitter_recipient) {
+        // The view token is stored as a one-way hash, so it can't be reused —
+        // mint a fresh one for this notification (this also refreshes the
+        // 90-day expiry on the submitter's view link).
+        $view_url = rcmi_tickets_email_ticket_url($ticket_id);
+        if (function_exists('rcmi_tickets_create_view_token') && function_exists('rcmi_tickets_public_view_url')) {
+            $fresh_token = rcmi_tickets_create_view_token($ticket_id);
+            if ($fresh_token) {
+                $view_url = rcmi_tickets_public_view_url($ticket_id, $fresh_token);
+            }
+        }
+        $send_mention_email([$submitter_recipient], $view_url);
+    }
 }
 
 /**

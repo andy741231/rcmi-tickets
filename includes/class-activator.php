@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
  * re-run on the next admin request to bring tables up to date.
  */
 if (!defined('RCMI_TICKETS_DB_VERSION')) {
-    define('RCMI_TICKETS_DB_VERSION', '10');
+    define('RCMI_TICKETS_DB_VERSION', '11');
 }
 
 /**
@@ -46,6 +46,8 @@ function rcmi_tickets_schema_statements() {
             revision_token_expires DATETIME NULL,
             view_token_hash VARCHAR(64) NULL,
             view_token_expires DATETIME NULL,
+            submitter_name VARCHAR(255) NULL,
+            submitter_email VARCHAR(255) NULL,
             updated_by BIGINT UNSIGNED NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
@@ -261,6 +263,18 @@ function rcmi_tickets_run_schema_migrations() {
     $has_view_token_expires = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'view_token_expires'");
     if (!$has_view_token_expires) {
         $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN view_token_expires DATETIME NULL AFTER view_token_hash");
+    }
+
+    // v11: store the external submitter's own name/email per ticket (author_id
+    // points at a shared "Guest Submitter" account for all public tickets, so
+    // per-ticket identity must live in its own columns).
+    $has_submitter_name = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'submitter_name'");
+    if (!$has_submitter_name) {
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN submitter_name VARCHAR(255) NULL AFTER view_token_expires");
+    }
+    $has_submitter_email = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'submitter_email'");
+    if (!$has_submitter_email) {
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN submitter_email VARCHAR(255) NULL AFTER submitter_name");
     }
 }
 

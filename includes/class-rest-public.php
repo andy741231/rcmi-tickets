@@ -188,9 +188,11 @@ function rcmi_tickets_handle_public_submit($request) {
         'description_text' => $full_description_text,
         'status'           => 'Received',
         'due_date'         => null,
+        'submitter_name'   => $submitter_name,
+        'submitter_email'  => $submitter_email,
         'created_at'       => $now,
         'updated_at'       => $now,
-    ], ['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s']);
+    ], ['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']);
 
     $ticket_id = (int) $wpdb->insert_id;
     if (!$ticket_id) {
@@ -592,14 +594,21 @@ function rcmi_tickets_handle_public_comment_create($request) {
     }
 
     // Use the guest user as author
-    $guest_user_id = rcmi_tickets_get_guest_user_id();
+    $guest_user_id = rcmi_tickets_get_or_create_guest_user();
+
+    // Parse @mentions of staff (assignees/managers) so the external submitter
+    // can loop in the right person; the guest account itself is excluded via
+    // the explicit $commenter argument (no self-mentions).
+    $mentioned_ids = rcmi_tickets_parse_mentions($body, $ticket, $guest_user_id);
+    $mentions_json = json_encode($mentioned_ids);
+
     $wpdb->insert($wpdb->prefix . 'rcmi_ticket_comments', [
         'ticket_id'  => $ticket_id,
         'user_id'    => $guest_user_id,
         'body'       => $body,
         'parent_id'  => $parent_id,
         'pinned'     => 0,
-        'mentions'   => '[]',
+        'mentions'   => $mentions_json,
         'created_at' => $now,
         'updated_at' => $now,
     ], ['%d', '%d', '%s', $parent_id === null ? null : '%d', '%d', '%s', '%s', '%s']);
@@ -607,6 +616,10 @@ function rcmi_tickets_handle_public_comment_create($request) {
     $comment_id = (int) $wpdb->insert_id;
     if (!$comment_id) {
         return new WP_Error('rcmi_tickets_comment_create_failed', 'Failed to create comment.', ['status' => 500]);
+    }
+
+    if (!empty($mentioned_ids)) {
+        do_action('rcmi_ticket_mention', $comment_id, $ticket_id, $guest_user_id, $mentioned_ids);
     }
 
     $row = rcmi_tickets_load_comment($comment_id);
