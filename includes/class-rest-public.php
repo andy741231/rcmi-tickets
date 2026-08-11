@@ -40,6 +40,19 @@ function rcmi_tickets_register_public_routes() {
         ],
     ]);
 
+    // View endpoint: read-only access for external users with a view token
+    register_rest_route($namespace, '/public/tickets/(?P<ticket_id>\d+)', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'rcmi_tickets_handle_public_view_get',
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'ticket_id' => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int'],
+                'token'     => ['required' => true, 'type' => 'string'],
+            ],
+        ],
+    ]);
+
     register_rest_route($namespace, '/public/tickets/(?P<ticket_id>\d+)/revision', [
         [
             'methods'             => 'GET',
@@ -176,8 +189,9 @@ function rcmi_tickets_handle_public_submit($request) {
     // Increment rate limit counter (1 hour TTL)
     set_transient($transient_key, $count + 1, HOUR_IN_SECONDS);
 
-    // ── Send receipt email to submitter ──
-    rcmi_tickets_email_public_receipt($ticket_id, $submitter_name, $submitter_email, $title);
+    // ── Generate view token + send receipt email to submitter ──
+    $view_token = rcmi_tickets_create_view_token($ticket_id);
+    rcmi_tickets_email_public_receipt($ticket_id, $submitter_name, $submitter_email, $title, $view_token);
 
     // ── Notify assignees if any (via do_action) ──
     do_action('rcmi_ticket_created', $ticket_id, $guest_user_id, []);
@@ -199,6 +213,66 @@ function rcmi_tickets_handle_public_submit($request) {
 function rcmi_tickets_is_public_ticket($ticket) {
     $author = get_userdata((int) $ticket['author_id']);
     return $author && $author->user_login === 'guest_submitter';
+}
+
+/**
+ * Generate a view token for external users to access their ticket.
+ * Valid for 90 days. Different from revision tokens which are only
+ * generated for rejected tickets.
+ */
+function rcmi_tickets_create_view_token($ticket_id) {
+    global $wpdb;
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
+    if (!$ticket || !rcmi_tickets_is_public_ticket($ticket)) {
+        return '';
+    }
+
+    $token = bin2hex(random_bytes(32));
+    $wpdb->update($wpdb->prefix . 'rcmi_tickets', [
+        'view_token_hash'    => hash('sha256', $token),
+        'view_token_expires' => gmdate('Y-m-d H:i:s', time() + 90 * DAY_IN_SECONDS),
+    ], ['id' => (int) $ticket_id], ['%s', '%s'], ['%d']);
+
+    return $token;
+}
+
+function rcmi_tickets_public_view_url($ticket_id, $token) {
+    $base = function_exists('rcmi_tickets_get_app_url') ? rcmi_tickets_get_app_url() : home_url('/');
+    return untrailingslashit($base) . '#/ticket/' . (int) $ticket_id . '/view?token=' . rawurlencode($token);
+}
+
+/**
+ * Validate a view token and return the ticket if valid.
+ */
+function rcmi_tickets_validate_view_token($ticket_id, $token) {
+    global $wpdb;
+    $ticket = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM {$wpdb->prefix}rcmi_tickets WHERE id = %d",
+        (int) $ticket_id
+    ), ARRAY_A);
+    if (!$ticket || !rcmi_tickets_is_public_ticket($ticket)) {
+        return new WP_Error('rcmi_tickets_view_unavailable', 'This ticket is not available for public viewing.', ['status' => 404]);
+    }
+    if (!$ticket['view_token_hash'] || !$ticket['view_token_expires'] || strtotime($ticket['view_token_expires'] . ' UTC') < time() || !hash_equals($ticket['view_token_hash'], hash('sha256', (string) $token))) {
+        return new WP_Error('rcmi_tickets_bad_view_token', 'This view link is invalid or has expired.', ['status' => 403]);
+    }
+    return rcmi_tickets_load_ticket($ticket_id);
+}
+
+/**
+ * Public view GET: returns full ticket data for read-only display.
+ */
+function rcmi_tickets_handle_public_view_get($request) {
+    $ticket = rcmi_tickets_validate_view_token((int) $request['ticket_id'], (string) $request['token']);
+    if (is_wp_error($ticket)) {
+        return $ticket;
+    }
+
+    $formatted = rcmi_tickets_format_ticket($ticket);
+    $formatted['form_answers'] = rcmi_tickets_get_ticket_form_answers((int) $ticket['id']);
+    $formatted['attachments'] = rcmi_tickets_get_ticket_attachments((int) $ticket['id']);
+
+    return new WP_REST_Response($formatted, 200);
 }
 
 function rcmi_tickets_create_revision_token($ticket_id) {
@@ -335,9 +409,11 @@ function rcmi_tickets_get_client_ip() {
  * Send a receipt email to the public submitter.
  * Styled consistently with approval/rejection emails.
  */
-function rcmi_tickets_email_public_receipt($ticket_id, $name, $email, $title) {
+function rcmi_tickets_email_public_receipt($ticket_id, $name, $email, $title, $view_token = '') {
     $ticket = rcmi_tickets_load_ticket($ticket_id);
-    $ticket_url = rcmi_tickets_email_ticket_url($ticket_id);
+    $ticket_url = $view_token
+        ? rcmi_tickets_public_view_url($ticket_id, $view_token)
+        : rcmi_tickets_email_ticket_url($ticket_id);
 
     $subject = sprintf(__('Ticket submitted: #%d %s', 'rcmi-tickets'), $ticket_id, $title);
 

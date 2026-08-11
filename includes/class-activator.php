@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
  * re-run on the next admin request to bring tables up to date.
  */
 if (!defined('RCMI_TICKETS_DB_VERSION')) {
-    define('RCMI_TICKETS_DB_VERSION', '9');
+    define('RCMI_TICKETS_DB_VERSION', '10');
 }
 
 /**
@@ -44,6 +44,8 @@ function rcmi_tickets_schema_statements() {
             due_date DATE NULL,
             revision_token_hash VARCHAR(64) NULL,
             revision_token_expires DATETIME NULL,
+            view_token_hash VARCHAR(64) NULL,
+            view_token_expires DATETIME NULL,
             updated_by BIGINT UNSIGNED NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
@@ -248,7 +250,17 @@ function rcmi_tickets_run_schema_migrations() {
     }
     $has_revision_token_expires = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'revision_token_expires'");
     if (!$has_revision_token_expires) {
-        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN revision_token_expires DATETIME NULL AFTER revision_token");
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN revision_token_expires DATETIME NULL AFTER revision_token_hash");
+    }
+
+    // v10: view token for public ticket receipt emails
+    $has_view_token_hash = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'view_token_hash'");
+    if (!$has_view_token_hash) {
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN view_token_hash VARCHAR(64) NULL AFTER revision_token_expires");
+    }
+    $has_view_token_expires = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'view_token_expires'");
+    if (!$has_view_token_expires) {
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN view_token_expires DATETIME NULL AFTER view_token_hash");
     }
 }
 
