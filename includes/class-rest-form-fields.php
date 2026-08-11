@@ -213,6 +213,7 @@ function rcmi_tickets_format_form_field($row) {
         'required'   => (bool) $row['required'],
         'sort_order' => (int) $row['sort_order'],
         'config'     => is_array($config) ? $config : new stdClass(),
+        'reserved'   => ($row['type'] === 'date' && strcasecmp($row['label'], 'Due Date') === 0),
         'created_at' => $row['created_at'],
         'updated_at' => $row['updated_at'],
     ];
@@ -224,6 +225,44 @@ function rcmi_tickets_get_all_form_fields() {
         "SELECT * FROM {$wpdb->prefix}rcmi_form_fields ORDER BY sort_order ASC, id ASC"
     , ARRAY_A);
     return array_map('rcmi_tickets_format_form_field', $rows);
+}
+
+/**
+ * A field is "reserved" when it is a date field labelled "Due Date".
+ * Its value is automatically synced to the ticket's due_date column.
+ */
+function rcmi_tickets_is_reserved_field($field) {
+    return $field['type'] === 'date' && strcasecmp($field['label'], 'Due Date') === 0;
+}
+
+/**
+ * Find the reserved "Due Date" field key, if one exists.
+ * @return string|null field_key or null
+ */
+function rcmi_tickets_get_due_date_field_key() {
+    $fields = rcmi_tickets_get_all_form_fields();
+    foreach ($fields as $f) {
+        if (rcmi_tickets_is_reserved_field($f)) {
+            return $f['field_key'];
+        }
+    }
+    return null;
+}
+
+/**
+ * Extract a due_date value from form_answers if a reserved "Due Date"
+ * field exists. Returns the date string (Y-m-d) or null.
+ */
+function rcmi_tickets_extract_due_date_from_answers($form_answers) {
+    if (!is_array($form_answers)) return null;
+    $key = rcmi_tickets_get_due_date_field_key();
+    if (!$key) return null;
+    $val = $form_answers[$key] ?? null;
+    if (!$val || $val === '') return null;
+    // Validate it's a real date
+    $ts = strtotime($val);
+    if ($ts === false) return null;
+    return gmdate('Y-m-d', $ts);
 }
 
 // ── handlers ─────────────────────────────────────────────────────────
@@ -300,11 +339,21 @@ function rcmi_tickets_handle_form_field_update($request) {
         $format[] = '%s';
     }
     if (isset($request['label'])) {
-        $data['label'] = sanitize_text_field($request['label']);
+        $new_label = sanitize_text_field($request['label']);
+        // Reserved fields: label cannot be changed away from "Due Date"
+        if ($existing['reserved'] && strcasecmp($new_label, 'Due Date') !== 0) {
+            return new WP_Error('rcmi_tickets_reserved_field', 'This field is reserved and its label cannot be changed.', ['status' => 400]);
+        }
+        $data['label'] = $new_label;
         $format[] = '%s';
     }
     if (isset($request['type'])) {
-        $data['type'] = $request['type'];
+        $new_type = $request['type'];
+        // Reserved fields: type cannot be changed away from 'date'
+        if ($existing['reserved'] && $new_type !== 'date') {
+            return new WP_Error('rcmi_tickets_reserved_field', 'This field is reserved and its type cannot be changed.', ['status' => 400]);
+        }
+        $data['type'] = $new_type;
         $format[] = '%s';
     }
     if (isset($request['required'])) {
@@ -334,6 +383,12 @@ function rcmi_tickets_handle_form_field_update($request) {
 function rcmi_tickets_handle_form_field_delete($request) {
     global $wpdb;
     $id = (int) $request['id'];
+
+    // Reserved fields cannot be deleted
+    $field = rcmi_tickets_load_form_field($id);
+    if ($field && $field['reserved']) {
+        return new WP_Error('rcmi_tickets_reserved_field', 'This field is reserved and cannot be deleted.', ['status' => 400]);
+    }
 
     // Cascade: delete answers for this field
     $wpdb->delete($wpdb->prefix . 'rcmi_form_answers', ['field_id' => $id], ['%d']);

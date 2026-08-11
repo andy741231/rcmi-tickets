@@ -960,6 +960,12 @@ function rcmi_tickets_handle_create($request) {
     rcmi_tickets_sync_tags($ticket_id, $tag_ids);
     rcmi_tickets_sync_form_answers($ticket_id, $form_answers);
 
+    // Sync due_date from reserved "Due Date" form field (if present)
+    $form_due_date = rcmi_tickets_extract_due_date_from_answers($form_answers);
+    if ($form_due_date !== null) {
+        $wpdb->update($wpdb->prefix . 'rcmi_tickets', ['due_date' => $form_due_date], ['id' => $ticket_id], ['%s'], ['%d']);
+    }
+
     // Auto-tag: evaluate rules against form answers and merge in matching tags
     rcmi_tickets_apply_auto_tags($ticket_id, $form_answers);
 
@@ -1040,6 +1046,11 @@ function rcmi_tickets_handle_update($request) {
         rcmi_tickets_sync_form_answers($request['id'], $request['form_answers']);
         // Re-evaluate auto-tags when form answers change
         rcmi_tickets_apply_auto_tags((int) $request['id'], $request['form_answers']);
+        // Sync due_date from reserved "Due Date" form field (if present)
+        $form_due_date = rcmi_tickets_extract_due_date_from_answers($request['form_answers']);
+        if ($form_due_date !== null) {
+            $wpdb->update($wpdb->prefix . 'rcmi_tickets', ['due_date' => $form_due_date, 'updated_at' => $now], ['id' => (int) $request['id']], ['%s', '%s'], ['%d']);
+        }
     }
 
     // Schema v3: resubmit path. If the ticket was rejected (restart or back_one)

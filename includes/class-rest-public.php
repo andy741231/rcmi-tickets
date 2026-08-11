@@ -167,6 +167,12 @@ function rcmi_tickets_handle_public_submit($request) {
     // Save form answers
     rcmi_tickets_sync_form_answers($ticket_id, $form_answers);
 
+    // Sync due_date from reserved "Due Date" form field (if present)
+    $form_due_date = rcmi_tickets_extract_due_date_from_answers($form_answers);
+    if ($form_due_date !== null) {
+        $wpdb->update($wpdb->prefix . 'rcmi_tickets', ['due_date' => $form_due_date], ['id' => $ticket_id], ['%s'], ['%d']);
+    }
+
     // Increment rate limit counter (1 hour TTL)
     set_transient($transient_key, $count + 1, HOUR_IN_SECONDS);
 
@@ -255,6 +261,11 @@ function rcmi_tickets_handle_public_revision_update($request) {
     $form_answers = $request['form_answers'];
     rcmi_tickets_sync_form_answers($ticket_id, $form_answers);
     rcmi_tickets_apply_auto_tags($ticket_id, $form_answers);
+    // Sync due_date from reserved "Due Date" form field (if present)
+    $form_due_date = rcmi_tickets_extract_due_date_from_answers($form_answers);
+    if ($form_due_date !== null) {
+        $wpdb->update($wpdb->prefix . 'rcmi_tickets', ['due_date' => $form_due_date], ['id' => $ticket_id], ['%s'], ['%d']);
+    }
     $restarted = rcmi_tickets_restart_ticket_approval_chain($ticket_id);
     $data = [
         'revision_token_hash'    => null,
@@ -322,26 +333,36 @@ function rcmi_tickets_get_client_ip() {
 
 /**
  * Send a receipt email to the public submitter.
+ * Styled consistently with approval/rejection emails.
  */
 function rcmi_tickets_email_public_receipt($ticket_id, $name, $email, $title) {
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
     $ticket_url = rcmi_tickets_email_ticket_url($ticket_id);
 
     $subject = sprintf(__('Ticket submitted: #%d %s', 'rcmi-tickets'), $ticket_id, $title);
+
+    // Ticket details (same table used in approval/rejection emails)
+    $details = $ticket ? rcmi_tickets_email_ticket_details($ticket) : ['html' => '', 'plain' => ''];
 
     $html = '<!doctype html><html><body>'
         . '<h2>' . __('Thank you for your submission', 'rcmi-tickets') . '</h2>'
         . '<p>' . sprintf(__('Hi %s,', 'rcmi-tickets'), esc_html($name)) . '</p>'
         . '<p>' . __('We have received your ticket and our team will review it shortly.', 'rcmi-tickets') . '</p>'
-        . '<p><strong>' . __('Ticket #:') . '</strong> ' . $ticket_id . '</p>'
-        . '<p><strong>' . __('Title:') . '</strong> ' . esc_html($title) . '</p>'
+        . '<p><strong>' . __('Ticket #:', 'rcmi-tickets') . '</strong> ' . (int) $ticket_id . '</p>'
+        . '<p><strong>' . __('Title:', 'rcmi-tickets') . '</strong> ' . esc_html($title) . '</p>'
         . '<p>' . __('You will receive updates by email as your ticket is processed.', 'rcmi-tickets') . '</p>'
+        . '<p style="margin-top:1rem;"><a href="' . esc_url($ticket_url) . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('View ticket', 'rcmi-tickets') . '</a></p>'
+        . '<h3 style="margin-top:1.5rem;font-size:15px;color:#333;">' . __('Ticket details', 'rcmi-tickets') . '</h3>'
+        . '<table style="border-collapse:collapse;margin-top:.5rem;">' . $details['html'] . '</table>'
         . '</body></html>';
 
     $plain = sprintf(
-        "Thank you for your submission\n\nHi %s,\n\nWe have received your ticket and our team will review it shortly.\n\nTicket #%d\nTitle: %s\n\nYou will receive updates by email as your ticket is processed.",
+        "Thank you for your submission\n\nHi %s,\n\nWe have received your ticket and our team will review it shortly.\n\nTicket #%d\nTitle: %s\n\nYou will receive updates by email as your ticket is processed.\n\nView ticket: %s\n\nTicket details:\n%s",
         $name,
         $ticket_id,
-        $title
+        $title,
+        wp_strip_all_tags($ticket_url),
+        $details['plain']
     );
 
     rcmi_tickets_send_email($email, $subject, $html, $plain);

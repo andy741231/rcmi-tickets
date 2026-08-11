@@ -115,19 +115,21 @@
                                         <Icon :name="typeIcon(f.type)" />
                                     </span>
                                     <span class="min-w-0 flex-1 truncate text-sm font-semibold text-gray-800">{{ f.label || '(untitled)' }}</span>
+                                    <span v-if="f.reserved" class="rcmi-formbuilder-reserved-chip" title="Reserved field — value syncs to ticket Due Date">Reserved</span>
                                     <span class="text-xs text-gray-400">{{ f.type }}</span>
                                     <span v-if="f.config.logic && f.config.logic.field_key" class="rcmi-formbuilder-condition-chip" :title="conditionSummary(f)">
                                         {{ conditionSummary(f) }}
                                     </span>
                                     <button @click="toggleEdit(f.id)" class="rcmi-button-ghost px-2 py-1 text-xs">{{ editingId === f.id ? 'Done' : 'Edit' }}</button>
-                                    <button @click="deleteField(f.id)" class="rcmi-button-ghost px-2 py-1 text-xs text-red-700 hover:text-red-800"><Icon name="trash" /></button>
+                                    <button v-if="!f.reserved" @click="deleteField(f.id)" class="rcmi-button-ghost px-2 py-1 text-xs text-red-700 hover:text-red-800"><Icon name="trash" /></button>
                                 </div>
 
                                 <!-- Field editor (collapsible) -->
                                 <div v-if="editingId === f.id" class="mt-3 space-y-3 border-t border-gray-100 pt-3">
                                     <div>
                                         <label class="rcmi-field-label">Label</label>
-                                        <input v-model="f.label" @input="autoKey(f)" class="rcmi-input" placeholder="Field label" />
+                                        <input v-model="f.label" @input="autoKey(f)" :disabled="f.reserved" class="rcmi-input" :class="{ 'opacity-60 cursor-not-allowed': f.reserved }" placeholder="Field label" />
+                                        <p v-if="f.reserved" class="mt-1 text-xs text-amber-600">Reserved field — label is locked. Its value syncs to the ticket's Due Date for sorting.</p>
                                     </div>
 
                                     <div v-if="f.type !== 'section'" class="flex items-center gap-2">

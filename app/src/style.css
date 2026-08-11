@@ -570,6 +570,16 @@
         white-space: nowrap;
     }
 
+    .rcmi-formbuilder-reserved-chip {
+        padding: 0.2rem 0.45rem;
+        border-radius: 9999px;
+        background: #fef3c7;
+        color: #b45309;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
     .rcmi-formbuilder-drop-zone {
         min-height: 0.5rem;
         margin: 0.125rem 0;
