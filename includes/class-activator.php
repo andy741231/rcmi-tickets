@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
  * re-run on the next admin request to bring tables up to date.
  */
 if (!defined('RCMI_TICKETS_DB_VERSION')) {
-    define('RCMI_TICKETS_DB_VERSION', '11');
+    define('RCMI_TICKETS_DB_VERSION', '12');
 }
 
 /**
@@ -208,6 +208,21 @@ function rcmi_tickets_schema_statements() {
             KEY field_key (field_key),
             KEY is_active (is_active)
         ) {$charset_collate};",
+
+        // ── Schema v12: status change log ──────────────────────────────
+
+        'status_log' => "CREATE TABLE {$prefix}rcmi_ticket_status_log (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            ticket_id BIGINT UNSIGNED NOT NULL,
+            old_status VARCHAR(50) NOT NULL DEFAULT '',
+            new_status VARCHAR(50) NOT NULL,
+            changed_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            changed_at DATETIME NOT NULL,
+            message TEXT NULL,
+            PRIMARY KEY  (id),
+            KEY ticket_id (ticket_id),
+            KEY changed_at (changed_at)
+        ) {$charset_collate};",
     ];
 }
 
@@ -267,7 +282,8 @@ function rcmi_tickets_run_schema_migrations() {
 
     // v11: store the external submitter's own name/email per ticket (author_id
     // points at a shared "Guest Submitter" account for all public tickets, so
-    // per-ticket identity must live in its own columns).
+    // per-ticket identity must live in its own columns). "author_id" is the
+    // DB column name for the requestor's WP user ID.
     $has_submitter_name = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'submitter_name'");
     if (!$has_submitter_name) {
         $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN submitter_name VARCHAR(255) NULL AFTER view_token_expires");
@@ -275,6 +291,23 @@ function rcmi_tickets_run_schema_migrations() {
     $has_submitter_email = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'submitter_email'");
     if (!$has_submitter_email) {
         $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN submitter_email VARCHAR(255) NULL AFTER submitter_name");
+    }
+
+    // v12: backfill default assignees for existing tickets that belong to chains
+    // with a completion_assignee_id set, so their assignees appear in the sidebar
+    // and timeline.
+    $wpdb->query("
+        INSERT IGNORE INTO {$wpdb->prefix}rcmi_ticket_assignees (ticket_id, user_id)
+        SELECT DISTINCT a.ticket_id, c.completion_assignee_id
+        FROM {$wpdb->prefix}rcmi_ticket_approvals a
+        JOIN {$wpdb->prefix}rcmi_approval_chains c ON c.id = a.chain_id
+        WHERE c.completion_assignee_id IS NOT NULL AND c.completion_assignee_id > 0
+    ");
+
+    // v13: archived flag for "Ticket Heaven" (completed tickets sent to archive)
+    $has_archived = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'archived'");
+    if (!$has_archived) {
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN archived TINYINT(1) NOT NULL DEFAULT 0 AFTER status");
     }
 }
 
@@ -286,14 +319,6 @@ function rcmi_tickets_maybe_upgrade_schema() {
     $installed = get_option('rcmi_tickets_db_version', '0');
     if (version_compare((string) $installed, RCMI_TICKETS_DB_VERSION, '<')) {
         rcmi_tickets_create_tables();
-    }
-
-    // Ensure WordPress timezone is set to Houston (America/Chicago) so
-    // current_time('mysql') returns local time for all ticket timestamps.
-    // Only set if the site has no timezone configured (don't override an
-    // intentional setting).
-    if (!get_option('timezone_string')) {
-        update_option('timezone_string', 'America/Chicago');
     }
 }
 add_action('admin_init', 'rcmi_tickets_maybe_upgrade_schema');

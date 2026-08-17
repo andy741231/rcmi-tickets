@@ -12,6 +12,18 @@ const router = createRouter({
 // In public mode, restrict all routes to /create only
 publicGuard(router);
 
+// After a login redirect, navigate to the stashed target once the SPA
+// is back in logged-in mode.
+router.isReady().then(() => {
+    try {
+        const redirect = sessionStorage.getItem('rcmi_redirect');
+        if (redirect) {
+            sessionStorage.removeItem('rcmi_redirect');
+            router.push(redirect);
+        }
+    } catch (e) {}
+});
+
 const mountEl = document.getElementById('rcmi-tickets-app');
 
 if (mountEl) {

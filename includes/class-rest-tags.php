@@ -196,10 +196,17 @@ function rcmi_tickets_tag_slug($name) {
  * Existing tags (matched by name) are reused. Used by ticket create/update
  * when the frontend sends tag names instead of IDs.
  *
+ * By default ($allow_create = false), only resolves existing tags — does
+ * NOT create new ones. This prevents privilege escalation where any user
+ * who can create a ticket could auto-create arbitrary tags. Pass true only
+ * from contexts where the tag names come from a trusted (manager-configured)
+ * source, such as auto-tag rules.
+ *
  * @param string[] $names
+ * @param bool     $allow_create Whether to create tags that don't exist yet.
  * @return int[] Tag IDs in the same order as the input names.
  */
-function rcmi_tickets_tag_ids_from_names(array $names) {
+function rcmi_tickets_tag_ids_from_names(array $names, $allow_create = false) {
     global $wpdb;
     $ids = [];
 
@@ -216,7 +223,7 @@ function rcmi_tickets_tag_ids_from_names(array $names) {
 
         if ($existing) {
             $ids[] = (int) $existing;
-        } else {
+        } elseif ($allow_create) {
             $slug = rcmi_tickets_tag_slug($name);
             $wpdb->insert($wpdb->prefix . 'rcmi_ticket_tags', [
                 'name' => $name,

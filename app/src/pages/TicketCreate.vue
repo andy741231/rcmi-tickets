@@ -126,7 +126,6 @@ const publicForm = reactive({
 const form = reactive({
     title: '',
     description: '',
-    assignee_ids: [],
     tag_ids: [],
     form_answers: {},
 });
@@ -153,34 +152,40 @@ function resetPublicForm() {
     error.value = '';
 }
 
-async function uploadStagedFiles(ticketId) {
+async function uploadStagedFiles(ticketId, viewToken) {
     const files = staged.uploadableFiles();
     if (files.length === 0) return;
 
     let ok = 0;
     let failed = 0;
-    const uploadPath = isPublic.value
-        ? `${config.apiBase}/public/attachments/${ticketId}`
-        : `${config.apiBase}/tickets/${ticketId}/attachments`;
+    let uploadPath;
+    if (isPublic.value) {
+        const params = new URLSearchParams({ token: viewToken || '' });
+        const sep = config.apiBase.includes('?') ? '&' : '?';
+        uploadPath = `${config.apiBase}/public/attachments/${ticketId}${sep}${params.toString()}`;
+    } else {
+        uploadPath = `${config.apiBase}/tickets/${ticketId}/attachments`;
+    }
 
-    for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        uploadProgress.value = `Uploading ${i + 1}/${files.length}: ${f.name}`;
-        try {
-            const formData = new FormData();
-            formData.append('file', f.file);
-            const res = await fetch(uploadPath, {
-                method: 'POST',
-                headers: isPublic.value ? {} : { 'X-WP-Nonce': config.nonce },
-                credentials: 'same-origin',
-                body: formData,
-            });
-            if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-            ok++;
-        } catch (e) {
-            console.error('Upload failed for', f.name, e);
-            failed++;
+    uploadProgress.value = `Uploading ${files.length} file(s)…`;
+    try {
+        const formData = new FormData();
+        for (const f of files) {
+            formData.append('files[]', f.file);
         }
+        const res = await fetch(uploadPath, {
+            method: 'POST',
+            headers: isPublic.value ? {} : { 'X-WP-Nonce': config.nonce },
+            credentials: 'same-origin',
+            body: formData,
+        });
+        if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+        const data = await res.json().catch(() => null);
+        ok = data?.items?.length || files.length;
+        failed = data?.errors?.length || 0;
+    } catch (e) {
+        console.error('Upload failed:', e);
+        failed = files.length;
     }
 
     uploadProgress.value = '';
@@ -221,7 +226,7 @@ async function submit() {
                 website: publicForm.website, // honeypot
             };
             const result = await api('/public/submit', { method: 'POST', body });
-            await uploadStagedFiles(result.id);
+            await uploadStagedFiles(result.id, result.view_token);
             publicSuccess.value = true;
             publicSuccessMessage.value = result.message || meta.public_success?.message || 'Your ticket has been submitted. A confirmation has been sent to your email.';
             toast.success('Request submitted');

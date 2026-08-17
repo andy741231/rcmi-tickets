@@ -3,8 +3,8 @@
  * Shared permission helpers for RCMI Tickets.
  *
  * Per-ticket access rules (ticket-plan.md §4):
- * - view:          manage cap, OR author, OR assignee
- * - update:        manage cap, OR (author AND status = 'Received')
+ * - view:          manage cap, OR requestor, OR assignee
+ * - update:        manage cap, OR (requestor AND status = 'Received')
  * - delete:        manage cap
  * - change_status: manage cap (any transition), OR assignee (only to 'Completed')
  * - comment/react: anyone who can view

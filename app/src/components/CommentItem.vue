@@ -52,7 +52,7 @@
             </div>
 
             <!-- Body -->
-            <div v-else class="prose-sm whitespace-pre-wrap text-sm leading-relaxed text-gray-700" v-html="comment.body"></div>
+            <div v-else class="prose-sm whitespace-pre-wrap text-sm leading-relaxed text-gray-700" v-html="sanitizedBody"></div>
 
             <!-- Attachments -->
             <div v-if="comment.attachments && comment.attachments.length > 0" class="mt-3">
@@ -127,6 +127,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
+import DOMPurify from 'dompurify';
 import { api } from '../api.js';
 import ReactionBar from './ReactionBar.vue';
 import Modal from './Modal.vue';
@@ -150,6 +151,11 @@ const editSaving = ref(false);
 const confirmDelete = ref(false);
 
 const isEdited = computed(() => props.comment.created_at !== props.comment.updated_at);
+
+// Second line of defense: sanitize HTML on the client even though the
+// backend already runs wp_kses_post. Prevents stored XSS if the DB is
+// compromised or a future code path bypasses server-side sanitization.
+const sanitizedBody = computed(() => DOMPurify.sanitize(props.comment.body, { ALLOWED_TAGS: ['a', 'strong', 'em', 'br', 'p', 'ul', 'ol', 'li', 'code', 'pre', 'blockquote', 'span'], ALLOWED_ATTR: ['href', 'target', 'rel', 'class'] }));
 
 const canEdit = computed(() =>
     props.currentUserId === props.comment.user_id || props.canManage

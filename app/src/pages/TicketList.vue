@@ -54,15 +54,23 @@
                     <Icon name="download" /> {{ exporting ? 'Exporting…' : 'Export CSV' }}
                 </button>
                 <template v-if="isManager && tickets.length > 0">
-                    <button v-if="selectedIds.size > 0" @click="confirmBatchDelete = true"
+                    <!-- Batch action buttons -->
+                    <button v-if="batchMode" @click="clearSelection" class="rcmi-button-ghost px-3 py-2 text-sm">
+                        Cancel
+                    </button>
+                    <button v-if="batchMode === 'delete' && selectedIds.size > 0" @click="confirmBatchDelete = true"
                         class="rcmi-button-danger inline-flex items-center gap-1.5 px-3 py-2 text-sm">
                         <Icon name="trash" /> Delete ({{ selectedIds.size }})
                     </button>
-                    <button v-if="selectMode" @click="clearSelection" class="rcmi-button-ghost px-3 py-2 text-sm">
-                        Cancel
+                    <button v-if="batchMode === 'heaven' && selectedIds.size > 0" @click="confirmBatchHeaven = true"
+                        class="inline-flex items-center gap-1.5 rounded-md border border-purple-300 bg-purple-50 px-3 py-2 text-sm font-semibold text-purple-700 transition hover:bg-purple-100">
+                        <Icon name="archive" /> Send to Heaven ({{ selectedIds.size }})
                     </button>
-                    <button v-else @click="selectMode = true" class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3 py-2 text-sm">
-                        <Icon name="trash" /> Select
+                    <button v-if="!batchMode" @click="startBatch('delete')" class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3 py-2 text-sm">
+                        <Icon name="trash" /> Select to Delete
+                    </button>
+                    <button v-if="!batchMode" @click="startBatch('heaven')" class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3 py-2 text-sm">
+                        <Icon name="archive" /> Select to Heaven
                     </button>
                 </template>
                 <label for="per-page" class="text-sm text-gray-600">Per page</label>
@@ -138,22 +146,27 @@
         <!-- Card view -->
         <div v-else-if="view === 'card'" class="rcmi-ticket-card-grid grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3">
             <div v-for="t in tickets" :key="t.id"
-                :class="['group rounded-xl border bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md', selectMode ? 'cursor-default' : '', selectedIds.has(t.id) ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-200']">
+                :class="['group rounded-xl border bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md', batchMode ? 'cursor-default' : '', selectedIds.has(t.id) ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-200', isEligible(t) ? '' : 'opacity-40']">
                 <!-- Header -->
                 <div class="mb-3 flex items-start justify-between gap-3">
                     <div class="flex items-center gap-2">
-                        <input v-if="selectMode" type="checkbox" :checked="selectedIds.has(t.id)"
+                        <input v-if="batchMode" type="checkbox" :checked="selectedIds.has(t.id)"
+                            :disabled="!isEligible(t)"
                             @change="toggleSelect(t.id)"
-                            class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                            class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700 disabled:opacity-30" />
                         <span class="text-xs font-semibold tracking-wide text-gray-500">#{{ t.id }}</span>
                     </div>
                     <StatusBadge :status="t.status" />
                 </div>
                 <!-- Title -->
-                <router-link :to="selectMode ? null : `/ticket/${t.id}`" @click.prevent="selectMode ? toggleSelect(t.id) : null"
+                <router-link v-if="!batchMode" :to="`/ticket/${t.id}`"
                     class="block mb-3 line-clamp-2 text-base font-semibold leading-snug text-gray-900 group-hover:text-red-800">
                     {{ t.title }}
                 </router-link>
+                <button v-else type="button" :disabled="!isEligible(t)" @click="isEligible(t) ? toggleSelect(t.id) : null"
+                    class="block mb-3 line-clamp-2 text-left text-base font-semibold leading-snug text-gray-900 group-hover:text-red-800 disabled:cursor-default">
+                    {{ t.title }}
+                </button>
                 <!-- Approval callout -->
                 <div v-if="t.status === 'Pending Approval' && t.approval_history" class="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
                     <span v-if="t.current_approval_step">Approval step {{ currentStepNumber(t) }} of {{ t.approval_history.length }}</span>
@@ -175,24 +188,25 @@
             <table class="rcmi-inbox-table">
                 <thead>
                     <tr>
-                        <th v-if="selectMode" style="width: 2.5rem">
+                        <th v-if="batchMode" style="width: 2.5rem">
                             <input type="checkbox" :checked="allSelected" @change="toggleSelectAll"
                                 class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
                         </th>
                         <th style="width: 3rem"></th>
                         <th>Ticket</th>
                         <th>Status</th>
-                        <th>Owner</th>
+                        <th>Assignee</th>
                         <th>Due</th>
                         <th>Updated</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="t in tickets" :key="t.id" :class="selectMode && selectedIds.has(t.id) ? 'bg-red-50' : ''">
-                        <td v-if="selectMode">
+                    <tr v-for="t in tickets" :key="t.id" :class="[batchMode && selectedIds.has(t.id) ? 'bg-red-50' : '', !isEligible(t) && batchMode ? 'opacity-40' : '']">
+                        <td v-if="batchMode">
                             <input type="checkbox" :checked="selectedIds.has(t.id)"
+                                :disabled="!isEligible(t)"
                                 @change="toggleSelect(t.id)"
-                                class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                                class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700 disabled:opacity-30" />
                         </td>
                         <td class="whitespace-nowrap">
                             <span v-if="isOverdue(t.due_date, t.status)" class="rcmi-row-indicator rcmi-row-indicator-danger" aria-label="Overdue"></span>
@@ -245,6 +259,22 @@
                     class="rcmi-button-secondary px-4 py-2 text-sm">Cancel</button>
             </template>
         </Modal>
+
+        <!-- Batch send to heaven confirmation modal -->
+        <Modal v-if="confirmBatchHeaven" @close="confirmBatchHeaven = false" title="Send tickets to Heaven">
+            <p class="text-sm text-gray-700">
+                Send <strong class="text-gray-900">{{ selectedIds.size }} ticket(s)</strong> to Ticket Heaven?
+                They will be archived and removed from the main list. You can resurrect them later from the Ticket Heaven page.
+            </p>
+            <template #footer>
+                <button @click="batchArchive" :disabled="batchArchiving"
+                    class="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-700 disabled:opacity-50">
+                    <Icon name="archive" /> {{ batchArchiving ? 'Sending…' : 'Yes, send to Heaven' }}
+                </button>
+                <button @click="confirmBatchHeaven = false"
+                    class="rcmi-button-secondary px-4 py-2 text-sm">Cancel</button>
+            </template>
+        </Modal>
     </div>
 </template>
 
@@ -273,15 +303,35 @@ const totalPages = ref(0);
 const filters = ref({ search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '' });
 const queue = ref('all');
 
-// Batch delete state
-const selectMode = ref(false);
+// Batch actions state
+const batchMode = ref(null); // null | 'delete' | 'heaven'
 const selectedIds = ref(new Set());
 const confirmBatchDelete = ref(false);
+const confirmBatchHeaven = ref(false);
 const batchDeleting = ref(false);
+const batchArchiving = ref(false);
 const exporting = ref(false);
 
 const isManager = computed(() => meta.caps?.manage === true);
-const allSelected = computed(() => tickets.value.length > 0 && tickets.value.every(t => selectedIds.value.has(t.id)));
+
+// A ticket is eligible for the current batch action:
+// - delete mode: non-completed tickets only
+// - heaven mode: completed tickets only
+function isEligible(t) {
+    if (!batchMode.value) return true;
+    if (batchMode.value === 'delete') return t.status !== 'Completed';
+    if (batchMode.value === 'heaven') return t.status === 'Completed';
+    return false;
+}
+
+// Only consider eligible tickets for "select all" logic
+const eligibleTickets = computed(() => tickets.value.filter(t => isEligible(t)));
+const allSelected = computed(() => eligibleTickets.value.length > 0 && eligibleTickets.value.every(t => selectedIds.value.has(t.id)));
+
+function startBatch(mode) {
+    batchMode.value = mode;
+    selectedIds.value = new Set();
+}
 
 function toggleSelect(id) {
     const next = new Set(selectedIds.value);
@@ -291,14 +341,20 @@ function toggleSelect(id) {
 
 function toggleSelectAll() {
     if (allSelected.value) {
-        selectedIds.value = new Set();
+        // Deselect only eligible tickets
+        const next = new Set(selectedIds.value);
+        for (const t of eligibleTickets.value) next.delete(t.id);
+        selectedIds.value = next;
     } else {
-        selectedIds.value = new Set(tickets.value.map(t => t.id));
+        // Select all eligible tickets
+        const next = new Set(selectedIds.value);
+        for (const t of eligibleTickets.value) next.add(t.id);
+        selectedIds.value = next;
     }
 }
 
 function clearSelection() {
-    selectMode.value = false;
+    batchMode.value = null;
     selectedIds.value = new Set();
 }
 
@@ -306,8 +362,9 @@ async function batchDelete() {
     batchDeleting.value = true;
     try {
         const ids = [...selectedIds.value];
-        await api('/tickets/batch-delete', { method: 'POST', body: { ids } });
-        toast.success(`${ids.length} ticket(s) deleted`);
+        const res = await api('/tickets/batch-delete', { method: 'POST', body: { ids } });
+        const skippedCount = res.skipped?.length || 0;
+        toast.success(`${res.count} ticket(s) deleted${skippedCount ? `, ${skippedCount} skipped (completed)` : ''}`);
         confirmBatchDelete.value = false;
         clearSelection();
         await loadTickets();
@@ -315,6 +372,23 @@ async function batchDelete() {
         toast.error(e.message || 'Failed to delete tickets');
     } finally {
         batchDeleting.value = false;
+    }
+}
+
+async function batchArchive() {
+    batchArchiving.value = true;
+    try {
+        const ids = [...selectedIds.value];
+        const res = await api('/tickets/batch-archive', { method: 'POST', body: { ids } });
+        const skippedCount = res.skipped?.length || 0;
+        toast.success(`${res.count} ticket(s) sent to Heaven${skippedCount ? `, ${skippedCount} skipped` : ''}`);
+        confirmBatchHeaven.value = false;
+        clearSelection();
+        await loadTickets();
+    } catch (e) {
+        toast.error(e.message || 'Failed to send tickets to Heaven');
+    } finally {
+        batchArchiving.value = false;
     }
 }
 

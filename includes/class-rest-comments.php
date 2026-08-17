@@ -139,7 +139,7 @@ function rcmi_tickets_format_comment($row) {
     $user = get_userdata($row['user_id']);
     $comment_id = (int) $row['id'];
 
-    // Comments authored by the shared "Guest Submitter" account should show
+    // Comments posted by the shared "Guest Submitter" account should show
     // that specific ticket's real submitter name/email, not the generic
     // placeholder account (which is reused across every public ticket).
     $user_name = $user ? $user->display_name : '';
@@ -254,7 +254,18 @@ function rcmi_tickets_delete_comment_recursive($comment_id) {
     // Delete reactions
     $wpdb->delete($wpdb->prefix . 'rcmi_ticket_comment_reactions', ['comment_id' => $comment_id], ['%d']);
 
-    // Delete comment attachments (DB rows only — file deletion is Task 8's concern)
+    // Delete comment attachments: remove files from disk first, then DB rows
+    $attachments = $wpdb->get_results($wpdb->prepare(
+        "SELECT id, ticket_id, file_path FROM {$wpdb->prefix}rcmi_ticket_attachments WHERE comment_id = %d",
+        $comment_id
+    ), ARRAY_A);
+    foreach ($attachments as $att) {
+        $ticket_id = $att['ticket_id'] ?: 0;
+        $full_path = trailingslashit(WP_CONTENT_DIR) . 'uploads/rcmi-tickets/' . $ticket_id . '/' . $att['file_path'];
+        if (file_exists($full_path)) {
+            @unlink($full_path);
+        }
+    }
     $wpdb->delete($wpdb->prefix . 'rcmi_ticket_attachments', ['comment_id' => $comment_id], ['%d']);
 
     // Delete the comment itself
@@ -264,7 +275,7 @@ function rcmi_tickets_delete_comment_recursive($comment_id) {
 // ── mention helpers ──────────────────────────────────────────────────
 
 /**
- * Get user IDs that can be @mentioned on a ticket (§4): author + assignees + managers.
+ * Get user IDs that can be @mentioned on a ticket (§4): requestor + assignees + managers.
  *
  * @param array $ticket Ticket row (must have author_id and assignee_ids).
  * @return int[]
@@ -353,17 +364,21 @@ function rcmi_tickets_build_mention_lookup(array $user_ids, $ticket = null) {
  * (up to 4 words) against the mention lookup. Longest match wins — this
  * handles both "@John" and "@John Smith" correctly.
  *
- * @param string $body      Raw comment body (may contain HTML).
- * @param array  $ticket    Ticket row for mention validation.
- * @param int    $commenter Optional explicit commenter ID (defaults to current user;
- *                           needed for public/guest comment creation where there is
- *                           no logged-in user).
+ * @param string   $body             Raw comment body (may contain HTML).
+ * @param array    $ticket           Ticket row for mention validation.
+ * @param int      $commenter        Optional explicit commenter ID (defaults to current user;
+ *                                   needed for public/guest comment creation where there is
+ *                                   no logged-in user).
+ * @param int[]|null $allowed_user_ids Optional explicit user IDs allowed to be mentioned.
+ *                                   Defaults to ticket requestor + assignees + managers.
  * @return int[] Validated mentioned user IDs.
  */
-function rcmi_tickets_parse_mentions($body, array $ticket, $commenter = null) {
+function rcmi_tickets_parse_mentions($body, array $ticket, $commenter = null, $allowed_user_ids = null) {
     // Strip HTML so we match against plain text
     $text = wp_strip_all_tags($body);
-    $mentionable_ids = rcmi_tickets_get_mentionable_user_ids($ticket);
+    $mentionable_ids = $allowed_user_ids !== null
+        ? array_values(array_unique(array_filter(array_map('intval', (array) $allowed_user_ids))))
+        : rcmi_tickets_get_mentionable_user_ids($ticket);
     $lookup = rcmi_tickets_build_mention_lookup($mentionable_ids, $ticket);
 
     if (empty($lookup)) {

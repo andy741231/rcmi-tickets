@@ -197,7 +197,7 @@ function rcmi_tickets_perm_attachment_delete($request) {
         return true;
     }
 
-    // Ticket author can delete ticket-level attachments
+    // Ticket requestor can delete ticket-level attachments
     if ($attachment['ticket_id']) {
         $ticket = rcmi_tickets_load_ticket($attachment['ticket_id']);
         if ($ticket && (int) $ticket['author_id'] === $user_id) {
@@ -254,24 +254,52 @@ function rcmi_tickets_handle_attachment_upload($request) {
     $ticket_id = (int) $request['ticket_id'];
 
     $files = $request->get_file_params();
-    if (empty($files['file']) || $files['file']['error'] !== UPLOAD_ERR_OK) {
-        // Also accept raw body upload (some clients don't send multipart)
-        $body = $request->get_body();
-        if ($body === '' || $body === null) {
-            return new WP_Error('rcmi_tickets_no_file', 'No file uploaded.', ['status' => 400]);
-        }
-        // Treat as raw upload with Content-Type header as mime
-        $mime = $request->get_header('content_type') ?: 'application/octet-stream';
-        $original = $request->get_header('x-filename') ?: 'upload.bin';
-        $size = strlen($body);
 
-        return rcmi_tickets_save_attachment_from_data($ticket_id, $body, $original, $mime, $size);
+    // Multi-file upload: field name "files[]" → PHP normalizes to arrays
+    if (!empty($files['files']) && is_array($files['files']['error'])) {
+        $results = [];
+        $errors = [];
+        $count = count($files['files']['error']);
+        for ($i = 0; $i < $count; $i++) {
+            if ($files['files']['error'][$i] !== UPLOAD_ERR_OK) {
+                $errors[] = ['name' => $files['files']['name'][$i], 'error' => 'Upload error code ' . $files['files']['error'][$i]];
+                continue;
+            }
+            $single = [
+                'name'     => $files['files']['name'][$i],
+                'tmp_name' => $files['files']['tmp_name'][$i],
+                'type'     => $files['files']['type'][$i],
+                'size'     => (int) $files['files']['size'][$i],
+                'error'    => UPLOAD_ERR_OK,
+            ];
+            $res = rcmi_tickets_save_one_attachment($ticket_id, $single);
+            if (is_wp_error($res)) {
+                $errors[] = ['name' => $single['name'], 'error' => $res->get_error_message()];
+            } else {
+                $results[] = $res;
+            }
+        }
+        return new WP_REST_Response(['items' => $results, 'errors' => $errors], 201);
     }
 
-    $file = $files['file'];
+    // Single-file upload: field name "file"
+    if (!empty($files['file']) && $files['file']['error'] === UPLOAD_ERR_OK) {
+        return rcmi_tickets_save_one_attachment($ticket_id, $files['file']);
+    }
+
+    // No raw-body fallback: the Content-Type header is client-controlled
+    // and can be spoofed to bypass MIME validation. Require multipart upload.
+    return new WP_Error('rcmi_tickets_no_file', 'No file uploaded. Use multipart/form-data.', ['status' => 400]);
+}
+
+/**
+ * Save a single uploaded file (shared by single + multi-file paths).
+ */
+function rcmi_tickets_save_one_attachment($ticket_id, $file) {
+    global $wpdb;
+
     $original_name = $file['name'];
     $tmp_path = $file['tmp_name'];
-    $mime = $file['type'];
     $size = (int) $file['size'];
 
     // Validate size
@@ -279,15 +307,24 @@ function rcmi_tickets_handle_attachment_upload($request) {
         return new WP_Error('rcmi_tickets_file_too_large', 'File exceeds 10MB limit.', ['status' => 413]);
     }
 
+    // Verify the file is a real upload (security: prevent local file inclusion)
+    if (!is_uploaded_file($tmp_path)) {
+        return new WP_Error('rcmi_tickets_invalid_upload', 'Invalid upload.', ['status' => 400]);
+    }
+
+    // Detect MIME type server-side (don't trust client-supplied Content-Type)
+    $finfo = function_exists('finfo_open') ? finfo_open(FILEINFO_MIME_TYPE) : false;
+    if ($finfo) {
+        $mime = finfo_file($finfo, $tmp_path);
+        finfo_close($finfo);
+    } else {
+        $mime = $file['type']; // fallback if finfo extension is missing
+    }
+
     // Validate MIME type
     $allowed = rcmi_tickets_allowed_mime_types();
     if (!isset($allowed[$mime])) {
         return new WP_Error('rcmi_tickets_file_type_not_allowed', 'File type not allowed.', ['status' => 415]);
-    }
-
-    // Verify the file is a real upload (security: prevent local file inclusion)
-    if (!is_uploaded_file($tmp_path)) {
-        return new WP_Error('rcmi_tickets_invalid_upload', 'Invalid upload.', ['status' => 400]);
     }
 
     $dir = rcmi_tickets_upload_dir($ticket_id);
@@ -315,50 +352,7 @@ function rcmi_tickets_handle_attachment_upload($request) {
     }
 
     $row = rcmi_tickets_load_attachment($id);
-    return new WP_REST_Response(rcmi_tickets_format_attachment($row), 201);
-}
-
-/**
- * Save an attachment from raw data (used when client sends body instead of multipart).
- */
-function rcmi_tickets_save_attachment_from_data($ticket_id, $data, $original_name, $mime, $size) {
-    global $wpdb;
-
-    if ($size > rcmi_tickets_max_upload_size()) {
-        return new WP_Error('rcmi_tickets_file_too_large', 'File exceeds 10MB limit.', ['status' => 413]);
-    }
-
-    $allowed = rcmi_tickets_allowed_mime_types();
-    if (!isset($allowed[$mime])) {
-        return new WP_Error('rcmi_tickets_file_type_not_allowed', 'File type not allowed.', ['status' => 415]);
-    }
-
-    $dir = rcmi_tickets_upload_dir($ticket_id);
-    $filename = rcmi_tickets_random_filename($original_name);
-    $dest = trailingslashit($dir['path']) . $filename;
-
-    if (file_put_contents($dest, $data) === false) {
-        return new WP_Error('rcmi_tickets_upload_failed', 'Failed to write file.', ['status' => 500]);
-    }
-
-    $wpdb->insert($wpdb->prefix . 'rcmi_ticket_attachments', [
-        'ticket_id'     => $ticket_id,
-        'comment_id'    => null,
-        'uploader_id'   => get_current_user_id(),
-        'file_path'     => $filename,
-        'original_name' => sanitize_text_field($original_name),
-        'mime_type'     => $mime,
-        'size'          => $size,
-    ], ['%d', null, '%d', '%s', '%s', '%s', '%d']);
-
-    $id = (int) $wpdb->insert_id;
-    if (!$id) {
-        @unlink($dest);
-        return new WP_Error('rcmi_tickets_db_failed', 'Failed to record attachment.', ['status' => 500]);
-    }
-
-    $row = rcmi_tickets_load_attachment($id);
-    return new WP_REST_Response(rcmi_tickets_format_attachment($row), 201);
+    return rcmi_tickets_format_attachment($row);
 }
 
 function rcmi_tickets_handle_attachment_delete($request) {

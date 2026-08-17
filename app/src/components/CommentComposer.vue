@@ -155,27 +155,47 @@ function insertMention(user) {
 
 function onFilesSelected(e) {
     const files = Array.from(e.target.files);
-    files.forEach(uploadAttachment);
+    uploadAttachmentsBatch(files);
     e.target.value = '';
 }
 
-async function uploadAttachment(file) {
-    if (file.size > 10 * 1024 * 1024) {
-        pendingAttachments.value.push({ file, name: file.name, size: file.size, status: 'error', error: 'Exceeds 10MB', attachmentId: null });
-        return;
+async function uploadAttachmentsBatch(files) {
+    // Upload all files in a single request to avoid N× WordPress bootstrap overhead.
+    const entries = [];
+    for (const file of files) {
+        if (file.size > 10 * 1024 * 1024) {
+            pendingAttachments.value.push({ file, name: file.name, size: file.size, status: 'error', error: 'Exceeds 10MB', attachmentId: null });
+        } else {
+            pendingAttachments.value.push({ file, name: file.name, size: file.size, status: 'uploading', error: null, attachmentId: null });
+            // Store the index into the reactive array so we can mutate through
+            // the proxy (mutating the original object won't trigger reactivity).
+            entries.push({ index: pendingAttachments.value.length - 1, file });
+        }
     }
 
-    const entry = { file, name: file.name, size: file.size, status: 'uploading', error: null, attachmentId: null };
-    pendingAttachments.value.push(entry);
+    if (entries.length === 0) return;
+
+    const cfg = window.rcmiTickets || {};
+    const formData = new FormData();
+    for (const { file } of entries) {
+        formData.append('files[]', file);
+    }
+
+    // Use public endpoint when a public token is present
+    let uploadUrl;
+    const headers = {};
+    if (props.publicToken) {
+        const sep = cfg.apiBase.includes('?') ? '&' : '?';
+        uploadUrl = `${cfg.apiBase}/public/attachments/${props.ticketId}${sep}token=${encodeURIComponent(props.publicToken)}`;
+    } else {
+        uploadUrl = `${cfg.apiBase}/tickets/${props.ticketId}/attachments`;
+        headers['X-WP-Nonce'] = cfg.nonce;
+    }
 
     try {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const config = window.rcmiTickets || {};
-        const res = await fetch(`${config.apiBase}/tickets/${props.ticketId}/attachments`, {
+        const res = await fetch(uploadUrl, {
             method: 'POST',
-            headers: { 'X-WP-Nonce': config.nonce },
+            headers,
             credentials: 'same-origin',
             body: formData,
         });
@@ -186,11 +206,30 @@ async function uploadAttachment(file) {
         }
 
         const data = await res.json();
-        entry.status = 'done';
-        entry.attachmentId = data.id;
+        // Normalize: single-file returns the attachment object directly,
+        // multi-file returns { items: [...], errors: [...] }
+        const items = Array.isArray(data.items) ? data.items : (data.id ? [data] : []);
+        const errors = data.errors || [];
+
+        // Match results back to entries by name (order may differ)
+        for (const { index } of entries) {
+            const entry = pendingAttachments.value[index];
+            const item = items.find(a => a.original_name === entry.name);
+            if (item) {
+                entry.status = 'done';
+                entry.attachmentId = item.id;
+            } else {
+                const err = errors.find(e => e.name === entry.name);
+                entry.status = 'error';
+                entry.error = err ? err.error : 'Upload failed';
+            }
+        }
     } catch (e) {
-        entry.status = 'error';
-        entry.error = e.message;
+        for (const { index } of entries) {
+            const entry = pendingAttachments.value[index];
+            entry.status = 'error';
+            entry.error = e.message;
+        }
     }
 }
 

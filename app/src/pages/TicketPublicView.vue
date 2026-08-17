@@ -84,14 +84,41 @@
                         <dl class="space-y-4">
                             <div v-if="ticket.due_date">
                                 <dt class="text-xs font-semibold text-gray-500">Due Date</dt>
-                                <dd class="mt-1 text-sm text-gray-700">{{ ticket.due_date }}</dd>
+                                <dd class="mt-1 text-sm text-gray-700">{{ formatDate(ticket.due_date) }}</dd>
                             </div>
                             <div>
                                 <dt class="text-xs font-semibold text-gray-500">Status</dt>
                                 <dd class="mt-1 text-sm text-gray-700">{{ ticket.status }}</dd>
                             </div>
                             <div>
-                                <dt class="text-xs font-semibold text-gray-500">Submitted</dt>
+                                <dt class="text-xs font-semibold text-gray-500">Requestor</dt>
+                                <dd class="mt-1 flex items-center gap-2 text-sm text-gray-700">
+                                    <span class="rcmi-avatar h-7 w-7 text-xs">{{ initials(ticket.author_name) }}</span>
+                                    <span>{{ ticket.author_name || 'Unknown' }}</span>
+                                </dd>
+                                <dd v-if="ticket.author_email" class="mt-1 pl-9 text-xs text-gray-500">
+                                    <a :href="`mailto:${ticket.author_email}`" class="hover:text-red-700 hover:underline">{{ ticket.author_email }}</a>
+                                </dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs font-semibold text-gray-500">Assignee{{ ticket.assignees && ticket.assignees.length > 1 ? 's' : '' }}</dt>
+                                <template v-if="ticket.assignees && ticket.assignees.length > 0">
+                                    <dd v-for="a in ticket.assignees" :key="a.id" class="mt-1 flex items-center gap-2 text-sm text-gray-700">
+                                        <span class="rcmi-avatar h-7 w-7 text-xs">{{ initials(a.display_name) }}</span>
+                                        <span>{{ a.display_name }}</span>
+                                    </dd>
+                                    <dd v-for="a in ticket.assignees" :key="'email-' + a.id" class="mt-1 pl-9 text-xs text-gray-500">
+                                        <a :href="`mailto:${a.user_email}`" class="hover:text-red-700 hover:underline">{{ a.user_email }}</a>
+                                    </dd>
+                                </template>
+                                <dd v-else class="mt-1 text-sm text-gray-400">Unassigned</dd>
+                            </div>
+                            <div v-if="ticket.updated_by_name">
+                                <dt class="text-xs font-semibold text-gray-500">Last Updated By</dt>
+                                <dd class="mt-1 text-sm text-gray-700">{{ ticket.updated_by_name }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs font-semibold text-gray-500">Created</dt>
                                 <dd class="mt-1 text-sm text-gray-700">{{ formatDateTime(ticket.created_at) }}</dd>
                             </div>
                             <div>
@@ -104,7 +131,17 @@
                     <!-- Approval timeline -->
                     <section v-if="ticket.approval_history && ticket.approval_history.length > 0" class="rcmi-card p-5">
                         <h3 class="rcmi-section-label mb-4">Approval Timeline</h3>
-                        <ApprovalTimeline :steps="ticket.approval_history" :chain="ticket.approval_chain" />
+                        <ApprovalTimeline :steps="ticket.approval_history" :chain="ticket.approval_chain" :status-history="ticket.status_history || []" :assignees="ticket.assignees || []" />
+                    </section>
+
+                    <!-- Tags card -->
+                    <section v-if="ticket.tags && ticket.tags.length > 0" class="rcmi-card p-5">
+                        <h3 class="rcmi-section-label mb-4">Tags</h3>
+                        <div class="flex flex-wrap gap-1.5">
+                            <span v-for="t in ticket.tags" :key="t.id" class="rcmi-tag-pill">
+                                {{ t.name }}
+                            </span>
+                        </div>
                     </section>
                 </div>
             </div>
@@ -138,12 +175,25 @@ const hasAnswers = computed(() => {
 });
 
 const revisionUrl = computed(() => {
-    return `/#/revision/${props.id}?token=${encodeURIComponent(token)}`;
+    // Preserve the current base path (e.g. /tickets/) so the revision link
+    // stays on the same mounted SPA as the public view.
+    const base = window.location.pathname.replace(/\/[^/]*$/, '');
+    return `${base}/#/revision/${props.id}?token=${encodeURIComponent(token)}`;
 });
+
+function formatDate(d) {
+    if (!d) return '';
+    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 function formatDateTime(dt) {
     if (!dt) return '\u2014';
-    return new Date(dt.replace(' ', 'T') + (dt.includes('+') || dt.includes('Z') ? '' : '')).toLocaleString();
+    return new Date(dt.replace(' ', 'T') + (dt.includes('+') || dt.includes('Z') ? '' : '')).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function initials(name) {
+    if (!name) return '?';
+    return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
 function formatSize(bytes) {

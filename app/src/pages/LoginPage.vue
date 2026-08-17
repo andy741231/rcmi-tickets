@@ -91,12 +91,13 @@
 
 <script setup>
 import { ref, reactive } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import Icon from '../components/Icon.vue';
 import { useToast } from '../composables/useToast.js';
 
 const config = window.rcmiTickets || {};
 const router = useRouter();
+const route = useRoute();
 const toast = useToast();
 
 const busy = ref(false);
@@ -137,6 +138,12 @@ async function handleLogin() {
             // Reload the page so WordPress re-evaluates is_user_logged_in()
             // and re-localizes the script data with a fresh nonce.
             toast.success('Welcome back! Redirecting…');
+            // Stash the redirect target so the SPA can navigate to it
+            // after the page reloads in logged-in mode.
+            const redirect = route.query.redirect;
+            if (redirect) {
+                try { sessionStorage.setItem('rcmi_redirect', String(redirect)); } catch (e) {}
+            }
             setTimeout(() => {
                 window.location.href = config.appUrl || window.location.pathname;
             }, 600);

@@ -54,7 +54,7 @@
                         <div>
                             <label class="rcmi-field-label">On reject</label>
                             <select v-model="selectedChain.on_reject" class="rcmi-input">
-                                <option value="restart">Restart from step 1 (back to author)</option>
+                                <option value="restart">Restart from step 1 (back to requestor)</option>
                                 <option value="back_one">Go back one step</option>
                                 <option value="terminal">Terminal reject (close ticket)</option>
                             </select>
@@ -136,22 +136,22 @@
                         Active
                     </label>
 
-                    <!-- Completion assignment -->
+                    <!-- Default assignee -->
                     <div class="rounded-md border border-gray-200 p-4">
-                        <h4 class="rcmi-section-label mb-3">After Final Approval</h4>
+                        <h4 class="rcmi-section-label mb-3">Default Assignee</h4>
                         <label class="rcmi-field-label">Assign ticket to</label>
                         <select v-model="selectedChain.completion_assignee_id" class="rcmi-input">
-                            <option :value="null">Keep current assignees</option>
+                            <option :value="null">No default assignee</option>
                             <option v-for="u in assignableUsers" :key="u.id" :value="u.id">{{ u.display_name }} ({{ u.user_login }})</option>
                         </select>
-                        <p class="rcmi-field-help">The selected person is added as an assignee after the final approval and receives the Approved notification. They can then move the ticket to In Progress and Complete.</p>
+                        <p class="rcmi-field-help">The selected person is assigned when a ticket enters this approval chain (at creation). They receive the Approved notification once all steps clear, and can then move the ticket to In Progress and Complete.</p>
                     </div>
 
                     <!-- Completion message -->
                     <div class="rounded-md border border-gray-200 p-4">
                         <h4 class="rcmi-section-label mb-3">Completion Message</h4>
                         <RichTextEditor v-model="selectedChain.completion_message" />
-                        <p class="rcmi-field-help mt-2">This message is included in the completion email sent to the ticket author. Use it to provide next steps, contact info, links, or a thank-you note specific to this approval chain. Leave blank to send a default notification.</p>
+                        <p class="rcmi-field-help mt-2">This message is included in the completion email sent to the ticket requestor. Use it to provide next steps, contact info, links, or a thank-you note specific to this approval chain. Leave blank to send a default notification.</p>
                     </div>
 
                     <!-- Save / Delete -->

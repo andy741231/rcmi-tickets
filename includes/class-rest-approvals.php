@@ -43,8 +43,9 @@ function rcmi_tickets_register_approval_routes() {
             'callback'            => 'rcmi_tickets_handle_ticket_reject',
             'permission_callback' => 'rcmi_tickets_perm_ticket_approve',
             'args'                => [
-                'id'      => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int'],
-                'comment' => ['type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field'],
+                'id'        => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int'],
+                'comment'   => ['type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field'],
+                'on_reject' => ['type' => 'string', 'validate_callback' => function ($v) { return in_array($v, ['restart', 'back_one', 'terminal'], true); }],
             ],
         ],
     ]);
@@ -281,30 +282,6 @@ function rcmi_tickets_perm_ticket_approvals_view($request) {
 
 // ── handlers ─────────────────────────────────────────────────────────
 
-function rcmi_tickets_assign_completion_assignee($ticket_id, $chain_id) {
-    global $wpdb;
-    $assignee_id = (int) $wpdb->get_var($wpdb->prepare(
-        "SELECT completion_assignee_id FROM {$wpdb->prefix}rcmi_approval_chains WHERE id = %d",
-        (int) $chain_id
-    ));
-
-    if (!$assignee_id || !get_userdata($assignee_id)) {
-        return;
-    }
-
-    $already_assigned = $wpdb->get_var($wpdb->prepare(
-        "SELECT 1 FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE ticket_id = %d AND user_id = %d",
-        (int) $ticket_id,
-        $assignee_id
-    ));
-    if (!$already_assigned) {
-        $wpdb->insert($wpdb->prefix . 'rcmi_ticket_assignees', [
-            'ticket_id' => (int) $ticket_id,
-            'user_id'   => $assignee_id,
-        ], ['%d', '%d']);
-    }
-}
-
 function rcmi_tickets_handle_ticket_approve($request) {
     global $wpdb;
     $ticket_id = (int) $request['id'];
@@ -350,8 +327,10 @@ function rcmi_tickets_handle_ticket_approve($request) {
         ], 200);
     }
 
-    // No more steps → ticket Approved
-    rcmi_tickets_assign_completion_assignee($ticket_id, (int) $pending['chain_id']);
+    // No more steps → ticket Approved.
+    // The assignee notification email is sent by rcmi_tickets_email_status_changed
+    // (hooked to rcmi_ticket_status_changed with 'Approved' status) — assignees
+    // are notified at approval time, not at ticket creation time.
     $wpdb->update(
         $wpdb->prefix . 'rcmi_tickets',
         ['status' => 'Approved', 'updated_at' => $now, 'updated_by' => $user_id],
@@ -381,12 +360,14 @@ function rcmi_tickets_handle_ticket_reject($request) {
         return new WP_Error('rcmi_tickets_no_pending', 'No pending approval step for this ticket.', ['status' => 409]);
     }
 
-    // Load chain to get on_reject policy
+    // Load chain to get on_reject policy (fallback default)
     $chain = $wpdb->get_row($wpdb->prepare(
         "SELECT * FROM {$wpdb->prefix}rcmi_approval_chains WHERE id = %d",
         (int) $pending['chain_id']
     ), ARRAY_A);
-    $on_reject = $chain['on_reject'] ?? 'restart';
+    // Use the on_reject from the request if provided (approver picks at reject time),
+    // otherwise fall back to the chain's configured default.
+    $on_reject = $request['on_reject'] ?? ($chain['on_reject'] ?? 'restart');
 
     // Mark current step rejected
     $wpdb->update(
@@ -438,7 +419,7 @@ function rcmi_tickets_handle_ticket_reject($request) {
 
         if ($prev) {
             rcmi_tickets_reset_approval_to_pending($prev['id']);
-            // Set ticket to "Rejected: Pending Revision" so author knows to resubmit
+            // Set ticket to "Rejected: Pending Revision" so requestor knows to resubmit
             $wpdb->update(
                 $wpdb->prefix . 'rcmi_tickets',
                 ['status' => 'Rejected: Pending Revision', 'updated_at' => $now, 'updated_by' => $user_id],
@@ -447,6 +428,7 @@ function rcmi_tickets_handle_ticket_reject($request) {
                 ['%d']
             );
             do_action('rcmi_ticket_status_changed', $ticket_id, 'Rejected: Pending Revision', 'Pending Approval', $comment);
+            do_action('rcmi_ticket_approval_rejected', $ticket_id, 'back_one', $comment);
             do_action('rcmi_ticket_approval_step', $ticket_id, (int) $prev['id'], 'reject_back_one');
             return new WP_REST_Response([
                 'rejected_step'   => (int) $pending['id'],
@@ -476,7 +458,7 @@ function rcmi_tickets_handle_ticket_reject($request) {
         rcmi_tickets_reset_approval_to_pending($r['id']);
     }
 
-    // Set ticket to "Rejected: Pending Revision" so author knows to edit and resubmit
+    // Set ticket to "Rejected: Pending Revision" so requestor knows to edit and resubmit
     $wpdb->update(
         $wpdb->prefix . 'rcmi_tickets',
         ['status' => 'Rejected: Pending Revision', 'updated_at' => $now, 'updated_by' => $user_id],
@@ -723,6 +705,7 @@ function rcmi_tickets_apply_reject($pending, $user_id, $comment) {
                 ['%d']
             );
             do_action('rcmi_ticket_status_changed', $ticket_id, 'Rejected: Pending Revision', 'Pending Approval', $comment);
+            do_action('rcmi_ticket_approval_rejected', $ticket_id, 'back_one', $comment);
             do_action('rcmi_ticket_approval_step', $ticket_id, (int) $prev['id'], 'reject_back_one');
             return new WP_REST_Response([
                 'rejected_step' => (int) $pending['id'],

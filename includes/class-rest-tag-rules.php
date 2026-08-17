@@ -258,8 +258,9 @@ function rcmi_tickets_apply_auto_tags($ticket_id, array $form_answers) {
     ));
     $existing_tag_ids = array_map('intval', $existing_tag_ids);
 
-    // Create / resolve auto-tag IDs
-    $auto_tag_ids = rcmi_tickets_tag_ids_from_names($auto_tag_names);
+    // Create / resolve auto-tag IDs (allow_create=true because tag names
+    // come from manager-configured rules, not user input)
+    $auto_tag_ids = rcmi_tickets_tag_ids_from_names($auto_tag_names, true);
 
     // Merge: add auto-tag IDs that aren't already mapped
     $to_add = array_diff($auto_tag_ids, $existing_tag_ids);

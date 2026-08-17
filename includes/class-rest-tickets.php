@@ -89,6 +89,19 @@ function rcmi_tickets_register_ticket_routes() {
         ],
     ]);
 
+    register_rest_route($namespace, '/tickets/batch-archive', [
+        [
+            'methods'             => 'POST',
+            'callback'            => 'rcmi_tickets_handle_batch_archive',
+            'permission_callback' => function () {
+                return rcmi_tickets_can(get_current_user_id(), 'manage');
+            },
+            'args'                => [
+                'ids' => ['type' => 'array', 'items' => ['type' => 'integer'], 'required' => true],
+            ],
+        ],
+    ]);
+
     register_rest_route($namespace, '/tickets/export', [
         [
             'methods'             => 'GET',
@@ -110,6 +123,36 @@ function rcmi_tickets_register_ticket_routes() {
             ],
         ],
     ]);
+
+    register_rest_route($namespace, '/tickets/(?P<id>\d+)/assignees', [
+        [
+            'methods'             => 'POST',
+            'callback'            => 'rcmi_tickets_handle_assignee_update',
+            'permission_callback' => 'rcmi_tickets_perm_assignee_update',
+            'args'                => [
+                'id'            => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int'],
+                'assignee_ids'  => ['type' => 'array', 'items' => ['type' => 'integer']],
+            ],
+        ],
+    ]);
+
+    register_rest_route($namespace, '/tickets/(?P<id>\d+)/archive', [
+        [
+            'methods'             => 'POST',
+            'callback'            => 'rcmi_tickets_handle_archive',
+            'permission_callback' => 'rcmi_tickets_perm_archive',
+            'args'                => ['id' => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int']],
+        ],
+    ]);
+
+    register_rest_route($namespace, '/tickets/(?P<id>\d+)/resurrect', [
+        [
+            'methods'             => 'POST',
+            'callback'            => 'rcmi_tickets_handle_resurrect',
+            'permission_callback' => 'rcmi_tickets_perm_archive',
+            'args'                => ['id' => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int']],
+        ],
+    ]);
 }
 add_action('rest_api_init', 'rcmi_tickets_register_ticket_routes');
 
@@ -129,6 +172,7 @@ function rcmi_tickets_list_args() {
         'tag_ids'        => ['type' => 'array', 'items' => ['type' => 'integer']],
         'assignee_ids'   => ['type' => 'array', 'items' => ['type' => 'integer']],
         'scope'          => ['type' => 'string', 'validate_callback' => function ($v) { return in_array($v, ['assigned', 'submitted', 'all'], true); }],
+        'archived'       => ['type' => 'boolean', 'default' => false],
         'date_from'      => ['type' => 'string'],
         'date_to'        => ['type' => 'string'],
         'sort'           => ['type' => 'string', 'default' => 'created_at'],
@@ -252,7 +296,7 @@ function rcmi_tickets_format_ticket($row) {
     $author_name = $author ? $author->display_name : '';
     $author_email = $author ? $author->user_email : '';
 
-    // Public submissions share a guest author account; recover the submitter's
+    // Public submissions share a guest requestor account; recover the submitter's
     // actual name and email. Prefer the dedicated submitter_name/submitter_email
     // columns (DB v11+); fall back to parsing the description text for older
     // tickets that predate the columns.
@@ -289,6 +333,7 @@ function rcmi_tickets_format_ticket($row) {
     // Schema v3: form answers + approval info
     $form_answers = rcmi_tickets_get_ticket_form_answers($row['id']);
     $approvals = rcmi_tickets_get_ticket_approvals($row['id']);
+    $status_log = rcmi_tickets_get_ticket_status_log($row['id']);
     $current_step = null;
     foreach ($approvals as $a) {
         if ($a['status'] === 'pending') {
@@ -312,6 +357,7 @@ function rcmi_tickets_format_ticket($row) {
         'title'           => $row['title'],
         'description'     => $row['description'],
         'status'          => $row['status'],
+        'archived'        => (bool) ($row['archived'] ?? 0),
         'due_date'        => $row['due_date'],
         'updated_by'      => $row['updated_by'],
         'updated_by_name' => $updater ? $updater->display_name : null,
@@ -324,6 +370,7 @@ function rcmi_tickets_format_ticket($row) {
         'current_approval_step' => $current_step,
         'can_approve_current_step' => (bool) $can_approve_current_step,
         'approval_history' => $approvals,
+        'status_history'  => $status_log,
         'created_at'      => $row['created_at'],
         'updated_at'      => $row['updated_at'],
     ];
@@ -496,6 +543,25 @@ function rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain, $cycle = 1)
         ['%d']
     );
 
+    // Apply the chain's default assignee (completion_assignee_id) at chain
+    // init time so they are assigned upfront. They receive the "Approved"
+    // notification once all steps clear (email_status_changed loops assignee_ids)
+    // and can then move the ticket to In Progress / Complete.
+    $default_assignee = !empty($chain['completion_assignee_id']) ? (int) $chain['completion_assignee_id'] : 0;
+    if ($default_assignee && get_userdata($default_assignee)) {
+        $already_assigned = $wpdb->get_var($wpdb->prepare(
+            "SELECT 1 FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE ticket_id = %d AND user_id = %d",
+            $ticket_id,
+            $default_assignee
+        ));
+        if (!$already_assigned) {
+            $wpdb->insert($wpdb->prefix . 'rcmi_ticket_assignees', [
+                'ticket_id' => $ticket_id,
+                'user_id'   => $default_assignee,
+            ], ['%d', '%d']);
+        }
+    }
+
     // Email first approver
     if ($first_step_id) {
         do_action('rcmi_ticket_approval_step', $ticket_id, $first_step_id, 'chain_started');
@@ -536,6 +602,64 @@ function rcmi_tickets_restart_ticket_approval_chain($ticket_id) {
     // Re-init with next cycle number
     $next_cycle = (int) $existing['max_cycle'] + 1;
     return rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain, $next_cycle);
+}
+
+/**
+ * Log a status change to the rcmi_ticket_status_log table.
+ * Hooked on rcmi_ticket_status_changed.
+ */
+function rcmi_tickets_log_status_change($ticket_id, $new_status, $old_status, $message = null) {
+    global $wpdb;
+    if ($new_status === $old_status) {
+        return;
+    }
+    $wpdb->insert($wpdb->prefix . 'rcmi_ticket_status_log', [
+        'ticket_id'  => (int) $ticket_id,
+        'old_status' => (string) $old_status,
+        'new_status' => (string) $new_status,
+        'changed_by' => (int) get_current_user_id(),
+        'changed_at' => current_time('mysql'),
+        'message'    => $message ?: null,
+    ], ['%d', '%s', '%s', '%d', '%s', '%s']);
+}
+add_action('rcmi_ticket_status_changed', 'rcmi_tickets_log_status_change', 5, 4);
+
+/**
+ * Get status change log entries for a ticket, ordered chronologically.
+ * Only returns post-approval statuses that are meaningful in the timeline
+ * (In Progress, Completed) — approval/rejection transitions are already
+ * represented by the approval step rows.
+ *
+ * @param int $ticket_id
+ * @return array Formatted status log entries
+ */
+function rcmi_tickets_get_ticket_status_log($ticket_id) {
+    global $wpdb;
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM {$wpdb->prefix}rcmi_ticket_status_log
+         WHERE ticket_id = %d
+         ORDER BY changed_at ASC, id ASC",
+        (int) $ticket_id
+    ), ARRAY_A);
+
+    $result = [];
+    foreach ($rows as $row) {
+        $changed_by_name = null;
+        if ($row['changed_by']) {
+            $u = get_userdata((int) $row['changed_by']);
+            $changed_by_name = $u ? $u->display_name : null;
+        }
+        $result[] = [
+            'id'              => (int) $row['id'],
+            'new_status'      => $row['new_status'],
+            'old_status'      => $row['old_status'],
+            'changed_by'      => (int) $row['changed_by'],
+            'changed_by_name' => $changed_by_name,
+            'changed_at'      => $row['changed_at'],
+            'message'         => $row['message'],
+        ];
+    }
+    return $result;
 }
 
 function rcmi_tickets_get_ticket_tags($ticket_id) {
@@ -606,6 +730,18 @@ function rcmi_tickets_perm_delete($request) {
     if (!$ticket) {
         return new WP_Error('rcmi_tickets_not_found', 'Ticket not found.', ['status' => 404]);
     }
+    // Completed tickets cannot be deleted — they must be sent to Ticket Heaven instead
+    if ($ticket['status'] === 'Completed') {
+        return new WP_Error('rcmi_tickets_no_delete_completed', 'Completed tickets cannot be deleted. Send them to Ticket Heaven instead.', ['status' => 409]);
+    }
+    return rcmi_tickets_can(get_current_user_id(), 'delete', $ticket);
+}
+
+function rcmi_tickets_perm_archive($request) {
+    $ticket = rcmi_tickets_load_ticket($request['id']);
+    if (!$ticket) {
+        return new WP_Error('rcmi_tickets_not_found', 'Ticket not found.', ['status' => 404]);
+    }
     return rcmi_tickets_can(get_current_user_id(), 'delete', $ticket);
 }
 
@@ -621,6 +757,26 @@ function rcmi_tickets_perm_status($request) {
     return rcmi_tickets_can(get_current_user_id(), 'change_status', $ticket, $new_status);
 }
 
+/**
+ * Permission for assignee updates: managers + current step approver.
+ */
+function rcmi_tickets_perm_assignee_update($request) {
+    $ticket = rcmi_tickets_load_ticket($request['id']);
+    if (!$ticket) {
+        return new WP_Error('rcmi_tickets_not_found', 'Ticket not found.', ['status' => 404]);
+    }
+    $user_id = get_current_user_id();
+    // Managers can always edit assignees
+    if (rcmi_tickets_can($user_id, 'manage')) {
+        return true;
+    }
+    // Current step approver can edit assignees
+    if (function_exists('rcmi_tickets_user_can_approve_ticket') && rcmi_tickets_user_can_approve_ticket($user_id, (int) $request['id'])) {
+        return true;
+    }
+    return new WP_Error('rcmi_tickets_forbidden', 'You do not have permission to edit assignees on this ticket.', ['status' => 403]);
+}
+
 // ── handlers ─────────────────────────────────────────────────────────
 
 function rcmi_tickets_handle_list($request) {
@@ -632,6 +788,14 @@ function rcmi_tickets_handle_list($request) {
 
     $where = ['1=1'];
     $args = [];
+
+    // Archived filter: default excludes archived tickets; archived=true shows only archived
+    $archived = isset($params['archived']) ? filter_var($params['archived'], FILTER_VALIDATE_BOOLEAN) : false;
+    if ($archived) {
+        $where[] = 't.archived = 1';
+    } else {
+        $where[] = 't.archived = 0';
+    }
 
     // Scope: non-managers can only see assigned, submitted, or approval-chain
     $scope = $params['scope'] ?? 'all';
@@ -774,6 +938,14 @@ function rcmi_tickets_handle_csv_export($request) {
     $where = ['1=1'];
     $args = [];
 
+    // Archived filter: default excludes archived tickets; archived=true shows only archived
+    $archived = isset($params['archived']) ? filter_var($params['archived'], FILTER_VALIDATE_BOOLEAN) : false;
+    if ($archived) {
+        $where[] = 't.archived = 1';
+    } else {
+        $where[] = 't.archived = 0';
+    }
+
     $scope = $params['scope'] ?? 'all';
     if (!$is_manager || $scope !== 'all') {
         if ($scope === 'assigned') {
@@ -858,11 +1030,11 @@ function rcmi_tickets_handle_csv_export($request) {
     $form_fields = rcmi_tickets_get_all_form_fields();
 
     // Build CSV — primary columns mirror the on-screen TicketList table
-    // (Ticket, Status, Owner, Due, Updated), followed by dynamic form
+    // (Ticket, Status, Assignee, Due, Updated), followed by dynamic form
     // fields, then supplementary audit columns at the end.
-    $primary_headers   = ['ID', 'Title', 'Status', 'Owner', 'Due Date', 'Updated'];
+    $primary_headers   = ['ID', 'Title', 'Status', 'Assignee', 'Due Date', 'Updated'];
     $field_headers     = array_map(function ($f) { return $f['label']; }, $form_fields);
-    $extra_headers     = ['Author', 'Author Email', 'Tags', 'Created'];
+    $extra_headers     = ['Requestor', 'Requestor Email', 'Tags', 'Created'];
     $all_headers       = array_merge($primary_headers, $field_headers, $extra_headers);
 
     $output = fopen('php://temp', 'r+');
@@ -877,7 +1049,7 @@ function rcmi_tickets_handle_csv_export($request) {
         $row['tag_ids'] = rcmi_tickets_get_ticket_tag_ids($row['id']);
         $formatted = rcmi_tickets_format_ticket($row);
 
-        // Assignee names (Owner column — matches UI "Owner")
+        // Assignee names (Assignee column — matches UI "Assignee")
         $assignee_names = implode('; ', array_map(function ($a) { return $a['display_name']; }, $formatted['assignees']));
         // Tag names
         $tag_names = implode('; ', array_map(function ($t) { return $t['name']; }, $formatted['tags']));
@@ -976,15 +1148,18 @@ function rcmi_tickets_handle_create($request) {
     // Auto-tag: evaluate rules against form answers and merge in matching tags
     rcmi_tickets_apply_auto_tags($ticket_id, $form_answers);
 
-    do_action('rcmi_ticket_created', $ticket_id, get_current_user_id(), $assignee_ids);
-
     // Schema v3: resolve + init approval chain (flips status to 'Pending Approval' if matched)
+    // Default assignee is applied inside init_ticket_approval_chain.
+    // The assignee notification email is sent when the ticket is approved
+    // (via rcmi_ticket_status_changed → 'Approved'), not at creation time.
     $chain = rcmi_tickets_resolve_approval_chain($form_answers);
     if ($chain) {
         rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain);
     }
 
     $row = rcmi_tickets_load_ticket($ticket_id);
+    do_action('rcmi_ticket_created', $ticket_id, get_current_user_id(), $row['assignee_ids']);
+
     return new WP_REST_Response(rcmi_tickets_format_ticket($row), 201);
 }
 
@@ -1061,7 +1236,7 @@ function rcmi_tickets_handle_update($request) {
     }
 
     // Schema v3: resubmit path. If the ticket was rejected (restart or back_one)
-    // and the author just edited it, restart the chain → status back to 'Pending Approval'.
+    // and the requestor just edited it, restart the chain → status back to 'Pending Approval'.
     if ($ticket['status'] === 'Received' || $ticket['status'] === 'Rejected: Pending Revision') {
         $has_chain = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE ticket_id = %d",
@@ -1134,6 +1309,43 @@ function rcmi_tickets_handle_delete($request) {
     return new WP_REST_Response(['deleted' => true, 'id' => $ticket_id], 200);
 }
 
+function rcmi_tickets_handle_archive($request) {
+    global $wpdb;
+    $ticket_id = (int) $request['id'];
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
+    if (!$ticket) {
+        return new WP_Error('rcmi_tickets_not_found', 'Ticket not found.', ['status' => 404]);
+    }
+    if ($ticket['status'] !== 'Completed') {
+        return new WP_Error('rcmi_tickets_not_completed', 'Only completed tickets can be sent to Ticket Heaven.', ['status' => 409]);
+    }
+    $wpdb->update(
+        $wpdb->prefix . 'rcmi_tickets',
+        ['archived' => 1, 'updated_at' => current_time('mysql'), 'updated_by' => get_current_user_id()],
+        ['id' => $ticket_id],
+        ['%d', '%s', '%d'],
+        ['%d']
+    );
+    return new WP_REST_Response(['archived' => true, 'id' => $ticket_id], 200);
+}
+
+function rcmi_tickets_handle_resurrect($request) {
+    global $wpdb;
+    $ticket_id = (int) $request['id'];
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
+    if (!$ticket) {
+        return new WP_Error('rcmi_tickets_not_found', 'Ticket not found.', ['status' => 404]);
+    }
+    $wpdb->update(
+        $wpdb->prefix . 'rcmi_tickets',
+        ['archived' => 0, 'updated_at' => current_time('mysql'), 'updated_by' => get_current_user_id()],
+        ['id' => $ticket_id],
+        ['%d', '%s', '%d'],
+        ['%d']
+    );
+    return new WP_REST_Response(['resurrected' => true, 'id' => $ticket_id], 200);
+}
+
 function rcmi_tickets_handle_batch_delete($request) {
     $ids = array_filter(array_map('intval', (array) $request['ids']));
     if (!$ids) {
@@ -1141,12 +1353,59 @@ function rcmi_tickets_handle_batch_delete($request) {
     }
 
     $deleted = [];
+    $skipped = [];
     foreach ($ids as $id) {
+        $ticket = rcmi_tickets_load_ticket($id);
+        if ($ticket && $ticket['status'] === 'Completed') {
+            $skipped[] = $id;
+            continue;
+        }
         rcmi_tickets_delete_ticket_data($id);
         $deleted[] = $id;
     }
 
-    return new WP_REST_Response(['deleted' => true, 'ids' => $deleted, 'count' => count($deleted)], 200);
+    return new WP_REST_Response([
+        'deleted'  => true,
+        'ids'      => $deleted,
+        'count'    => count($deleted),
+        'skipped'  => $skipped,
+    ], 200);
+}
+
+function rcmi_tickets_handle_batch_archive($request) {
+    global $wpdb;
+    $ids = array_filter(array_map('intval', (array) $request['ids']));
+    if (!$ids) {
+        return new WP_Error('rcmi_tickets_no_ids', 'No ticket IDs provided.', ['status' => 400]);
+    }
+
+    $archived = [];
+    $skipped = [];
+    $now = current_time('mysql');
+    $user_id = get_current_user_id();
+
+    foreach ($ids as $id) {
+        $ticket = rcmi_tickets_load_ticket($id);
+        if (!$ticket || $ticket['status'] !== 'Completed') {
+            $skipped[] = $id;
+            continue;
+        }
+        $wpdb->update(
+            $wpdb->prefix . 'rcmi_tickets',
+            ['archived' => 1, 'updated_at' => $now, 'updated_by' => $user_id],
+            ['id' => $id],
+            ['%d', '%s', '%d'],
+            ['%d']
+        );
+        $archived[] = $id;
+    }
+
+    return new WP_REST_Response([
+        'archived' => true,
+        'ids'      => $archived,
+        'count'    => count($archived),
+        'skipped'  => $skipped,
+    ], 200);
 }
 
 function rcmi_tickets_handle_status($request) {
@@ -1165,5 +1424,26 @@ function rcmi_tickets_handle_status($request) {
     do_action('rcmi_ticket_status_changed', (int) $request['id'], $new_status, $old_status, $message);
 
     $row = rcmi_tickets_load_ticket($request['id']);
+    return new WP_REST_Response(rcmi_tickets_format_ticket($row), 200);
+}
+
+/**
+ * Handle assignee-only update (managers + current step approver).
+ * Returns the updated ticket with new assignees.
+ */
+function rcmi_tickets_handle_assignee_update($request) {
+    global $wpdb;
+    $ticket_id = (int) $request['id'];
+    $assignee_ids = isset($request['assignee_ids']) ? $request['assignee_ids'] : [];
+
+    rcmi_tickets_sync_assignees($ticket_id, $assignee_ids);
+
+    // Update the ticket's updated_at/updated_by timestamp
+    $wpdb->update($wpdb->prefix . 'rcmi_tickets', [
+        'updated_by'  => get_current_user_id(),
+        'updated_at'  => current_time('mysql'),
+    ], ['id' => $ticket_id], ['%d', '%s'], ['%d']);
+
+    $row = rcmi_tickets_load_ticket($ticket_id);
     return new WP_REST_Response(rcmi_tickets_format_ticket($row), 200);
 }

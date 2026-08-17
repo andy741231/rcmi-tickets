@@ -132,15 +132,17 @@ async function loadComments() {
 }
 
 async function loadMentionableUsers() {
-    // Public users don't have mentionable users
-    if (props.publicToken) {
-        mentionableUsers.value = [];
-        return;
-    }
     try {
-        mentionableUsers.value = await api(`/tickets/${props.ticketId}/mentionable-users`);
+        if (props.publicToken) {
+            // Public users: load staff (assignees + managers) via token-authed endpoint
+            const params = new URLSearchParams({ token: props.publicToken });
+            mentionableUsers.value = await api(`/public/tickets/${props.ticketId}/mentionable-users`, { params });
+        } else {
+            mentionableUsers.value = await api(`/tickets/${props.ticketId}/mentionable-users`);
+        }
     } catch (e) {
         console.error('Failed to load mentionable users:', e);
+        mentionableUsers.value = [];
     }
 }
 

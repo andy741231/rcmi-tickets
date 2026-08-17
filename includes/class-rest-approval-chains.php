@@ -17,7 +17,7 @@
  *   }
  *
  * on_reject: 'restart' | 'back_one' | 'terminal'
- *   - restart:  reject → status Received, chain reset to step 1, author can edit/resubmit
+ *   - restart:  reject → status Received, chain reset to step 1, requestor can edit/resubmit
  *   - back_one: reject → status stays Pending Approval, chain back one step
  *   - terminal: reject → status Rejected (terminal), chain closed
  */
@@ -83,7 +83,7 @@ function rcmi_tickets_approval_chain_write_args($is_update = false) {
         'trigger_field_key'   => ['type' => 'string', 'sanitize_callback' => 'sanitize_key'],
         'trigger_value'       => ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field'],
         'on_reject'           => ['type' => 'string', 'default' => 'restart', 'validate_callback' => function ($v) { return in_array($v, rcmi_tickets_valid_on_reject_modes(), true); }],
-        'completion_message'     => ['type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field'],
+        'completion_message'     => ['type' => 'string', 'sanitize_callback' => 'rcmi_tickets_sanitize_completion_message'],
         'completion_assignee_id' => ['type' => 'integer', 'validate_callback' => function ($v) { return !(int) $v || (bool) get_userdata((int) $v); }],
         'is_active'              => ['type' => 'boolean', 'default' => true],
         'steps'               => ['type' => 'array', 'required' => !$is_update],
@@ -91,6 +91,30 @@ function rcmi_tickets_approval_chain_write_args($is_update = false) {
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Sanitize the completion message HTML from the RichTextEditor.
+ * Allows a safe subset of tags (p, br, strong, em, a, ul, ol, li)
+ * matching what the email renderer permits.
+ */
+function rcmi_tickets_sanitize_completion_message($value) {
+    if (!is_string($value) || $value === '') {
+        return '';
+    }
+    $allowed = [
+        'p'      => [],
+        'br'     => [],
+        'strong' => [],
+        'em'     => [],
+        'b'      => [],
+        'i'      => [],
+        'a'      => ['href' => true, 'title' => true],
+        'ul'     => [],
+        'ol'     => [],
+        'li'     => [],
+    ];
+    return wp_kses($value, $allowed);
+}
 
 function rcmi_tickets_load_approval_chain($id) {
     global $wpdb;
