@@ -53,6 +53,12 @@ function rcmi_tickets_register_approval_chain_routes() {
 
     register_rest_route($namespace, '/approval-chains/(?P<id>\d+)', [
         [
+            'methods'             => 'GET',
+            'callback'            => 'rcmi_tickets_handle_approval_chain_get',
+            'permission_callback' => 'rcmi_tickets_perm_approval_chains_read',
+            'args'                => ['id' => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int']],
+        ],
+        [
             'methods'             => 'PUT',
             'callback'            => 'rcmi_tickets_handle_approval_chain_update',
             'permission_callback' => 'rcmi_tickets_perm_approval_chains_write',
@@ -231,6 +237,14 @@ function rcmi_tickets_replace_chain_steps($chain_id, $steps) {
 
 function rcmi_tickets_handle_approval_chains_list() {
     return new WP_REST_Response(rcmi_tickets_get_all_approval_chains(), 200);
+}
+
+function rcmi_tickets_handle_approval_chain_get($request) {
+    $chain = rcmi_tickets_load_approval_chain((int) $request['id']);
+    if (!$chain) {
+        return new WP_Error('rcmi_tickets_not_found', 'Approval chain not found.', ['status' => 404]);
+    }
+    return new WP_REST_Response($chain, 200);
 }
 
 function rcmi_tickets_handle_approval_chain_create($request) {

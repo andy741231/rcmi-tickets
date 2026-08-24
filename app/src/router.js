@@ -4,6 +4,7 @@ import TicketDetail from './pages/TicketDetail.vue';
 import TicketEdit from './pages/TicketEdit.vue';
 import TicketRevision from './pages/TicketRevision.vue';
 import ApprovalCenter from './pages/ApprovalCenter.vue';
+import ApprovalChainList from './pages/ApprovalChainList.vue';
 import ApprovalChainEditor from './pages/ApprovalChainEditor.vue';
 import FormBuilderPage from './pages/FormBuilderPage.vue';
 import TagRulesPage from './pages/TagRulesPage.vue';
@@ -21,7 +22,8 @@ export const routes = [
     { path: '/ticket/:id/edit', name: 'ticket-edit', component: TicketEdit, props: true },
     { path: '/revision/:id', name: 'ticket-revision', component: TicketRevision, props: true },
     { path: '/approvals', name: 'approval-center', component: ApprovalCenter },
-    { path: '/approval-edit', name: 'approval-chain-editor', component: ApprovalChainEditor },
+    { path: '/approval-edit', name: 'approval-chain-list', component: ApprovalChainList },
+    { path: '/approval-edit/:id', name: 'approval-chain-editor', component: ApprovalChainEditor, props: true },
     { path: '/form-builder', name: 'form-builder', component: FormBuilderPage },
     { path: '/tag-rules', name: 'tag-rules', component: TagRulesPage },
     { path: '/ticket-heaven', name: 'ticket-heaven', component: TicketHeaven },
