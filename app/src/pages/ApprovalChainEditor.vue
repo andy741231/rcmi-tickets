@@ -193,6 +193,15 @@ const triggerFieldLabel = computed(() => {
 });
 const triggerOptions = computed(() => {
     const f = formFields.value.find(f => f.field_key === selectedChain.value?.trigger_field_key);
+    if (!f) return [];
+    // For cascade dropdowns, flatten all child options from cascade_options map
+    if (f.config?.cascade_options && typeof f.config.cascade_options === 'object' && !Array.isArray(f.config.cascade_options)) {
+        const all = new Set();
+        for (const children of Object.values(f.config.cascade_options)) {
+            if (Array.isArray(children)) children.forEach(c => all.add(c));
+        }
+        return [...all].sort();
+    }
     return f?.config?.options || [];
 });
 
