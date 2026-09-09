@@ -19,14 +19,15 @@
             <!-- Steps -->
             <ol class="relative space-y-4 border-l-2 border-gray-100 pl-6">
                 <li v-for="step in group.steps" :key="step.id" class="relative">
-                    <!-- Status dot -->
-                    <span :class="['absolute -left-[1.97rem] flex h-5 w-5 items-center justify-center rounded-full ring-4 ring-white',
+                    <!-- Status dot: solid + halo for the active step, hollow for upcoming -->
+                    <span :class="['absolute -left-[2.19rem] z-10 flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white',
                         step.status === 'approved' ? 'bg-emerald-500 text-white' :
                         step.status === 'rejected' ? 'bg-red-500 text-white' :
-                        step.status === 'pending' ? 'bg-amber-400 text-white' : 'bg-gray-300 text-white']">
+                        step.status === 'pending' ? 'bg-amber-500 text-white shadow-[0_0_0_8px_rgba(245,158,11,0.15)]' :
+                        'border-2 border-gray-300 bg-white text-gray-500']">
                         <Icon v-if="step.status === 'approved'" name="check" />
                         <Icon v-else-if="step.status === 'rejected'" name="x" />
-                        <span v-else class="text-[10px] font-bold">{{ step.sort_order }}</span>
+                        <span v-else class="text-[11px] font-semibold leading-none">{{ step.sort_order }}</span>
                     </span>
 
                     <div :class="['rounded-md border px-3 py-2.5',
@@ -66,9 +67,9 @@
         <div v-if="chain" class="space-y-4">
             <ol class="relative space-y-4 border-l-2 border-gray-100 pl-6">
                 <li class="relative">
-                    <span :class="['absolute -left-[1.97rem] flex h-5 w-5 items-center justify-center rounded-full text-white ring-4 ring-white',
+                    <span :class="['absolute -left-[2.19rem] z-10 flex h-6 w-6 items-center justify-center rounded-full text-white ring-4 ring-white',
                         assigneeState === 'active' ? 'bg-indigo-500' :
-                        assigneeState === 'completed' ? 'bg-emerald-500' : 'bg-gray-300']">
+                        assigneeState === 'completed' ? 'bg-emerald-500' : 'border-2 border-gray-300 bg-white text-gray-400']">
                         <Icon v-if="assigneeState === 'completed'" name="check" />
                         <Icon v-else name="user-check" />
                     </span>
@@ -96,12 +97,12 @@
             <ol class="relative space-y-4 border-l-2 border-gray-100 pl-6">
                 <li v-for="entry in postApprovalEntries" :key="'status-' + entry.id" class="relative">
                     <!-- Status dot -->
-                    <span :class="['absolute -left-[1.97rem] flex h-5 w-5 items-center justify-center rounded-full ring-4 ring-white',
+                    <span :class="['absolute -left-[2.19rem] z-10 flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white',
                         entry.new_status === 'Completed' ? 'bg-emerald-500 text-white' :
-                        entry.new_status === 'In Progress' ? 'bg-blue-500 text-white' : 'bg-gray-400 text-white']">
+                        entry.new_status === 'In Progress' ? 'bg-blue-500 text-white' : 'border-2 border-gray-300 bg-white text-gray-400']">
                         <Icon v-if="entry.new_status === 'Completed'" name="check" />
                         <Icon v-else-if="entry.new_status === 'In Progress'" name="arrow-right" />
-                        <span v-else class="text-[10px] font-bold">·</span>
+                        <span v-else class="text-[11px] font-semibold leading-none">·</span>
                     </span>
 
                     <div :class="['rounded-md border px-3 py-2.5',
