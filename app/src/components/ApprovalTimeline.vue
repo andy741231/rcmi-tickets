@@ -5,10 +5,6 @@
             <Icon name="flow" />
             <span class="font-semibold">{{ chain.name }}</span>
             <span v-if="chain.on_reject" class="text-gray-400">· reject: {{ chain.on_reject }}</span>
-            <span class="text-gray-400">
-                · Assignee:
-                <strong class="text-gray-600">{{ assigneeNames || 'Unassigned' }}</strong>
-            </span>
         </div>
 
         <!-- Cycle groups -->
@@ -55,6 +51,28 @@
                         </p>
                         <p v-if="step.comment" class="mt-2 rounded bg-white/70 px-2 py-1.5 text-xs text-gray-700 whitespace-pre-wrap">
                             "{{ step.comment }}"
+                        </p>
+                    </div>
+                </li>
+            </ol>
+        </div>
+
+        <!-- Current assignee(s) — a timeline row below the approval steps.
+             Reads the live ticket assignee list so it stays in sync when a
+             manager changes assignees from the Details card. -->
+        <div v-if="chain" class="space-y-4">
+            <ol class="relative space-y-4 border-l-2 border-gray-100 pl-6">
+                <li class="relative">
+                    <span class="absolute -left-[1.97rem] flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500 text-white ring-4 ring-white">
+                        <Icon name="user-check" />
+                    </span>
+                    <div class="rounded-md border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <p class="text-sm font-semibold text-gray-800">Assignee</p>
+                            <span class="rcmi-timeline-status text-indigo-700 bg-indigo-100">Current</span>
+                        </div>
+                        <p class="mt-0.5 text-xs text-gray-500">
+                            <strong class="text-gray-700">{{ assigneeNames || 'Unassigned' }}</strong>
                         </p>
                     </div>
                 </li>
