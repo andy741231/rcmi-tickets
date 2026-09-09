@@ -216,9 +216,9 @@
                 <!-- Main column -->
                 <div class="space-y-6">
                     <!-- Ticket Details (custom fields) -->
-                    <section v-if="meta.form_fields && meta.form_fields.length > 0 && hasCustomAnswers" class="rcmi-card p-6">
+                    <section v-if="displayFormFields.length > 0 && hasCustomAnswers" class="rcmi-card p-6">
                         <h3 class="rcmi-section-label mb-4">Ticket Details</h3>
-                        <DynamicForm :fields="meta.form_fields" :model-value="ticket.form_answers || {}" readonly />
+                        <DynamicForm :fields="displayFormFields" :model-value="ticket.form_answers || {}" readonly />
                     </section>
 
                     <!-- Attachments -->
@@ -253,9 +253,17 @@
                     <section class="rcmi-card p-5">
                         <h3 class="rcmi-section-label mb-4">Details</h3>
                         <dl class="space-y-4">
-                            <div v-if="ticket.due_date">
+                            <div>
                                 <dt class="text-xs font-semibold text-gray-500">Due Date</dt>
-                                <dd class="mt-1 text-sm text-gray-700">{{ formatDate(ticket.due_date) }}</dd>
+                                <!-- Inline editor for managers -->
+                                <dd v-if="isManager" class="mt-1">
+                                    <input type="date" :value="ticket.due_date || ''" @change="saveDueDate($event)"
+                                        :disabled="dueDateSaving"
+                                        class="rcmi-input max-w-[10rem] px-2 py-1 text-sm" aria-label="Due date" />
+                                </dd>
+                                <dd v-else class="mt-1 text-sm" :class="ticket.due_date ? 'text-gray-700' : 'text-gray-400'">
+                                    {{ ticket.due_date ? formatDate(ticket.due_date) : '—' }}
+                                </dd>
                             </div>
                             <div>
                                 <dt class="text-xs font-semibold text-gray-500">Requestor</dt>
@@ -464,6 +472,12 @@ const hasCustomAnswers = computed(() => {
     return Object.keys(ticket.value.form_answers).length > 0;
 });
 
+// Read-only custom fields: exclude the reserved "Due Date" field — its
+// value lives in ticket.due_date and is shown in the Details card.
+const displayFormFields = computed(() => {
+    return (meta.form_fields || []).filter(f => !f.reserved);
+});
+
 const canEditTicket = computed(() => {
     if (!ticket.value) return false;
     if (isManager.value) return true;
@@ -482,6 +496,7 @@ const canEditAssignees = computed(() => {
     return isManager.value || ticket.value.can_approve_current_step === true;
 });
 const assigneePickerOpen = ref(false);
+const assigneeSaving = ref(false);
 const assigneeSearch = ref('');
 const assigneeSearchInput = ref(null);
 const assigneeDropdownRef = ref(null);
@@ -510,20 +525,47 @@ async function toggleAssigneePicker() {
 }
 
 async function toggleAndSaveAssignee(userId) {
+    if (assigneeSaving.value) return;
     const numericId = Number(userId);
     const currentIds = (ticket.value.assignee_ids || []).map(id => Number(id));
     const nextIds = currentIds.includes(numericId)
         ? currentIds.filter(id => id !== numericId)
         : [...currentIds, numericId];
 
+    assigneeSaving.value = true;
     try {
         const updated = await api(`/tickets/${ticket.value.id}/assignees`, {
             method: 'POST',
             body: { assignee_ids: nextIds },
         });
         ticket.value = updated;
+        toast.success(nextIds.length ? 'Assignees updated' : 'Assignees cleared');
     } catch (e) {
         toast.error(e.message || 'Failed to update assignees');
+    } finally {
+        assigneeSaving.value = false;
+    }
+}
+
+// Due date: managers only. Empty value clears it.
+const dueDateSaving = ref(false);
+
+async function saveDueDate(event) {
+    if (!ticket.value) return;
+    dueDateSaving.value = true;
+    const next = event.target.value || '';
+    try {
+        const updated = await api(`/tickets/${ticket.value.id}`, {
+            method: 'PUT',
+            body: { due_date: next },
+        });
+        ticket.value = updated;
+        toast.success(next ? 'Due date updated' : 'Due date cleared');
+    } catch (e) {
+        toast.error(e.message || 'Failed to update due date');
+        event.target.value = ticket.value.due_date || '';
+    } finally {
+        dueDateSaving.value = false;
     }
 }
 

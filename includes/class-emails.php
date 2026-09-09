@@ -17,6 +17,8 @@ add_action('rcmi_ticket_mention', 'rcmi_tickets_email_mentions', 10, 4);
 add_action('rcmi_ticket_approval_step', 'rcmi_tickets_email_approval_step', 10, 3);
 add_action('rcmi_ticket_approval_rejected', 'rcmi_tickets_email_approval_rejected', 10, 3);
 add_action('rcmi_ticket_created', 'rcmi_tickets_email_submitter_receipt', 10, 3);
+add_action('rcmi_ticket_due_date_changed', 'rcmi_tickets_email_due_date_changed', 10, 3);
+add_action('rcmi_ticket_assignees_changed', 'rcmi_tickets_email_assignees_changed', 10, 3);
 
 /**
  * Build the canonical frontend URL for a ticket.
@@ -204,6 +206,132 @@ function rcmi_tickets_email_submitter_receipt($ticket_id, $author_id, $assignee_
     );
 
     rcmi_tickets_send_email($author->user_email, $subject, $html, $plain);
+}
+
+/**
+ * Notify the requestor and assignees when the due date changes.
+ * Hooked on rcmi_ticket_due_date_changed($ticket_id, $old_date, $new_date).
+ */
+function rcmi_tickets_email_due_date_changed($ticket_id, $old_date, $new_date) {
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
+    if (!$ticket) {
+        return;
+    }
+
+    // Recipients: requestor (or public submitter email) + assignees
+    $recipients = [];
+    $is_public_ticket = function_exists('rcmi_tickets_is_public_ticket') && rcmi_tickets_is_public_ticket($ticket);
+    if ($is_public_ticket && !empty($ticket['submitter_email']) && is_email($ticket['submitter_email'])) {
+        $recipients[] = $ticket['submitter_email'];
+    } else {
+        $author = get_userdata((int) $ticket['author_id']);
+        if ($author && is_email($author->user_email)) {
+            $recipients[] = $author->user_email;
+        }
+    }
+    foreach ((array) $ticket['assignee_ids'] as $user_id) {
+        $user = get_userdata((int) $user_id);
+        if ($user && is_email($user->user_email)) {
+            $recipients[] = $user->user_email;
+        }
+    }
+    $recipients = array_values(array_unique($recipients));
+    if (!$recipients) {
+        return;
+    }
+
+    $changer = wp_get_current_user();
+    $changer_name = $changer->exists() ? $changer->display_name : __('Someone', 'rcmi-tickets');
+    $old_fmt = $old_date ? mysql2date('M j, Y', $old_date) : __('(none)', 'rcmi-tickets');
+    $new_fmt = $new_date ? mysql2date('M j, Y', $new_date) : __('(none)', 'rcmi-tickets');
+    $is_public_ticket = function_exists('rcmi_tickets_is_public_ticket') && rcmi_tickets_is_public_ticket($ticket);
+    $url = esc_url($is_public_ticket && function_exists('rcmi_tickets_public_ticket_url')
+        ? rcmi_tickets_public_ticket_url($ticket_id)
+        : rcmi_tickets_email_ticket_url($ticket_id));
+    $title = rcmi_tickets_email_esc($ticket['title']);
+    $subject = sprintf(__('Due date changed: ticket #%d %s', 'rcmi-tickets'), $ticket_id, $ticket['title']);
+
+    $details = rcmi_tickets_email_ticket_details($ticket);
+
+    $html = '<!doctype html><html><body>'
+        . '<h2>' . __('Due date updated', 'rcmi-tickets') . '</h2>'
+        . '<p>' . sprintf(__('%s updated the due date on ticket #%d.', 'rcmi-tickets'), rcmi_tickets_email_esc($changer_name), (int) $ticket_id) . '</p>'
+        . '<p><strong>' . __('Ticket:', 'rcmi-tickets') . '</strong> #' . (int) $ticket_id . ' — ' . rcmi_tickets_email_esc($ticket['title']) . '</p>'
+        . '<p><strong>' . __('Previous due date:', 'rcmi-tickets') . '</strong> ' . rcmi_tickets_email_esc($old_fmt) . '<br>'
+        . '<strong>' . __('New due date:', 'rcmi-tickets') . '</strong> ' . rcmi_tickets_email_esc($new_fmt) . '</p>'
+        . '<p style="margin-top:1rem;"><a href="' . esc_url($url) . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('View ticket', 'rcmi-tickets') . '</a></p>'
+        . '<h3 style="margin-top:1.5rem;font-size:15px;color:#333;">' . __('Ticket details', 'rcmi-tickets') . '</h3>'
+        . '<table style="border-collapse:collapse;margin-top:.5rem;">' . $details['html'] . '</table>'
+        . '</body></html>';
+
+    $plain = sprintf(
+        "Due date updated\n\n%s updated the due date on ticket #%d.\nTicket: %s\n\nPrevious due date: %s\nNew due date: %s\n\nView ticket: %s\n\nTicket details:\n%s",
+        $changer_name,
+        $ticket_id,
+        $ticket['title'],
+        $old_fmt,
+        $new_fmt,
+        wp_strip_all_tags($url),
+        $details['plain']
+    );
+
+    rcmi_tickets_send_email($recipients, $subject, $html, $plain);
+}
+
+/**
+ * Notify newly added assignees when the assignee list changes.
+ * Hooked on rcmi_ticket_assignees_changed($ticket_id, $added_ids, $removed_ids).
+ * Removed assignees are not notified (no action needed from them).
+ */
+function rcmi_tickets_email_assignees_changed($ticket_id, $added_ids, $removed_ids) {
+    if (empty($added_ids)) {
+        return;
+    }
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
+    if (!$ticket) {
+        return;
+    }
+
+    $recipients = [];
+    foreach ((array) $added_ids as $user_id) {
+        $user = get_userdata((int) $user_id);
+        if ($user && is_email($user->user_email)) {
+            $recipients[] = $user->user_email;
+        }
+    }
+    $recipients = array_values(array_unique($recipients));
+    if (!$recipients) {
+        return;
+    }
+
+    $title = rcmi_tickets_email_esc($ticket['title']);
+    $url = esc_url(rcmi_tickets_email_ticket_url($ticket_id));
+    $author = get_userdata((int) $ticket['author_id']);
+    $author_name = $author ? $author->display_name : __('A user', 'rcmi-tickets');
+    $subject = sprintf(__('You have been assigned: ticket #%d %s', 'rcmi-tickets'), $ticket_id, $ticket['title']);
+
+    $details = rcmi_tickets_email_ticket_details($ticket);
+
+    $html = '<!doctype html><html><body>'
+        . '<h2>' . __('You have been assigned', 'rcmi-tickets') . '</h2>'
+        . '<p>' . sprintf(__('You have been assigned to ticket #%d.', 'rcmi-tickets'), $ticket_id) . '</p>'
+        . '<p><strong>' . __('Title:', 'rcmi-tickets') . '</strong> ' . $title . '</p>'
+        . '<p><strong>' . __('Submitted by:', 'rcmi-tickets') . '</strong> ' . rcmi_tickets_email_esc($ticket['submitter_name'] ?: ($author ? $author->display_name : __('A user', 'rcmi-tickets'))) . '</p>'
+        . '<p style="margin-top:1rem;"><a href="' . esc_url(rcmi_tickets_email_ticket_url($ticket_id)) . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('View ticket', 'rcmi-tickets') . '</a></p>'
+        . '<h3 style="margin-top:1.5rem;font-size:15px;color:#333;">' . __('Ticket details', 'rcmi-tickets') . '</h3>'
+        . '<table style="border-collapse:collapse;margin-top:.5rem;">' . $details['html'] . '</table>'
+        . '</body></html>';
+
+    $plain = sprintf(
+        "You have been assigned\n\nYou have been assigned to ticket #%d.\nTitle: %s\nSubmitted by: %s\n\nView ticket: %s\n\nTicket details:\n%s",
+        $ticket_id,
+        $ticket['title'],
+        $ticket['submitter_name'] ?: ($author ? $author->display_name : 'A user'),
+        wp_strip_all_tags($url),
+        $details['plain']
+    );
+
+    rcmi_tickets_send_email($recipients, $subject, $html, $plain);
 }
 
 /**

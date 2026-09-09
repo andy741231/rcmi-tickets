@@ -92,6 +92,12 @@ async function loadTicket() {
         const ticket = await api(`/tickets/${props.id}`);
         form.form_answers = ticket.form_answers || {};
         form.attachments = ticket.attachments || [];
+        // Prefill the reserved "Due Date" field from the ticket's due_date
+        // column — it is ticket metadata, not stored as a form answer.
+        const dueField = (meta.form_fields || []).find(f => f.reserved);
+        if (dueField && ticket.due_date) {
+            form.form_answers[dueField.field_key] = ticket.due_date;
+        }
     } catch (e) {
         error.value = e.message || 'Failed to load ticket.';
     }

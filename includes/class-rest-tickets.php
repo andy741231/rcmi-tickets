@@ -378,11 +378,13 @@ function rcmi_tickets_format_ticket($row) {
 
 /**
  * Get form answers for a ticket as a map of field_key => value (schema v3).
+ * The reserved "Due Date" field is excluded — it lives in the ticket's
+ * due_date column and is displayed in the Details card, not as form data.
  */
 function rcmi_tickets_get_ticket_form_answers($ticket_id) {
     global $wpdb;
     $rows = $wpdb->get_results($wpdb->prepare(
-        "SELECT fa.value, ff.field_key, ff.type
+        "SELECT fa.value, ff.field_key, ff.type, ff.label
          FROM {$wpdb->prefix}rcmi_form_answers fa
          INNER JOIN {$wpdb->prefix}rcmi_form_fields ff ON ff.id = fa.field_id
          WHERE fa.ticket_id = %d",
@@ -391,6 +393,10 @@ function rcmi_tickets_get_ticket_form_answers($ticket_id) {
 
     $answers = [];
     foreach ($rows as $r) {
+        // Reserved "Due Date" is ticket metadata, not a form answer
+        if ($r['type'] === 'date' && strcasecmp((string) $r['label'], 'Due Date') === 0) {
+            continue;
+        }
         $val = $r['value'];
         // Decode JSON for multi-value (checkbox) — stored as JSON array
         if ($r['type'] === 'checkbox' || $r['type'] === 'radio') {
@@ -405,6 +411,8 @@ function rcmi_tickets_get_ticket_form_answers($ticket_id) {
 
 /**
  * Save form answers for a ticket (replace). $answers is field_key => value (schema v3).
+ * The reserved "Due Date" field is skipped — its value is synced to the
+ * ticket's due_date column by the callers, never stored as form data.
  */
 function rcmi_tickets_sync_form_answers($ticket_id, $answers) {
     global $wpdb;
@@ -416,10 +424,13 @@ function rcmi_tickets_sync_form_answers($ticket_id, $answers) {
         return;
     }
 
-    // Build field_key => field_id map
+    // Build field_key => field_id map (reserved "Due Date" excluded)
     $fields = rcmi_tickets_get_all_form_fields();
     $key_to_id = [];
     foreach ($fields as $f) {
+        if (rcmi_tickets_is_reserved_field($f)) {
+            continue;
+        }
         $key_to_id[$f['field_key']] = (int) $f['id'];
     }
 
@@ -1218,6 +1229,12 @@ function rcmi_tickets_handle_update($request) {
         $wpdb->update($wpdb->prefix . 'rcmi_tickets', $data, ['id' => (int) $request['id']], $format, ['%d']);
     }
 
+    // Due date changed → notify requestor + assignees (see class-emails.php)
+    if (array_key_exists('due_date', $data)
+        && (string) ($ticket['due_date'] ?? '') !== (string) ($data['due_date'] ?? '')) {
+        do_action('rcmi_ticket_due_date_changed', (int) $request['id'], $ticket['due_date'] ?? null, $data['due_date'] ?? null);
+    }
+
     if (isset($request['assignee_ids'])) {
         rcmi_tickets_sync_assignees($request['id'], $request['assignee_ids']);
     }
@@ -1434,15 +1451,29 @@ function rcmi_tickets_handle_status($request) {
 function rcmi_tickets_handle_assignee_update($request) {
     global $wpdb;
     $ticket_id = (int) $request['id'];
-    $assignee_ids = isset($request['assignee_ids']) ? $request['assignee_ids'] : [];
+    $assignee_ids = isset($request['assignee_ids']) ? array_map('intval', (array) $request['assignee_ids']) : [];
+
+    // Diff before sync so we can notify newly added assignees
+    $old_ids = array_map('intval', (array) $wpdb->get_col($wpdb->prepare(
+        "SELECT user_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE ticket_id = %d",
+        $ticket_id
+    )));
 
     rcmi_tickets_sync_assignees($ticket_id, $assignee_ids);
+
+    $added = array_values(array_diff($assignee_ids, $old_ids));
+    $removed = array_values(array_diff($old_ids, $assignee_ids));
 
     // Update the ticket's updated_at/updated_by timestamp
     $wpdb->update($wpdb->prefix . 'rcmi_tickets', [
         'updated_by'  => get_current_user_id(),
         'updated_at'  => current_time('mysql'),
     ], ['id' => $ticket_id], ['%d', '%s'], ['%d']);
+
+    // Assignees changed → notify newly added assignees (see class-emails.php)
+    if ($added || $removed) {
+        do_action('rcmi_ticket_assignees_changed', $ticket_id, $added, $removed);
+    }
 
     $row = rcmi_tickets_load_ticket($ticket_id);
     return new WP_REST_Response(rcmi_tickets_format_ticket($row), 200);
