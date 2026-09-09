@@ -1,10 +1,19 @@
 <template>
-    <div class="space-y-1">
+    <div class="space-y-4">
         <!-- Chain header -->
-        <div v-if="chain" class="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-            <Icon name="flow" />
-            <span class="font-semibold">{{ chain.name }}</span>
-            <span v-if="chain.on_reject" class="text-gray-400">· reject: {{ chain.on_reject }}</span>
+        <div v-if="chain" class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
+            <div class="flex min-w-0 items-center gap-3">
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-800 text-white">
+                    <Icon name="flow" />
+                </span>
+                <div class="min-w-0">
+                    <p class="truncate text-sm font-semibold text-slate-800">{{ chain.name }}</p>
+                    <p class="mt-0.5 text-xs text-slate-500">{{ approvalSummary }}</p>
+                </div>
+            </div>
+            <span v-if="chain.on_reject" class="shrink-0 rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-inset ring-slate-200">
+                On reject: {{ chain.on_reject }}
+            </span>
         </div>
 
         <!-- Cycle groups -->
@@ -17,28 +26,25 @@
             </div>
 
             <!-- Steps -->
-            <ol class="relative space-y-4 border-l-2 border-gray-100 pl-6">
+            <ol class="relative space-y-3 border-l border-slate-200 pl-5">
                 <li v-for="step in group.steps" :key="step.id" class="relative">
-                    <!-- Status dot: tinted halo for the active step, hollow for upcoming -->
-                    <span :class="['absolute -left-[2.19rem] z-10 flex h-6 w-6 items-center justify-center rounded-full ring-4',
-                        step.status === 'approved' ? 'bg-emerald-500 text-white ring-white' :
-                        step.status === 'rejected' ? 'bg-red-500 text-white ring-white' :
-                        step.status === 'pending' ? 'bg-amber-500 text-white ring-amber-100' :
-                        'border-2 border-gray-200 bg-white text-gray-400 ring-white']">
+                    <!-- Compact step marker: color and shape reinforce status. -->
+                    <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 items-center justify-center rounded-full bg-white ring-4 ring-white',
+                        step.status === 'approved' ? 'bg-emerald-500 text-white' :
+                        step.status === 'rejected' ? 'bg-red-500 text-white' :
+                        step.status === 'pending' ? 'bg-amber-500 text-white shadow-[0_0_0_3px_rgba(245,158,11,0.2)]' :
+                        'border-2 border-slate-300 text-slate-500']">
                         <Icon v-if="step.status === 'approved'" name="check" />
                         <Icon v-else-if="step.status === 'rejected'" name="x" />
-                        <span v-else class="text-xs font-semibold leading-none">{{ step.sort_order }}</span>
+                        <span v-else class="text-[10px] font-bold leading-none">{{ step.sort_order }}</span>
                     </span>
 
-                    <div :class="['rounded-md border px-3 py-2.5',
-                        step.status === 'pending' ? 'border-amber-200 bg-amber-50' :
-                        step.status === 'approved' ? 'border-emerald-100 bg-emerald-50/50' :
-                        step.status === 'rejected' ? 'border-red-100 bg-red-50/50' : 'border-gray-100 bg-gray-50/50']">
+                    <div :class="['rounded-lg border border-l-4 bg-white px-3.5 py-3 shadow-sm', stepCardClass(step.status)]">
                         <div class="flex items-center justify-between gap-2">
                             <p class="text-sm font-semibold" :class="step.status === 'upcoming' ? 'text-gray-500' : 'text-gray-800'">
                                 {{ step.name || ('Step ' + step.sort_order) }}
                             </p>
-                            <span :class="['rcmi-timeline-status', statusClass(step.status)]">
+                            <span :class="['rcmi-timeline-status rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', statusClass(step.status)]">
                                 {{ statusLabel(step.status) }}
                             </span>
                         </div>
@@ -65,28 +71,25 @@
              live ticket assignee list so it stays in sync when a manager
              changes assignees from the Details card. -->
         <div v-if="chain" class="space-y-4">
-            <ol class="relative space-y-4 border-l-2 border-gray-100 pl-6">
+            <ol class="relative space-y-3 border-l border-slate-200 pl-5">
                 <li class="relative">
-                    <span :class="['absolute -left-[2.19rem] z-10 flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white',
+                    <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 items-center justify-center rounded-full bg-white ring-4 ring-white',
                         assigneeState === 'active' ? 'bg-indigo-500 text-white' :
-                        assigneeState === 'completed' ? 'bg-emerald-500 text-white' :
-                        'border-2 border-dashed border-gray-300 bg-white text-gray-500']">
+                        assigneeState === 'completed' ? 'bg-emerald-500 text-white' : 'border-2 border-dashed border-slate-300 text-slate-500']">
                         <Icon v-if="assigneeState === 'completed'" name="check" />
                         <Icon v-else name="user-check" />
                     </span>
-                    <div :class="['rounded-md border px-3 py-2.5',
-                        assigneeState === 'active' ? 'border-indigo-100 bg-indigo-50/50' :
-                        assigneeState === 'completed' ? 'border-emerald-100 bg-emerald-50/50' : 'border-gray-100 bg-gray-50/50']">
+                    <div :class="['rounded-lg border border-l-4 bg-white px-3.5 py-3 shadow-sm', assigneeCardClass]">
                         <div class="flex items-center justify-between gap-2">
-                            <p class="text-sm font-semibold text-gray-800">Assignee</p>
-                            <span :class="['rcmi-timeline-status',
-                                assigneeState === 'active' ? 'text-indigo-700 bg-indigo-100' :
-                                assigneeState === 'completed' ? 'text-emerald-700 bg-emerald-100' : 'text-gray-500 bg-gray-100']">
+                            <p class="text-sm font-semibold text-slate-800">Assigned work</p>
+                            <span :class="['rcmi-timeline-status rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', assigneeStatusClass]">
                                 {{ assigneeStateLabel }}
                             </span>
                         </div>
-                        <p class="mt-0.5 text-xs text-gray-500">
-                            <strong class="text-gray-700">{{ assigneeNames || 'Unassigned' }}</strong>
+                        <p class="mt-1 text-xs text-slate-500">
+                            <span class="font-medium text-slate-600">Owner</span>
+                            <span class="mx-1 text-slate-300">·</span>
+                            <strong class="text-slate-700">{{ assigneeNames || 'Unassigned' }}</strong>
                         </p>
                     </div>
                 </li>
@@ -95,23 +98,22 @@
 
         <!-- Post-approval status entries (In Progress, Completed, etc.) -->
         <div v-if="postApprovalEntries.length > 0" class="space-y-4">
-            <ol class="relative space-y-4 border-l-2 border-gray-100 pl-6">
+            <ol class="relative space-y-3 border-l border-slate-200 pl-5">
                 <li v-for="entry in postApprovalEntries" :key="'status-' + entry.id" class="relative">
-                    <!-- Status dot -->
-                    <span :class="['absolute -left-[2.19rem] z-10 flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white',
+                    <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 items-center justify-center rounded-full bg-white ring-4 ring-white',
                         entry.new_status === 'Completed' ? 'bg-emerald-500 text-white' :
-                        entry.new_status === 'In Progress' ? 'bg-blue-500 text-white' : 'border-2 border-gray-200 bg-white text-gray-400']">
+                        entry.new_status === 'In Progress' ? 'bg-blue-500 text-white' : 'border-2 border-slate-300 text-slate-500']">
                         <Icon v-if="entry.new_status === 'Completed'" name="check" />
                         <Icon v-else-if="entry.new_status === 'In Progress'" name="arrow-right" />
-                        <span v-else class="text-xs font-semibold leading-none">·</span>
+                        <span v-else class="text-[10px] font-bold leading-none">·</span>
                     </span>
 
-                    <div :class="['rounded-md border px-3 py-2.5',
-                        entry.new_status === 'Completed' ? 'border-emerald-100 bg-emerald-50/50' :
-                        entry.new_status === 'In Progress' ? 'border-blue-100 bg-blue-50/50' : 'border-gray-100']">
+                    <div :class="['rounded-lg border border-l-4 bg-white px-3.5 py-3 shadow-sm',
+                        entry.new_status === 'Completed' ? 'border-emerald-200' :
+                        entry.new_status === 'In Progress' ? 'border-blue-200' : 'border-slate-200']">
                         <div class="flex items-center justify-between gap-2">
                             <p class="text-sm font-semibold text-gray-800">{{ entry.new_status }}</p>
-                            <span :class="['rcmi-timeline-status', statusEntryClass(entry.new_status)]">
+                            <span :class="['rcmi-timeline-status rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', statusEntryClass(entry.new_status)]">
                                 {{ entry.new_status }}
                             </span>
                         </div>
@@ -172,7 +174,24 @@ const assigneeState = computed(() => {
     return 'active';
 });
 const assigneeStateLabel = computed(() => {
-    return { waiting: 'Waiting', active: 'Current', completed: 'Completed' }[assigneeState.value] || 'Waiting';
+    return { waiting: 'Waiting', active: 'In progress', completed: 'Completed' }[assigneeState.value] || 'Waiting';
+});
+const assigneeStatusClass = computed(() => ({
+    waiting: 'bg-slate-100 text-slate-500',
+    active: 'bg-indigo-100 text-indigo-700',
+    completed: 'bg-emerald-100 text-emerald-700',
+}[assigneeState.value] || 'bg-slate-100 text-slate-500'));
+const assigneeCardClass = computed(() => ({
+    waiting: 'border-slate-200',
+    active: 'border-indigo-200',
+    completed: 'border-emerald-200',
+}[assigneeState.value] || 'border-slate-200'));
+
+const approvalSummary = computed(() => {
+    const groups = cycleGroups.value;
+    const steps = groups.length ? groups[groups.length - 1].steps || [] : [];
+    const approved = steps.filter(step => step.status === 'approved').length;
+    return `${approved} of ${steps.length} approval${steps.length === 1 ? '' : 's'} complete`;
 });
 
 // Group steps by cycle, sorted by cycle then sort_order.
@@ -256,6 +275,16 @@ function assigneeName(userId) {
     if (!userId) return '';
     const a = props.assignees.find(a => a.id === userId);
     return a ? a.display_name : '';
+}
+
+function stepCardClass(s) {
+    return {
+        approved: 'border-l-emerald-500 border-slate-200',
+        rejected: 'border-l-red-500 border-slate-200',
+        pending: 'border-l-amber-500 border-amber-200 bg-amber-50/30',
+        upcoming: 'border-l-slate-300 border-slate-200',
+        skipped: 'border-l-slate-300 border-slate-200',
+    }[s] || 'border-l-slate-300 border-slate-200';
 }
 
 function statusLabel(s) {
