@@ -142,6 +142,13 @@ function rcmi_tickets_format_approval_chain($row) {
     ), ARRAY_A);
 
     $formatted_steps = array_map(function ($s) {
+        $approver_name = '';
+        if ($s['approver_type'] === 'user' && $s['approver_user_id']) {
+            $u = get_userdata((int) $s['approver_user_id']);
+            $approver_name = $u ? $u->display_name : '';
+        } else {
+            $approver_name = $s['approver_role'] ?: '';
+        }
         return [
             'id'               => (int) $s['id'],
             'chain_id'         => (int) $s['chain_id'],
@@ -149,6 +156,7 @@ function rcmi_tickets_format_approval_chain($row) {
             'approver_type'    => $s['approver_type'],
             'approver_user_id' => $s['approver_user_id'] !== null ? (int) $s['approver_user_id'] : null,
             'approver_role'    => $s['approver_role'],
+            'approver_name'    => $approver_name,
             'name'             => $s['name'],
         ];
     }, $steps);

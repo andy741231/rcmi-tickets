@@ -32,9 +32,9 @@
                     <div :class="['rounded-md border px-3 py-2.5',
                         step.status === 'pending' ? 'border-amber-200 bg-amber-50' :
                         step.status === 'approved' ? 'border-emerald-100 bg-emerald-50/50' :
-                        step.status === 'rejected' ? 'border-red-100 bg-red-50/50' : 'border-gray-100']">
+                        step.status === 'rejected' ? 'border-red-100 bg-red-50/50' : 'border-gray-100 bg-gray-50/50']">
                         <div class="flex items-center justify-between gap-2">
-                            <p class="text-sm font-semibold text-gray-800">
+                            <p class="text-sm font-semibold" :class="step.status === 'upcoming' ? 'text-gray-500' : 'text-gray-800'">
                                 {{ step.name || ('Step ' + step.sort_order) }}
                             </p>
                             <span :class="['rcmi-timeline-status', statusClass(step.status)]">
@@ -107,7 +107,12 @@ const props = defineProps({
     assignees: { type: Array, default: () => [] },
 });
 
-// Group steps by cycle, sorted by cycle then sort_order
+// Group steps by cycle, sorted by cycle then sort_order.
+// The latest cycle is merged with the chain's CURRENT definition so the
+// complete timeline always shows: every chain step appears (even ones
+// added to the chain after the ticket entered it), the current step is
+// labeled "Pending", and not-yet-reached steps are labeled "Upcoming".
+// Older cycles render their rows as-is (historical record).
 const cycleGroups = computed(() => {
     const groups = {};
     for (const step of props.steps) {
@@ -115,7 +120,60 @@ const cycleGroups = computed(() => {
         if (!groups[cycle]) groups[cycle] = { cycle, steps: [] };
         groups[cycle].steps.push(step);
     }
-    return Object.values(groups).sort((a, b) => a.cycle - b.cycle);
+    const sorted = Object.values(groups).sort((a, b) => a.cycle - b.cycle);
+    if (!sorted.length) return sorted;
+    const maxCycle = sorted[sorted.length - 1].cycle;
+    const chainSteps = (props.chain && Array.isArray(props.chain.steps) ? [...props.chain.steps] : [])
+        .sort((a, b) => a.sort_order - b.sort_order);
+
+    return sorted.map(group => {
+        if (group.cycle !== maxCycle || !chainSteps.length) {
+            return group; // historical cycles: rows as-is
+        }
+
+        const rowsByOrder = {};
+        for (const s of group.steps) rowsByOrder[Number(s.sort_order)] = s;
+
+        // Current step = first pending row in this cycle
+        const currentRow = group.steps.find(s => s.status === 'pending');
+        const currentOrder = currentRow ? Number(currentRow.sort_order) : null;
+
+        const merged = chainSteps.map(cs => {
+            const row = rowsByOrder[cs.sort_order];
+            if (row) {
+                const isCurrent = row.status === 'pending' && Number(row.sort_order) === currentOrder;
+                return {
+                    ...row,
+                    name: cs.name || row.name,
+                    status: row.status === 'pending' && !isCurrent ? 'upcoming' : row.status,
+                    approver_name: row.approver_name || cs.approver_name || '',
+                    approver_role: row.approver_role || cs.approver_role,
+                };
+            }
+            // Step has no approval row (added to the chain after entry)
+            return {
+                id: 'upcoming-' + cs.sort_order,
+                sort_order: cs.sort_order,
+                cycle: group.cycle,
+                name: cs.name,
+                status: 'upcoming',
+                approver_name: cs.approver_name || '',
+                approver_role: cs.approver_role,
+                decided_at: null,
+                comment: null,
+            };
+        });
+
+        // Rows beyond the current chain definition (steps removed from the
+        // chain after entry) — keep them as historical entries.
+        for (const row of group.steps) {
+            if (!chainSteps.some(cs => Number(cs.sort_order) === Number(row.sort_order))) {
+                merged.push(row);
+            }
+        }
+        merged.sort((a, b) => a.sort_order - b.sort_order);
+        return { cycle: group.cycle, steps: merged };
+    });
 });
 
 // Post-approval status entries: In Progress, Completed (and any other
@@ -133,13 +191,14 @@ function assigneeName(userId) {
 }
 
 function statusLabel(s) {
-    return { approved: 'Approved', rejected: 'Rejected', pending: 'Pending', skipped: 'Skipped' }[s] || s;
+    return { approved: 'Approved', rejected: 'Rejected', pending: 'Pending', upcoming: 'Upcoming', skipped: 'Skipped' }[s] || s;
 }
 function statusClass(s) {
     return {
         approved: 'text-emerald-700 bg-emerald-100',
         rejected: 'text-red-700 bg-red-100',
         pending: 'text-amber-700 bg-amber-100',
+        upcoming: 'text-gray-500 bg-gray-100',
         skipped: 'text-gray-500 bg-gray-100',
     }[s] || 'text-gray-600 bg-gray-100';
 }
