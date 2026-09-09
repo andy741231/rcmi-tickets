@@ -29,6 +29,19 @@
             </button>
         </div>
 
+        <!-- Public submissions closed (SSO-only policy) -->
+        <div v-else-if="isPublic && publicClosed" class="rcmi-card p-8 text-center">
+            <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+                <Icon name="x-circle" />
+            </div>
+            <h3 class="text-lg font-bold text-gray-900">Public submissions are currently closed</h3>
+            <p class="mt-2 text-sm text-gray-600">If you have a UH account, sign in to submit a ticket.</p>
+            <a v-if="config.ssoUrl" :href="config.ssoUrl"
+                class="rcmi-button-primary inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm mt-6">
+                Sign in with UH (SSO)
+            </a>
+        </div>
+
         <!-- Form -->
         <div v-else>
             <!-- Main form -->
@@ -103,6 +116,8 @@ import { useStagedFiles } from '../composables/useStagedFiles.js';
 
 const config = window.rcmiTickets || {};
 const isPublic = computed(() => !config.isLoggedIn);
+// Public submissions closed server-side (Form Builder setting)
+const publicClosed = computed(() => isPublic.value && meta.allow_public_submit === false);
 
 const router = useRouter();
 const toast = useToast();

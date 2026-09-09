@@ -28,7 +28,7 @@ function rcmi_tickets_register_public_routes() {
         [
             'methods'             => 'POST',
             'callback'            => 'rcmi_tickets_handle_public_submit',
-            'permission_callback' => '__return_true',
+            'permission_callback' => 'rcmi_tickets_public_submit_permission',
             'args'                => [
                 'submitter_name'  => ['type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field'],
                 'submitter_email' => ['type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_email'],
@@ -129,6 +129,22 @@ function rcmi_tickets_register_public_routes() {
 add_action('rest_api_init', 'rcmi_tickets_register_public_routes');
 
 /**
+ * Permission callback for anonymous ticket submission. Public submissions
+ * are disabled by default (SSO-only policy); a manager can re-enable them
+ * via Form Builder → Settings → "Allow public submissions".
+ */
+function rcmi_tickets_public_submit_permission() {
+    if (!rcmi_tickets_public_submissions_enabled()) {
+        return new WP_Error(
+            'rcmi_tickets_public_closed',
+            'Public submissions are currently closed. Please sign in with your UH account.',
+            ['status' => 403]
+        );
+    }
+    return true;
+}
+
+/**
  * Public meta: form fields, priorities, allowed mime types.
  * No user-specific data is exposed.
  */
@@ -137,11 +153,12 @@ function rcmi_tickets_handle_public_meta() {
     $allowed_mime = array_keys(rcmi_tickets_allowed_mime_types());
 
     return new WP_REST_Response([
-        'form_fields'        => $form_fields,
-        'priorities'         => ['Low', 'Medium', 'High', 'Urgent'],
-        'allowed_mime_types' => $allowed_mime,
-        'is_public'          => true,
-        'public_success'     => rcmi_tickets_get_success_message(),
+        'form_fields'         => $form_fields,
+        'priorities'          => ['Low', 'Medium', 'High', 'Urgent'],
+        'allowed_mime_types'  => $allowed_mime,
+        'is_public'           => true,
+        'public_success'      => rcmi_tickets_get_success_message(),
+        'allow_public_submit' => rcmi_tickets_public_submissions_enabled(),
     ], 200);
 }
 

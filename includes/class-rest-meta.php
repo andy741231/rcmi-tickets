@@ -62,14 +62,28 @@ function rcmi_tickets_get_success_message() {
     ];
 }
 
+/**
+ * Whether anonymous (non-SSO) ticket submission is allowed.
+ * Default: disabled — with SSO in place, UH users sign in instead.
+ * Re-enable via Form Builder → Settings → "Allow public submissions".
+ */
+function rcmi_tickets_public_submissions_enabled() {
+    return (bool) get_option('rcmi_tickets_allow_public_submit', false);
+}
+
 function rcmi_tickets_handle_settings_get() {
     return new WP_REST_Response([
-        'public_success' => rcmi_tickets_get_success_message(),
+        'public_success'      => rcmi_tickets_get_success_message(),
+        'allow_public_submit' => rcmi_tickets_public_submissions_enabled(),
     ], 200);
 }
 
 function rcmi_tickets_handle_settings_update($request) {
     $params = $request->get_json_params() ?: [];
+
+    if (isset($params['allow_public_submit'])) {
+        update_option('rcmi_tickets_allow_public_submit', !empty($params['allow_public_submit']) ? 1 : 0);
+    }
 
     $current = rcmi_tickets_get_success_message();
     $heading = isset($params['public_success']['heading'])
@@ -90,7 +104,8 @@ function rcmi_tickets_handle_settings_update($request) {
     }
 
     return new WP_REST_Response([
-        'public_success' => rcmi_tickets_get_success_message(),
+        'public_success'      => rcmi_tickets_get_success_message(),
+        'allow_public_submit' => rcmi_tickets_public_submissions_enabled(),
     ], 200);
 }
 
@@ -249,5 +264,6 @@ function rcmi_tickets_handle_meta() {
         'pending_approval_count' => $pending_approval_count,
         'inbox_summary'    => $inbox_summary,
         'public_success'   => rcmi_tickets_get_success_message(),
+        'allow_public_submit' => rcmi_tickets_public_submissions_enabled(),
     ], 200);
 }

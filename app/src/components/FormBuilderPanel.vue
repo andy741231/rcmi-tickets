@@ -16,6 +16,26 @@
         </header>
         <div class="rcmi-formbuilder-workspace">
             <aside class="rcmi-formbuilder-sidebar">
+                <!-- Public submission settings -->
+                <div class="rcmi-card p-4">
+                    <details>
+                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">Public Submissions</summary>
+                        <p class="mt-2 text-xs text-gray-500">Allow people without a UH account to submit tickets anonymously.</p>
+                        <div class="mt-3 space-y-3">
+                            <label class="flex items-center gap-2 text-sm text-gray-700">
+                                <input v-model="allowPublic" type="checkbox" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                                <span>Allow public submissions</span>
+                            </label>
+                            <p class="text-xs text-gray-500">When off (default), /create asks visitors to sign in with UH SSO and the public API rejects anonymous submissions. Existing public tickets stay viewable via their links.</p>
+                            <div class="flex items-center gap-2">
+                                <button @click="saveSuccessMessage" :disabled="savingSuccess"
+                                    class="rcmi-button-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50">
+                                    <Icon name="save" /> {{ savingSuccess ? 'Saving…' : 'Save' }}
+                                </button>
+                            </div>
+                        </div>
+                    </details>
+                </div>
                 <!-- Public success message editor -->
                 <div class="rcmi-card p-4">
                     <details>
@@ -275,6 +295,7 @@ import { useToast } from '../composables/useToast.js';
 const props = defineProps({
     initialFields: { type: Array, default: () => [] },
     initialSuccess: { type: Object, default: () => ({ heading: '', message: '' }) },
+    initialAllowPublic: { type: Boolean, default: false },
 });
 const emit = defineEmits(['updated']);
 
@@ -292,6 +313,9 @@ const collapsedGroups = ref([]);
 // Public success message editor
 const successConfig = reactive({ heading: '', message: '' });
 const savingSuccess = ref(false);
+
+// Public submissions toggle (SSO-only policy: off by default)
+const allowPublic = ref(false);
 
 const DEFAULT_SUCCESS = {
     heading: 'Thank you for your submission',
@@ -328,6 +352,11 @@ watch(() => props.initialFields, (nextFields) => {
 watch(() => props.initialSuccess, (next) => {
     successConfig.heading = next?.heading || DEFAULT_SUCCESS.heading;
     successConfig.message = next?.message || DEFAULT_SUCCESS.message;
+}, { immediate: true });
+
+// Sync public submissions toggle from parent when meta loads
+watch(() => props.initialAllowPublic, (next) => {
+    allowPublic.value = !!next;
 }, { immediate: true });
 
 function typeIcon(type) {
@@ -543,19 +572,24 @@ function deleteField(id) {
     }).catch((e) => toast.error(e.message || 'Failed to delete field'));
 }
 
-// Public success message save / reset
+// Public success message save / reset (also persists the public
+// submissions toggle — both live in the same settings option group)
 async function saveSuccessMessage() {
     savingSuccess.value = true;
     try {
         const updated = await api('/settings', {
             method: 'PUT',
-            body: { public_success: { heading: successConfig.heading, message: successConfig.message } },
+            body: {
+                public_success: { heading: successConfig.heading, message: successConfig.message },
+                allow_public_submit: allowPublic.value,
+            },
         });
         successConfig.heading = updated.public_success.heading;
         successConfig.message = updated.public_success.message;
-        toast.success('Success message saved');
+        allowPublic.value = !!updated.allow_public_submit;
+        toast.success('Settings saved');
     } catch (e) {
-        toast.error(e.message || 'Failed to save success message');
+        toast.error(e.message || 'Failed to save settings');
     } finally {
         savingSuccess.value = false;
     }

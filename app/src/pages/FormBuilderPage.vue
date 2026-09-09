@@ -4,7 +4,7 @@
         <p class="text-sm text-red-700">{{ error }}</p>
         <router-link to="/create" class="rcmi-button-secondary mt-4 inline-flex px-3 py-2 text-sm">Back to ticket form</router-link>
     </div>
-    <FormBuilderPanel v-else :initial-fields="fields" :initial-success="successMessage" @updated="loadFields" />
+    <FormBuilderPanel v-else :initial-fields="fields" :initial-success="successMessage" :initial-allow-public="allowPublic" @updated="loadFields" />
 </template>
 
 <script setup>
@@ -14,6 +14,7 @@ import FormBuilderPanel from '../components/FormBuilderPanel.vue';
 
 const fields = ref([]);
 const successMessage = ref({ heading: '', message: '' });
+const allowPublic = ref(false);
 const loading = ref(true);
 const error = ref('');
 
@@ -22,6 +23,7 @@ async function loadFields() {
         const data = await api('/meta');
         fields.value = data.form_fields || [];
         successMessage.value = data.public_success || { heading: '', message: '' };
+        allowPublic.value = !!data.allow_public_submit;
     } catch (e) {
         error.value = e.message || 'Unable to load the ticket form.';
     } finally {
