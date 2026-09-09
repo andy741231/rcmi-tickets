@@ -1,10 +1,14 @@
 <template>
     <div class="space-y-1">
         <!-- Chain header -->
-        <div v-if="chain" class="mb-3 flex items-center gap-2 text-xs text-gray-500">
+        <div v-if="chain" class="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
             <Icon name="flow" />
             <span class="font-semibold">{{ chain.name }}</span>
             <span v-if="chain.on_reject" class="text-gray-400">· reject: {{ chain.on_reject }}</span>
+            <span class="text-gray-400">
+                · Assignee:
+                <strong class="text-gray-600">{{ assigneeNames || 'Unassigned' }}</strong>
+            </span>
         </div>
 
         <!-- Cycle groups -->
@@ -105,6 +109,13 @@ const props = defineProps({
     chain: { type: Object, default: null },
     statusHistory: { type: Array, default: () => [] },
     assignees: { type: Array, default: () => [] },
+});
+
+// Current assignee(s) — reads the live ticket assignee list, so it stays
+// in sync when a manager changes assignees from the Details card. The
+// chain's default assignee is applied to this list at chain init.
+const assigneeNames = computed(() => {
+    return (props.assignees || []).map(a => a.display_name).join(', ');
 });
 
 // Group steps by cycle, sorted by cycle then sort_order.
