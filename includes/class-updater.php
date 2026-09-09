@@ -14,6 +14,10 @@ if (!defined('ABSPATH')) {
 define('RCMI_TICKETS_GITHUB_USER', 'andy741231');
 define('RCMI_TICKETS_GITHUB_REPO', 'rcmi-tickets');
 
+function rcmi_tickets_github_updates_disabled() {
+    return 'production' !== wp_get_environment_type() || is_dir(dirname(__DIR__) . '/.git');
+}
+
 /**
  * Fetch the latest commit metadata from GitHub, cached for six hours.
  *
@@ -76,6 +80,13 @@ function rcmi_tickets_get_installed_sha() {
  * Add a native WordPress plugin update entry.
  */
 function rcmi_tickets_check_for_updates($transient) {
+    $plugin = plugin_basename(RCMI_TICKETS_FILE);
+    if (rcmi_tickets_github_updates_disabled()) {
+        if (isset($transient->response[$plugin])) {
+            unset($transient->response[$plugin]);
+        }
+        return $transient;
+    }
     if (empty($transient->checked)) {
         return $transient;
     }
@@ -85,7 +96,6 @@ function rcmi_tickets_check_for_updates($transient) {
         return $transient;
     }
 
-    $plugin = plugin_basename(RCMI_TICKETS_FILE);
     $transient->response[$plugin] = (object) [
         'slug'        => 'rcmi-tickets',
         'plugin'      => $plugin,
@@ -136,6 +146,9 @@ add_filter('plugins_api', 'rcmi_tickets_plugins_api_info', 10, 3);
  * calculates the final plugin destination.
  */
 function rcmi_tickets_fix_source_folder($source, $remote_source, $upgrader, $hook_extra) {
+    if (!empty($hook_extra['plugin']) && false !== strpos($hook_extra['plugin'], 'rcmi-tickets') && rcmi_tickets_github_updates_disabled()) {
+        return new WP_Error('rcmi_tickets_updates_disabled', 'RCMI Tickets updates are disabled in development and Git working copies.');
+    }
     if (is_wp_error($source) || empty($hook_extra['plugin']) || false === strpos($hook_extra['plugin'], 'rcmi-tickets')) {
         return $source;
     }
@@ -197,7 +210,7 @@ add_filter('upgrader_post_install', 'rcmi_tickets_post_install', 10, 3);
  * already sent.
  */
 function rcmi_tickets_maybe_refresh_update_cache() {
-    if (!isset($_GET['rcmi_tickets_check_updates']) || !current_user_can('manage_options')) {
+    if (rcmi_tickets_github_updates_disabled() || !isset($_GET['rcmi_tickets_check_updates']) || !current_user_can('manage_options')) {
         return;
     }
 
