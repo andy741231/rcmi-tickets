@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       RCMI Tickets
  * Description:       Frontend SPA ticket system (Vue 3 + WP REST API). Mount via the [rcmi_tickets] shortcode.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            RCMI
@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('RCMI_TICKETS_VERSION', '0.1.0');
+define('RCMI_TICKETS_VERSION', '0.2.0');
 define('RCMI_TICKETS_FILE', __FILE__);
 define('RCMI_TICKETS_DIR', plugin_dir_path(__FILE__));
 define('RCMI_TICKETS_URL', plugin_dir_url(__FILE__));
