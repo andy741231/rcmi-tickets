@@ -16,6 +16,7 @@ add_action('rcmi_ticket_status_changed', 'rcmi_tickets_email_status_changed', 10
 add_action('rcmi_ticket_mention', 'rcmi_tickets_email_mentions', 10, 4);
 add_action('rcmi_ticket_approval_step', 'rcmi_tickets_email_approval_step', 10, 3);
 add_action('rcmi_ticket_approval_rejected', 'rcmi_tickets_email_approval_rejected', 10, 3);
+add_action('rcmi_ticket_created', 'rcmi_tickets_email_submitter_receipt', 10, 3);
 
 /**
  * Build the canonical frontend URL for a ticket.
@@ -150,6 +151,59 @@ function rcmi_tickets_email_ticket_created($ticket_id, $author_id, $assignee_ids
     );
 
     rcmi_tickets_send_email($recipients, $subject, $html, $plain);
+}
+
+/**
+ * Send a submission confirmation to the logged-in ticket requestor.
+ * Public submissions already receive their receipt inline from the public
+ * submit handler (with a tokenized view link), so they are skipped here.
+ * Styled consistently with the public receipt email.
+ */
+function rcmi_tickets_email_submitter_receipt($ticket_id, $author_id, $assignee_ids) {
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
+    if (!$ticket) {
+        return;
+    }
+
+    // Public submitters got their receipt email at submission time.
+    if (function_exists('rcmi_tickets_is_public_ticket') && rcmi_tickets_is_public_ticket($ticket)) {
+        return;
+    }
+
+    $author = get_userdata((int) $author_id);
+    if (!$author || !is_email($author->user_email)) {
+        return;
+    }
+
+    $title = rcmi_tickets_email_esc($ticket['title']);
+    $url = esc_url(rcmi_tickets_email_ticket_url($ticket_id));
+    $subject = sprintf(__('Ticket submitted: #%d %s', 'rcmi-tickets'), $ticket_id, $ticket['title']);
+
+    // Ticket details (same table used in the other notification emails)
+    $details = rcmi_tickets_email_ticket_details($ticket);
+
+    $html = '<!doctype html><html><body>'
+        . '<h2>' . __('Thank you for your submission', 'rcmi-tickets') . '</h2>'
+        . '<p>' . sprintf(__('Hi %s,', 'rcmi-tickets'), rcmi_tickets_email_esc($author->display_name)) . '</p>'
+        . '<p>' . __('We have received your ticket and our team will review it shortly.', 'rcmi-tickets') . '</p>'
+        . '<p><strong>' . __('Ticket #:', 'rcmi-tickets') . '</strong> ' . (int) $ticket_id . '</p>'
+        . '<p><strong>' . __('Title:', 'rcmi-tickets') . '</strong> ' . $title . '</p>'
+        . '<p>' . __('You will receive updates by email as your ticket is processed.', 'rcmi-tickets') . '</p>'
+        . '<p style="margin-top:1rem;"><a href="' . $url . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('View ticket', 'rcmi-tickets') . '</a></p>'
+        . '<h3 style="margin-top:1.5rem;font-size:15px;color:#333;">' . __('Ticket details', 'rcmi-tickets') . '</h3>'
+        . '<table style="border-collapse:collapse;margin-top:.5rem;">' . $details['html'] . '</table>'
+        . '</body></html>';
+
+    $plain = sprintf(
+        "Thank you for your submission\n\nHi %s,\n\nWe have received your ticket and our team will review it shortly.\n\nTicket #%d\nTitle: %s\n\nYou will receive updates by email as your ticket is processed.\n\nView ticket: %s\n\nTicket details:\n%s",
+        $author->display_name,
+        $ticket_id,
+        $ticket['title'],
+        wp_strip_all_tags($url),
+        $details['plain']
+    );
+
+    rcmi_tickets_send_email($author->user_email, $subject, $html, $plain);
 }
 
 /**
