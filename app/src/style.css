@@ -272,6 +272,25 @@
         text-decoration: underline;
     }
 
+    .rcmi-login-divider {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 1rem 0;
+        color: var(--rcmi-muted);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .rcmi-login-divider::before,
+    .rcmi-login-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--rcmi-border);
+    }
+
     .rcmi-login-footer {
         margin-top: 1.5rem;
         padding-top: 1.5rem;

@@ -191,6 +191,11 @@ function rcmi_tickets_enqueue_app() {
         'isLoggedIn' => is_user_logged_in(),
         'ajaxUrl'  => admin_url('admin-ajax.php'),
         'appUrl'   => get_permalink(),
+        // Direct URL to the Entra ID authorization page (includes
+        // client_id, redirect_uri, state). Empty string if OIDC plugin inactive.
+        'ssoUrl'   => class_exists('OpenID_Connect_Generic')
+            ? OpenID_Connect_Generic::instance()->client_wrapper->get_authentication_url()
+            : '',
     ]);
 }
 

@@ -7,6 +7,16 @@
                 <h1 class="rcmi-login-title">Tickets</h1>
             </div>
 
+            <!-- SSO login (full-page redirect through Entra ID) -->
+            <a v-if="config.ssoUrl" :href="config.ssoUrl"
+                class="rcmi-button-primary inline-flex w-full items-center justify-center gap-2 px-5 py-2.5 text-sm">
+                Sign in with UH (SSO)
+            </a>
+
+            <div v-if="config.ssoUrl" class="rcmi-login-divider">
+                <span>or sign in with a local account</span>
+            </div>
+
             <!-- Login form -->
             <form v-if="!showReset" @submit.prevent="handleLogin" class="rcmi-login-form">
                 <h2 class="rcmi-login-heading">Sign in</h2>

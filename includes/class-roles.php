@@ -56,6 +56,28 @@ function rcmi_tickets_remove_roles() {
 }
 
 /**
+ * Auto-grant the Ticket User role on SSO login. Policy: every UH account
+ * that authenticates through OpenID Connect becomes a ticket user.
+ * Content roles (administrators, editors) and users who already hold a
+ * ticket role (e.g. manually-assigned managers) are left untouched, so
+ * manual role decisions are never overridden.
+ */
+add_action('openid-connect-generic-user-logged-in', 'rcmi_tickets_sso_grant_ticket_user');
+
+function rcmi_tickets_sso_grant_ticket_user($user) {
+    if (!$user instanceof WP_User || !$user->ID) {
+        return;
+    }
+    if ($user->has_cap('manage_options') || $user->has_cap('edit_posts')) {
+        return;
+    }
+    if (array_intersect(['rcmi_ticket_user', 'rcmi_ticket_manager'], (array) $user->roles)) {
+        return;
+    }
+    $user->add_role('rcmi_ticket_user');
+}
+
+/**
  * Keep pure ticket users out of wp-admin. Users who also have content
  * capabilities (editors, admins) are untouched so the marketing site
  * backend keeps working for them.

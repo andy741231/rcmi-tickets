@@ -37,10 +37,14 @@ export async function api(path, { method = 'GET', body, headers = {}, params } =
     });
 
     if (res.status === 401) {
-        // Redirect to the in-app login page (hash route) instead of
-        // the raw WordPress wp-login.php. The login page handles AJAX
-        // auth and reloads with a fresh nonce on success.
-        if (config.isLoggedIn === false) {
+        if (config.ssoUrl) {
+            // Full-page redirect through Entra ID; redirect_user_back=1
+            // returns the user to this page after authentication.
+            window.location.href = config.ssoUrl;
+        } else if (config.isLoggedIn === false) {
+            // Redirect to the in-app login page (hash route) instead of
+            // the raw WordPress wp-login.php. The login page handles AJAX
+            // auth and reloads with a fresh nonce on success.
             window.location.hash = '#/login';
         } else {
             window.location.href = config.loginUrl;
