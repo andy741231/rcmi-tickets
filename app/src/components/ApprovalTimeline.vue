@@ -28,15 +28,13 @@
             <!-- Steps -->
             <ol class="relative space-y-3 border-l border-slate-200 pl-5">
                 <li v-for="step in group.steps" :key="step.id" class="relative">
-                    <!-- Compact step marker: color and shape reinforce status. -->
-                    <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 items-center justify-center rounded-full bg-white ring-4 ring-white',
-                        step.status === 'approved' ? 'bg-emerald-500 text-white' :
-                        step.status === 'rejected' ? 'bg-red-500 text-white' :
-                        step.status === 'pending' ? 'bg-amber-500 text-white shadow-[0_0_0_3px_rgba(245,158,11,0.2)]' :
-                        'border-2 border-slate-300 text-slate-500']">
-                        <Icon v-if="step.status === 'approved'" name="check" />
-                        <Icon v-else-if="step.status === 'rejected'" name="x" />
-                        <span v-else class="text-[10px] font-bold leading-none">{{ step.sort_order }}</span>
+                    <!-- Numbered marker: the sequence remains visible in every state. -->
+                    <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-bold leading-none ring-4 ring-white',
+                        step.status === 'approved' ? 'border-emerald-500 bg-emerald-500 text-white' :
+                        step.status === 'rejected' ? 'border-red-500 bg-red-500 text-white' :
+                        step.status === 'pending' ? 'border-amber-400 bg-amber-50 text-amber-800 shadow-[0_0_0_3px_rgba(245,158,11,0.16)]' :
+                        'border-slate-300 bg-white text-slate-500']">
+                        {{ step.sort_order }}
                     </span>
 
                     <div :class="['rounded-lg border border-l-4 bg-white px-3.5 py-3 shadow-sm', stepCardClass(step.status)]">
@@ -73,7 +71,7 @@
         <div v-if="chain" class="space-y-4">
             <ol class="relative space-y-3 border-l border-slate-200 pl-5">
                 <li class="relative">
-                    <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 items-center justify-center rounded-full bg-white ring-4 ring-white',
+                    <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-white ring-4 ring-white',
                         assigneeState === 'active' ? 'bg-indigo-500 text-white' :
                         assigneeState === 'completed' ? 'bg-emerald-500 text-white' : 'border-2 border-dashed border-slate-300 text-slate-500']">
                         <Icon v-if="assigneeState === 'completed'" name="check" />
@@ -100,7 +98,7 @@
         <div v-if="postApprovalEntries.length > 0" class="space-y-4">
             <ol class="relative space-y-3 border-l border-slate-200 pl-5">
                 <li v-for="entry in postApprovalEntries" :key="'status-' + entry.id" class="relative">
-                    <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 items-center justify-center rounded-full bg-white ring-4 ring-white',
+                    <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-white ring-4 ring-white',
                         entry.new_status === 'Completed' ? 'bg-emerald-500 text-white' :
                         entry.new_status === 'In Progress' ? 'bg-blue-500 text-white' : 'border-2 border-slate-300 text-slate-500']">
                         <Icon v-if="entry.new_status === 'Completed'" name="check" />
