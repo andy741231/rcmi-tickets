@@ -72,7 +72,8 @@
             <ol class="relative space-y-3 border-l border-slate-200 pl-5">
                 <li class="relative">
                     <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-white ring-4 ring-white',
-                        assigneeState === 'active' ? 'bg-indigo-500 text-white' :
+                        assigneeState === 'active' ? 'bg-cyan-500 text-white' :
+                        assigneeState === 'assigned' ? 'bg-indigo-500 text-white' :
                         assigneeState === 'completed' ? 'bg-emerald-500 text-white' : 'border-2 border-dashed border-slate-300 text-slate-500']">
                         <Icon v-if="assigneeState === 'completed'" name="check" />
                         <Icon v-else name="user-check" />
@@ -103,7 +104,7 @@
                 <li v-for="entry in postApprovalEntries" :key="'status-' + entry.id" class="relative">
                     <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-white ring-4 ring-white',
                         entry.new_status === 'Completed' ? 'bg-emerald-500 text-white' :
-                        entry.new_status === 'In Progress' ? 'bg-blue-500 text-white' : 'border-2 border-slate-300 text-slate-500']">
+                        entry.new_status === 'In Progress' ? 'bg-cyan-500 text-white' : 'border-2 border-slate-300 text-slate-500']">
                         <Icon v-if="entry.new_status === 'Completed'" name="check" />
                         <Icon v-else-if="entry.new_status === 'In Progress'" name="arrow-right" />
                         <span v-else class="text-[10px] font-bold leading-none">·</span>
@@ -111,11 +112,11 @@
 
                     <div :class="['rounded-lg border border-l-4 bg-white px-3.5 py-3 shadow-sm',
                         entry.new_status === 'Completed' ? 'border-emerald-200' :
-                        entry.new_status === 'In Progress' ? 'border-blue-200' : 'border-slate-200']">
+                        entry.new_status === 'In Progress' ? 'border-cyan-200' : 'border-slate-200']">
                         <div class="flex items-center justify-between gap-2">
-                            <p class="text-sm font-semibold text-gray-800">{{ statusEntryLabel(entry.new_status) }}</p>
+                            <p class="text-sm font-semibold text-gray-800">{{ entry.new_status }}</p>
                             <span :class="['rcmi-timeline-status rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', statusEntryClass(entry.new_status)]">
-                                {{ statusEntryLabel(entry.new_status) }}
+                                {{ entry.new_status }}
                             </span>
                         </div>
                         <p class="mt-0.5 text-xs text-gray-500">
@@ -155,7 +156,9 @@ const assigneeNames = computed(() => {
 
 // Assignee workflow state. The assignee only becomes active once all
 // approvers in the latest cycle have approved — before that they're
-// waiting; after the ticket is marked Completed they're done.
+// waiting. Once the chain clears the work is "assigned"; when the
+// assignee clicks Start work (In Progress entry in history) they're
+// actively working; after the ticket is marked Completed they're done.
 const assigneeState = computed(() => {
     // Completed takes precedence if a Completed entry exists in history.
     if ((props.statusHistory || []).some(e => e.new_status === 'Completed')) {
@@ -171,11 +174,14 @@ const assigneeState = computed(() => {
     if (hasPending) return 'waiting';
     // If any step was rejected, the chain didn't complete — assignee waits.
     if (steps.some(s => s.status === 'rejected')) return 'waiting';
-    // All approved → assignee is active.
-    return 'active';
+    // Chain cleared: assigned until the assignee clicks Start work.
+    if ((props.statusHistory || []).some(e => e.new_status === 'In Progress')) {
+        return 'active';
+    }
+    return 'assigned';
 });
 const assigneeStateLabel = computed(() => {
-    return { waiting: 'Waiting', active: 'Project assigned', completed: 'Completed' }[assigneeState.value] || 'Waiting';
+    return { waiting: 'Waiting', assigned: 'Project assigned', active: 'In progress', completed: 'Completed' }[assigneeState.value] || 'Waiting';
 });
 
 // When the work was assigned — the timestamp of the last approved action
@@ -190,12 +196,14 @@ const assigneeSince = computed(() => {
 });
 const assigneeStatusClass = computed(() => ({
     waiting: 'bg-slate-100 text-slate-500',
-    active: 'bg-indigo-100 text-indigo-700',
+    assigned: 'bg-indigo-100 text-indigo-700',
+    active: 'bg-cyan-100 text-cyan-700',
     completed: 'bg-emerald-100 text-emerald-700',
 }[assigneeState.value] || 'bg-slate-100 text-slate-500'));
 const assigneeCardClass = computed(() => ({
     waiting: 'border-slate-200',
-    active: 'border-indigo-200',
+    assigned: 'border-indigo-200',
+    active: 'border-cyan-200',
     completed: 'border-emerald-200',
 }[assigneeState.value] || 'border-slate-200'));
 
@@ -314,12 +322,8 @@ function statusClass(s) {
 function statusEntryClass(s) {
     return {
         'Completed': 'text-emerald-700 bg-emerald-100',
-        'In Progress': 'text-blue-700 bg-blue-100',
+        'In Progress': 'text-cyan-700 bg-cyan-100',
     }[s] || 'text-gray-600 bg-gray-100';
-}
-// Display-only rename — stored status values are unchanged.
-function statusEntryLabel(s) {
-    return s === 'In Progress' ? 'Assigned' : s;
 }
 function formatDateTime(d) {
     if (!d) return '';

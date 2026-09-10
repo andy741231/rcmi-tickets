@@ -151,7 +151,7 @@
                     <option :value="null">No default assignee</option>
                     <option v-for="u in assignableUsers" :key="u.id" :value="u.id">{{ u.display_name }} ({{ u.user_login }})</option>
                 </select>
-                <p class="rcmi-field-help">The selected person is assigned when a ticket enters this approval chain (at creation). They receive the Approved notification once all steps clear, and can then start work (Assigned) and Complete.</p>
+                <p class="rcmi-field-help">The selected person is assigned when a ticket enters this approval chain (at creation). They receive the Approved notification once all steps clear, and can then start work (In Progress) and Complete.</p>
             </div>
 
             <!-- Completion message -->

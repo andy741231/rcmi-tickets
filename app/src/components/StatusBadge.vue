@@ -15,8 +15,10 @@ const props = defineProps({
 
 // Display-only renames — the stored status value stays unchanged so
 // REST transitions, permissions, and existing tickets keep working.
+// "Approved" (chain cleared, work with the assignee, not started)
+// displays as "Assigned"; "In Progress" means the assignee started.
 const labels = {
-    'In Progress': 'Assigned',
+    'Approved': 'Assigned',
 };
 
 const classes = {
@@ -32,7 +34,7 @@ const classes = {
 const icons = {
     'Received':          'clock',
     'Pending Approval':  'bell',
-    'Approved':          'check-circle',
+    'Approved':          'user-check',
     'In Progress':       'arrow-right',
     'Rejected':          'x-circle',
     'Rejected: Pending Revision': 'alert',
