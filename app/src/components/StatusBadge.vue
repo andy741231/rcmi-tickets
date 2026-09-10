@@ -1,7 +1,7 @@
 <template>
     <span class="rcmi-status-badge inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" :class="badgeClass">
         <Icon :name="iconName" />
-        {{ status }}
+        {{ statusLabel }}
     </span>
 </template>
 
@@ -12,6 +12,12 @@ import Icon from './Icon.vue';
 const props = defineProps({
     status: { type: String, required: true },
 });
+
+// Display-only renames — the stored status value stays unchanged so
+// REST transitions, permissions, and existing tickets keep working.
+const labels = {
+    'In Progress': 'Assigned',
+};
 
 const classes = {
     'Received':          'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200',
@@ -33,6 +39,7 @@ const icons = {
     'Completed':         'check-badge',
 };
 
+const statusLabel = computed(() => labels[props.status] || props.status);
 const badgeClass = computed(() => classes[props.status] || 'bg-gray-100 text-gray-800');
 const iconName = computed(() => icons[props.status] || 'check');
 </script>

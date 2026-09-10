@@ -89,6 +89,9 @@
                             <span class="mx-1 text-slate-300">·</span>
                             <strong class="text-slate-700">{{ assigneeNames || 'Unassigned' }}</strong>
                         </p>
+                        <p v-if="assigneeState !== 'waiting' && assigneeSince" class="mt-0.5 text-xs text-gray-400">
+                            {{ formatDateTime(assigneeSince) }}
+                        </p>
                     </div>
                 </li>
             </ol>
@@ -110,9 +113,9 @@
                         entry.new_status === 'Completed' ? 'border-emerald-200' :
                         entry.new_status === 'In Progress' ? 'border-blue-200' : 'border-slate-200']">
                         <div class="flex items-center justify-between gap-2">
-                            <p class="text-sm font-semibold text-gray-800">{{ entry.new_status }}</p>
+                            <p class="text-sm font-semibold text-gray-800">{{ statusEntryLabel(entry.new_status) }}</p>
                             <span :class="['rcmi-timeline-status rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', statusEntryClass(entry.new_status)]">
-                                {{ entry.new_status }}
+                                {{ statusEntryLabel(entry.new_status) }}
                             </span>
                         </div>
                         <p class="mt-0.5 text-xs text-gray-500">
@@ -172,7 +175,18 @@ const assigneeState = computed(() => {
     return 'active';
 });
 const assigneeStateLabel = computed(() => {
-    return { waiting: 'Waiting', active: 'In progress', completed: 'Completed' }[assigneeState.value] || 'Waiting';
+    return { waiting: 'Waiting', active: 'Project assigned', completed: 'Completed' }[assigneeState.value] || 'Waiting';
+});
+
+// When the work was assigned — the timestamp of the last approved action
+// in the latest cycle (the moment the chain cleared and the assignee
+// took over). Null while the assignee is still waiting.
+const assigneeSince = computed(() => {
+    const groups = cycleGroups.value;
+    if (!groups.length) return null;
+    const steps = groups[groups.length - 1].steps || [];
+    const approved = steps.filter(s => s.status === 'approved' && s.decided_at);
+    return approved.length ? approved[approved.length - 1].decided_at : null;
 });
 const assigneeStatusClass = computed(() => ({
     waiting: 'bg-slate-100 text-slate-500',
@@ -302,6 +316,10 @@ function statusEntryClass(s) {
         'Completed': 'text-emerald-700 bg-emerald-100',
         'In Progress': 'text-blue-700 bg-blue-100',
     }[s] || 'text-gray-600 bg-gray-100';
+}
+// Display-only rename — stored status values are unchanged.
+function statusEntryLabel(s) {
+    return s === 'In Progress' ? 'Assigned' : s;
 }
 function formatDateTime(d) {
     if (!d) return '';
