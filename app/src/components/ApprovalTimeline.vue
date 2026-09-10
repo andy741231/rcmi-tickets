@@ -85,7 +85,7 @@
                             </span>
                         </div>
                         <p class="mt-1 text-xs text-slate-500">
-                            <span class="font-medium text-slate-600">Owner</span>
+                            <span class="font-medium text-slate-600">Assignee</span>
                             <span class="mx-1 text-slate-300">·</span>
                             <strong class="text-slate-700">{{ assigneeNames || 'Unassigned' }}</strong>
                         </p>
