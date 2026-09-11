@@ -66,10 +66,16 @@
                     :required="f.required" class="rcmi-input" />
 
                 <!-- date -->
-                <input v-else-if="f.type === 'date'" :id="'field-' + f.field_key"
-                    v-model="answers[f.field_key]" type="date"
-                    :min="dateMin(f)"
-                    :required="f.required" class="rcmi-input" />
+                <template v-else-if="f.type === 'date'">
+                    <input :id="'field-' + f.field_key"
+                        v-model="answers[f.field_key]" type="date"
+                        :min="dateMin(f)"
+                        :required="f.required" class="rcmi-input"
+                        @click="openDatePicker"
+                        @change="validateDate(f)" />
+                    <p v-if="dateErrors[f.field_key]" class="rcmi-field-help text-red-700">{{ dateErrors[f.field_key] }}</p>
+                    <p v-else-if="dateHint(f)" class="rcmi-field-help">{{ dateHint(f) }}</p>
+                </template>
 
                 <!-- dropdown (with optional cascading) -->
                 <select v-else-if="f.type === 'dropdown'" :id="'field-' + f.field_key"
@@ -116,7 +122,7 @@
 </template>
 
 <script setup>
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import CascadeField from './CascadeField.vue';
 
 const props = defineProps({
@@ -218,6 +224,48 @@ function dateMin(field) {
         }
     }
     return d.toISOString().split('T')[0];
+}
+
+// Open the native date picker when clicking anywhere in the field.
+function openDatePicker(e) {
+    try { e.target.showPicker?.(); } catch { /* picker needs a user gesture or isn't supported */ }
+}
+
+// Human-readable "earliest available" hint so users know what's blocked
+// before opening the picker (native pickers render disabled days inconsistently).
+const dateErrors = ref({});
+
+function fmtDate(iso) {
+    return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+    });
+}
+
+function isWeekend(iso) {
+    const day = new Date(iso + 'T00:00:00').getDay();
+    return day === 0 || day === 6;
+}
+
+function dateHint(field) {
+    const min = dateMin(field);
+    if (!min) return field.config?.include_weekend === false ? 'Weekdays only.' : '';
+    let hint = `Earliest available: ${fmtDate(min)}`;
+    if (field.config?.include_weekend === false) hint += ' · Weekdays only';
+    return hint;
+}
+
+function validateDate(field) {
+    const v = answers.value[field.field_key];
+    const min = dateMin(field);
+    let msg = '';
+    if (v) {
+        if (min && v < min) {
+            msg = `Please choose ${fmtDate(min)} or later.`;
+        } else if (field.config?.include_weekend === false && isWeekend(v)) {
+            msg = 'Weekends aren’t available — please pick a weekday.';
+        }
+    }
+    dateErrors.value = { ...dateErrors.value, [field.field_key]: msg };
 }
 
 // Watch cascading dropdowns: when parent changes, reset child

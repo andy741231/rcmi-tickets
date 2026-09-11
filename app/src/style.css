@@ -1170,6 +1170,11 @@
         border-style: dashed;
         color: var(--rcmi-muted);
     }
+
+    .rcmi-cascade-pill-other.rcmi-cascade-pill-active,
+    .rcmi-cascade-col-item-other.rcmi-cascade-col-item-active {
+        color: #fff;
+    }
 }
 
 @layer components {
