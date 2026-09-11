@@ -13,6 +13,9 @@
                         <template v-else-if="f.type === 'checkbox'">
                             {{ Array.isArray(answers[f.field_key]) ? answers[f.field_key].join(', ') : answers[f.field_key] }}
                         </template>
+                        <template v-else-if="f.type === 'cascade'">
+                            {{ Array.isArray(answers[f.field_key]) ? answers[f.field_key].join(' › ') : answers[f.field_key] }}
+                        </template>
                         <template v-else-if="f.type === 'dropdown' && f.config?.cascades_from">
                             {{ parentLabel(f, answers[f.config.cascades_from]) }} › {{ answers[f.field_key] }}
                         </template>
@@ -78,6 +81,12 @@
                 <p v-if="f.config?.cascades_from && !answers[f.config.cascades_from]"
                     class="rcmi-field-help">Select "{{ parentFieldLabel(f.config.cascades_from) }}" first.</p>
 
+                <!-- cascade (multi-level tree) -->
+                <CascadeField v-else-if="f.type === 'cascade'" :field="f"
+                    :model-value="Array.isArray(answers[f.field_key]) ? answers[f.field_key] : []"
+                    :required="f.required"
+                    @update:model-value="answers[f.field_key] = $event" />
+
                 <!-- radio -->
                 <div v-else-if="f.type === 'radio'" class="mt-1 flex flex-wrap gap-3">
                     <label v-for="opt in (f.config?.options || [])" :key="opt"
@@ -108,6 +117,7 @@
 
 <script setup>
 import { computed, watch } from 'vue';
+import CascadeField from './CascadeField.vue';
 
 const props = defineProps({
     fields: { type: Array, default: () => [] },
@@ -139,7 +149,7 @@ watch(normalizedFields, (fields) => {
     for (const f of fields) {
         if (f.type === 'section') continue;
         if (!(f.field_key in a)) {
-            a[f.field_key] = f.type === 'checkbox' ? [] : '';
+            a[f.field_key] = (f.type === 'checkbox' || f.type === 'cascade') ? [] : '';
             changed = true;
         }
     }
@@ -235,7 +245,7 @@ function parentLabel(field, parentVal) {
 
 function hasAnswer(f) {
     const v = answers.value[f.field_key];
-    if (f.type === 'checkbox') return Array.isArray(v) && v.length > 0;
+    if (f.type === 'checkbox' || f.type === 'cascade') return Array.isArray(v) && v.length > 0;
     return v !== undefined && v !== null && v !== '';
 }
 </script>

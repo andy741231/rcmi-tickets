@@ -73,6 +73,21 @@
                     </label>
                 </div>
 
+                <!-- Form field filter -->
+                <div v-if="filterableFields.length">
+                    <span class="text-xs font-medium text-gray-500">Form field</span>
+                    <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                        <select v-model="local.fieldKey" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="onFieldKeyChange">
+                            <option value="">Any field…</option>
+                            <option v-for="f in filterableFields" :key="f.field_key" :value="f.field_key">{{ f.label }}</option>
+                        </select>
+                        <select v-if="local.fieldKey" v-model="local.fieldValue" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange">
+                            <option value="">Any value…</option>
+                            <option v-for="o in fieldValueOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                        </select>
+                    </div>
+                </div>
+
                 <!-- Date range -->
                 <div>
                     <span class="text-xs font-medium text-gray-500">Created date</span>
@@ -95,6 +110,7 @@ const props = defineProps({
     statuses:        { type: Array, default: () => [] },
     tags:            { type: Array, default: () => [] },
     assignableUsers: { type: Array, default: () => [] },
+    formFields:      { type: Array, default: () => [] },
     modelValue:      { type: Object, default: () => ({}) },
 });
 const emit = defineEmits(['update:modelValue']);
@@ -103,10 +119,16 @@ const defaults = {
     search: '', scope: 'all', status: [],
     assigneeId: null, tagId: null,
     dateFrom: '', dateTo: '',
+    fieldKey: '', fieldValue: '',
 };
 
 const local = reactive({ ...defaults, ...props.modelValue });
 const showAdvanced = ref(false);
+
+// Re-sync when the parent replaces the model (e.g. "Clear all filters").
+watch(() => props.modelValue, (v) => {
+    Object.assign(local, { ...defaults, ...(v || {}) });
+}, { deep: true });
 
 const activeCount = computed(() => {
     let count = 0;
@@ -117,7 +139,43 @@ const activeCount = computed(() => {
     if (local.tagId) count++;
     if (local.dateFrom) count++;
     if (local.dateTo) count++;
+    if (local.fieldKey && local.fieldValue) count++;
     return count;
+});
+
+const filterableFields = computed(() =>
+    props.formFields.filter(f => ['dropdown', 'radio', 'checkbox', 'cascade'].includes(f.type))
+);
+
+// Value options for the selected field. Cascade trees are flattened into
+// full-path labels ("A › B › C"); the filter value is the node label itself,
+// which the backend matches against any segment of the stored path.
+const fieldValueOptions = computed(() => {
+    const f = props.formFields.find(x => x.field_key === local.fieldKey);
+    if (!f) return [];
+    if (f.type === 'cascade' && Array.isArray(f.config?.cascade_tree)) {
+        const out = [];
+        const seen = new Set();
+        const walk = (nodes, prefix) => {
+            for (const n of nodes) {
+                const p = [...prefix, n.label];
+                if (!seen.has(n.label)) {
+                    seen.add(n.label);
+                    out.push({ value: n.label, label: p.join(' › ') });
+                }
+                walk(n.children || [], p);
+            }
+        };
+        walk(f.config.cascade_tree, []);
+        return out;
+    }
+    const opts = new Set(f.config?.options || []);
+    if (f.config?.cascade_options && typeof f.config.cascade_options === 'object') {
+        for (const children of Object.values(f.config.cascade_options)) {
+            if (Array.isArray(children)) children.forEach(c => opts.add(c));
+        }
+    }
+    return [...opts].map(v => ({ value: v, label: v }));
 });
 
 const activeFilterChips = computed(() => {
@@ -135,8 +193,18 @@ const activeFilterChips = computed(() => {
     }
     if (local.dateFrom) chips.push({ key: 'dateFrom', label: `From: ${local.dateFrom}` });
     if (local.dateTo) chips.push({ key: 'dateTo', label: `To: ${local.dateTo}` });
+    if (local.fieldKey && local.fieldValue) {
+        const f = props.formFields.find(x => x.field_key === local.fieldKey);
+        const opt = fieldValueOptions.value.find(o => o.value === local.fieldValue);
+        chips.push({ key: 'fieldValue', label: `${f?.label || local.fieldKey}: ${opt?.label || local.fieldValue}` });
+    }
     return chips;
 });
+
+function onFieldKeyChange() {
+    local.fieldValue = '';
+    emitChange();
+}
 
 function toggleStatus(s) {
     const idx = local.status.indexOf(s);
@@ -157,6 +225,7 @@ function removeFilter(key) {
     else if (key === 'tagId') local.tagId = null;
     else if (key === 'dateFrom') local.dateFrom = '';
     else if (key === 'dateTo') local.dateTo = '';
+    else if (key === 'fieldValue') { local.fieldKey = ''; local.fieldValue = ''; }
     emitChange();
 }
 
@@ -172,6 +241,9 @@ function emitChange() {
     payload.tag_ids = payload.tagId ? [payload.tagId] : [];
     delete payload.assigneeId;
     delete payload.tagId;
+    payload.field_filters = (payload.fieldKey && payload.fieldValue)
+        ? { [payload.fieldKey]: payload.fieldValue }
+        : {};
     emit('update:modelValue', payload);
 }
 

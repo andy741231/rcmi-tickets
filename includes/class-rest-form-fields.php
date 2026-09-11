@@ -9,7 +9,7 @@
  *   DELETE /form-fields/{id}      — delete a field (+ cascade answers)
  *   PUT    /form-fields/reorder   — bulk reorder (array of ids)
  *
- * Field types: text|longtext|dropdown|checkbox|radio|date|number|section
+ * Field types: text|longtext|dropdown|checkbox|radio|date|number|section|cascade
  * config JSON shape (validated by type):
  *   {
  *     options: ["a","b"],            // dropdown/radio/checkbox
@@ -17,7 +17,9 @@
  *     default: "…",                  // any
  *     logic: { field_key, op, value, action: 'show'|'hide' },
  *     cascades_from: "<field_key>",  // dropdown only
- *     cascade_options: { "<parent_value>": ["Sub A","Sub B"] }
+ *     cascade_options: { "<parent_value>": ["Sub A","Sub B"] },
+ *     cascade_tree: [{ label, children: [...] }], // cascade type: nested tree, any depth
+ *     cascade_style: "dropdown"|"pills"|"columns"|"search"
  *   }
  */
 
@@ -29,7 +31,7 @@ if (!defined('ABSPATH')) {
  * Valid field types.
  */
 function rcmi_tickets_valid_field_types() {
-    return ['text', 'longtext', 'dropdown', 'checkbox', 'radio', 'date', 'number', 'section'];
+    return ['text', 'longtext', 'dropdown', 'checkbox', 'radio', 'date', 'number', 'section', 'cascade'];
 }
 
 /**
@@ -46,6 +48,7 @@ function rcmi_tickets_allowed_config_keys($type) {
         'date'      => array_merge($common, ['min_days', 'include_weekend']),
         'number'    => array_merge($common, ['placeholder', 'min', 'max', 'step']),
         'section'   => [],
+        'cascade'   => array_merge($common, ['cascade_tree', 'cascade_style', 'cascade_other']),
     ];
     return $map[$type] ?? $common;
 }
@@ -89,6 +92,17 @@ function rcmi_tickets_validate_field_config($config, $type) {
             case 'cascades_from':
                 $clean['cascades_from'] = sanitize_text_field((string) $v);
                 break;
+            case 'cascade_tree':
+                if (is_array($v)) {
+                    $clean['cascade_tree'] = rcmi_tickets_sanitize_cascade_tree($v);
+                }
+                break;
+            case 'cascade_style':
+                $clean['cascade_style'] = in_array($v, ['dropdown', 'pills', 'columns', 'search'], true) ? $v : 'dropdown';
+                break;
+            case 'cascade_other':
+                $clean['cascade_other'] = !empty($v);
+                break;
             case 'placeholder':
             case 'default':
                 $clean[$k] = sanitize_text_field((string) $v);
@@ -115,6 +129,36 @@ function rcmi_tickets_validate_field_config($config, $type) {
         }
     }
     return $clean ?: null;
+}
+
+/**
+ * Recursively sanitize a cascade tree: array of { label: string, children: array }.
+ * Depth capped at 10 levels and 500 total nodes to prevent abuse.
+ *
+ * @param array $nodes
+ * @return array
+ */
+function rcmi_tickets_sanitize_cascade_tree($nodes) {
+    $count = 0;
+    $sanitize = function ($list, $depth) use (&$sanitize, &$count) {
+        $out = [];
+        if (!is_array($list) || $depth > 10) {
+            return $out;
+        }
+        foreach ($list as $node) {
+            if ($count >= 500) break;
+            if (!is_array($node)) continue;
+            $label = sanitize_text_field((string) ($node['label'] ?? ''));
+            if ($label === '') continue;
+            $count++;
+            $out[] = [
+                'label'    => $label,
+                'children' => $sanitize($node['children'] ?? [], $depth + 1),
+            ];
+        }
+        return $out;
+    };
+    return $sanitize($nodes, 1);
 }
 
 function rcmi_tickets_register_form_field_routes() {

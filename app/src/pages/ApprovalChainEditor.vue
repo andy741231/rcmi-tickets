@@ -204,7 +204,7 @@ const isDirty = ref(false);
 let skipGuard = false;
 
 const isNew = computed(() => props.id === 'new');
-const dropdownFields = computed(() => formFields.value.filter(f => f.type === 'dropdown'));
+const dropdownFields = computed(() => formFields.value.filter(f => f.type === 'dropdown' || f.type === 'cascade'));
 
 const triggerFieldLabel = computed(() => {
     const f = formFields.value.find(f => f.field_key === chain.value?.trigger_field_key);
@@ -220,6 +220,13 @@ const triggerOptions = computed(() => {
         for (const children of Object.values(f.config.cascade_options)) {
             if (Array.isArray(children)) children.forEach(c => all.add(c));
         }
+        return [...all].sort();
+    }
+    // For cascade fields, flatten every label in the tree (any level can be a trigger)
+    if (f.type === 'cascade' && Array.isArray(f.config?.cascade_tree)) {
+        const all = new Set();
+        const walk = (nodes) => nodes.forEach(n => { all.add(n.label); walk(n.children || []); });
+        walk(f.config.cascade_tree);
         return [...all].sort();
     }
     return f?.config?.options || [];

@@ -25,6 +25,7 @@
 
         <!-- Filter bar -->
         <FilterBar v-model="filters" :statuses="meta.statuses" :tags="meta.tags" :assignable-users="meta.assignable_users"
+            :form-fields="meta.form_fields || []"
             class="mb-5" />
 
         <!-- View toggle + sort -->
@@ -300,7 +301,7 @@ const page = ref(1);
 const perPage = ref(parseInt(localStorage.getItem('rcmi_tickets_per_page'), 10) || 9);
 const total = ref(0);
 const totalPages = ref(0);
-const filters = ref({ search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '' });
+const filters = ref({ search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '', field_filters: {} });
 const queue = ref('all');
 
 // Batch actions state
@@ -401,6 +402,7 @@ const activeFilterCount = computed(() => {
     if (filters.value.tag_ids?.length) c++;
     if (filters.value.date_from) c++;
     if (filters.value.date_to) c++;
+    if (filters.value.field_filters && Object.keys(filters.value.field_filters).length) c++;
     return c;
 });
 
@@ -448,7 +450,7 @@ function applyQueueFilter() {
 
 function clearAllFilters() {
     queue.value = 'all';
-    filters.value = { search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '' };
+    filters.value = { search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '', field_filters: {} };
 }
 
 function toggleOrder() {
@@ -540,6 +542,11 @@ async function loadTickets() {
         if (filters.value.tag_ids?.length) filters.value.tag_ids.forEach(id => params.append('tag_ids[]', id));
         if (filters.value.date_from) params.set('date_from', filters.value.date_from);
         if (filters.value.date_to) params.set('date_to', filters.value.date_to);
+        if (filters.value.field_filters) {
+            for (const [k, v] of Object.entries(filters.value.field_filters)) {
+                if (v) params.set(`field_filters[${k}]`, v);
+            }
+        }
 
         const data = await api('/tickets', { params });
         let items = data.items || [];
@@ -579,6 +586,11 @@ async function exportCsv() {
         if (filters.value.tag_ids?.length) filters.value.tag_ids.forEach(id => params.append('tag_ids[]', id));
         if (filters.value.date_from) params.set('date_from', filters.value.date_from);
         if (filters.value.date_to) params.set('date_to', filters.value.date_to);
+        if (filters.value.field_filters) {
+            for (const [k, v] of Object.entries(filters.value.field_filters)) {
+                if (v) params.set(`field_filters[${k}]`, v);
+            }
+        }
 
         const config = window.rcmiTickets || {};
         const sep = config.apiBase.includes('?') ? '&' : '?';

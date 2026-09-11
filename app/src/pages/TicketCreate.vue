@@ -218,10 +218,11 @@ async function submit() {
         let autoTitle = '';
         if (meta.form_fields && meta.form_fields.length > 0) {
             for (const f of meta.form_fields) {
-                if (['text', 'longtext', 'dropdown', 'radio'].includes(f.type)) {
+                if (['text', 'longtext', 'dropdown', 'radio', 'cascade'].includes(f.type)) {
                     const val = answers[f.field_key];
-                    if (val && String(val).trim()) {
-                        autoTitle = String(val).trim().slice(0, 100);
+                    const str = Array.isArray(val) ? (val[val.length - 1] || '') : String(val || '');
+                    if (str.trim()) {
+                        autoTitle = str.trim().slice(0, 100);
                         break;
                     }
                 }

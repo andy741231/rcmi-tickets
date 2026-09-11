@@ -249,6 +249,12 @@
 
                 <!-- Sidebar -->
                 <div class="space-y-4">
+                    <!-- Timeline -->
+                    <section v-if="ticket.approval_history && ticket.approval_history.length > 0" class="rcmi-card p-5">
+                        <h3 class="rcmi-section-label mb-4">Timeline</h3>
+                        <ApprovalTimeline :steps="ticket.approval_history" :chain="ticket.approval_chain" :status-history="ticket.status_history || []" :assignees="ticket.assignees || []" :start-at="ticket.created_at" />
+                    </section>
+
                     <!-- Details card -->
                     <section class="rcmi-card p-5">
                         <h3 class="rcmi-section-label mb-4">Details</h3>
@@ -363,12 +369,6 @@
                                 <dd class="mt-1 text-sm text-gray-700">{{ formatDateTime(ticket.updated_at) }}</dd>
                             </div>
                         </dl>
-                    </section>
-
-                    <!-- Approval timeline -->
-                    <section v-if="ticket.approval_history && ticket.approval_history.length > 0" class="rcmi-card p-5">
-                        <h3 class="rcmi-section-label mb-4">Approval Timeline</h3>
-                        <ApprovalTimeline :steps="ticket.approval_history" :chain="ticket.approval_chain" :status-history="ticket.status_history || []" :assignees="ticket.assignees || []" />
                     </section>
 
                     <!-- Tags card -->

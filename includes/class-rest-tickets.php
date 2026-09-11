@@ -399,7 +399,7 @@ function rcmi_tickets_get_ticket_form_answers($ticket_id) {
         }
         $val = $r['value'];
         // Decode JSON for multi-value (checkbox) — stored as JSON array
-        if ($r['type'] === 'checkbox' || $r['type'] === 'radio') {
+        if ($r['type'] === 'checkbox' || $r['type'] === 'radio' || $r['type'] === 'cascade') {
             $decoded = json_decode($val, true);
             $answers[$r['field_key']] = (is_array($decoded)) ? $decoded : $val;
         } else {
@@ -472,7 +472,11 @@ function rcmi_tickets_resolve_approval_chain($form_answers) {
         }
         $tfk = $chain['trigger_field_key'];
         $tv = $chain['trigger_value'];
-        if ($tfk && $tv && isset($form_answers[$tfk]) && (string) $form_answers[$tfk] === (string) $tv) {
+        $ans = $form_answers[$tfk] ?? null;
+        $hit = is_array($ans)
+            ? in_array((string) $tv, array_map('strval', $ans), true)
+            : (string) $ans === (string) $tv;
+        if ($tfk && $tv && $ans !== null && $hit) {
             return $chain;
         }
     }
@@ -710,6 +714,40 @@ function rcmi_tickets_get_ticket_attachments($ticket_id) {
     }, $rows);
 }
 
+/**
+ * Append dynamic form-field filters to a ticket list WHERE clause.
+ * Expects $params['field_filters'] as a map of field_key => value.
+ * A value matches when the stored answer equals it exactly, or when it
+ * appears as an element of a JSON-array answer (checkbox/cascade paths).
+ *
+ * @param array $params Request params
+ * @param array $where  WHERE fragments (by ref)
+ * @param array $args   Prepared-statement args (by ref)
+ */
+function rcmi_tickets_append_field_filters($params, &$where, &$args) {
+    global $wpdb;
+    if (empty($params['field_filters']) || !is_array($params['field_filters'])) {
+        return;
+    }
+    $valid_keys = array_column(rcmi_tickets_get_all_form_fields(), 'field_key');
+    foreach ($params['field_filters'] as $key => $val) {
+        $key = sanitize_key((string) $key);
+        $val = sanitize_text_field((string) $val);
+        if ($key === '' || $val === '' || !in_array($key, $valid_keys, true)) {
+            continue;
+        }
+        $like = '%"' . $wpdb->esc_like($val) . '"%';
+        $where[] = "t.id IN (
+            SELECT fa.ticket_id FROM {$wpdb->prefix}rcmi_form_answers fa
+            INNER JOIN {$wpdb->prefix}rcmi_form_fields ff ON ff.id = fa.field_id
+            WHERE ff.field_key = %s AND (fa.value = %s OR fa.value LIKE %s)
+        )";
+        $args[] = $key;
+        $args[] = $val;
+        $args[] = $like;
+    }
+}
+
 // ── permission callbacks ─────────────────────────────────────────────
 
 function rcmi_tickets_perm_list() {
@@ -893,6 +931,8 @@ function rcmi_tickets_handle_list($request) {
         $args[] = $params['date_to'] . ' 23:59:59';
     }
 
+    rcmi_tickets_append_field_filters($params, $where, $args);
+
     // Sorting (whitelist columns to prevent SQL injection)
     $valid_sort = ['id', 'title', 'status', 'due_date', 'created_at', 'updated_at'];
     $sort = in_array($params['sort'] ?? 'created_at', $valid_sort, true) ? $params['sort'] : 'created_at';
@@ -1026,6 +1066,8 @@ function rcmi_tickets_handle_csv_export($request) {
         $args[] = $params['date_to'] . ' 23:59:59';
     }
 
+    rcmi_tickets_append_field_filters($params, $where, $args);
+
     $valid_sort = ['id', 'title', 'status', 'due_date', 'created_at', 'updated_at'];
     $sort = in_array($params['sort'] ?? 'created_at', $valid_sort, true) ? ($params['sort'] ?? 'created_at') : 'created_at';
     $order = strtolower($params['order'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
@@ -1080,7 +1122,7 @@ function rcmi_tickets_handle_csv_export($request) {
             $key = $f['field_key'];
             $val = $formatted['form_answers'][$key] ?? '';
             if (is_array($val)) {
-                $val = implode('; ', $val);
+                $val = implode($f['type'] === 'cascade' ? ' › ' : '; ', $val);
             }
             $field_values[] = $val;
         }

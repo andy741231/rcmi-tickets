@@ -173,39 +173,39 @@
                                         </button>
                                     </div>
 
-                                    <!-- Cascading (dropdown only) -->
-                                    <div v-if="f.type === 'dropdown'">
-                                        <details class="rounded-md border border-gray-200 p-3">
-                                            <summary class="cursor-pointer text-sm font-semibold text-gray-700">Cascading dropdown (optional)</summary>
-                                            <div class="mt-3 space-y-3">
-                                                <div>
-                                                    <label class="rcmi-field-label">Parent field</label>
-                                                    <select v-model="f.config.cascades_from" class="rcmi-input">
-                                                        <option value="">None</option>
-                                                        <option v-for="pf in cascadeableParents(f)" :key="pf.field_key" :value="pf.field_key">{{ pf.label }}</option>
-                                                    </select>
-                                                </div>
-                                                <div v-if="f.config.cascades_from">
-                                                    <label class="rcmi-field-label">Child options per parent value</label>
-                                                    <div v-if="!f.config.cascade_options" class="text-xs text-gray-500">Set the parent field's options first, then configure children here.</div>
-                                                    <div v-else class="space-y-2">
-                                                        <div v-for="parentOpt in parentOptionsFor(f)" :key="parentOpt" class="rounded-md bg-gray-50 p-2">
-                                                            <p class="mb-1 text-xs font-semibold text-gray-600">When parent = "{{ parentOpt }}":</p>
-                                                            <input v-model="cascadeInput[f.field_key + '|' + parentOpt]"
-                                                                @keyup.enter="addCascadeOption(f, parentOpt)"
-                                                                class="rcmi-input mb-1 text-xs" placeholder="Add sub-option, press Enter" />
-                                                            <div class="flex flex-wrap gap-1">
-                                                                <span v-for="(co, ci) in (f.config.cascade_options[parentOpt] || [])" :key="ci"
-                                                                    class="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-xs border border-gray-200">
-                                                                    {{ co }}
-                                                                    <button @click="f.config.cascade_options[parentOpt].splice(ci, 1)" class="text-red-600">×</button>
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </details>
+                                    <!-- Cascade tree (cascade type only) -->
+                                    <div v-if="f.type === 'cascade'">
+                                        <label class="rcmi-field-label">Display style</label>
+                                        <div class="mt-1 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Cascade display style">
+                                            <button v-for="s in cascadeStyles" :key="s.value" type="button" role="radio"
+                                                :aria-checked="f.config.cascade_style === s.value"
+                                                @click="f.config.cascade_style = s.value"
+                                                class="rcmi-style-card"
+                                                :class="{ 'rcmi-style-card-active': f.config.cascade_style === s.value }">
+                                                <Icon :name="s.icon" />
+                                                <span class="flex flex-col items-start">
+                                                    <strong>{{ s.label }}</strong>
+                                                    <small>{{ s.hint }}</small>
+                                                </span>
+                                            </button>
+                                        </div>
+                                        <p v-if="cascadeFitHint(f)" class="mt-2 text-xs text-amber-600">{{ cascadeFitHint(f) }}</p>
+
+                                        <label class="rcmi-field-label mt-3">Preview</label>
+                                        <div class="rounded-md border border-dashed border-gray-300 p-3">
+                                            <CascadeField :field="f"
+                                                :model-value="previewAnswers[f.id] || []"
+                                                :required="false"
+                                                @update:model-value="previewAnswers[f.id] = $event" />
+                                        </div>
+
+                                        <label class="mt-3 inline-flex items-center gap-2 text-sm text-gray-700">
+                                            <input type="checkbox" v-model="f.config.cascade_other" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                                            Allow "Other" — show a free-text option at every level
+                                        </label>
+                                        <label class="rcmi-field-label mt-3">Options tree</label>
+                                        <p class="mb-2 text-xs text-gray-500">Add children under any option to build unlimited levels. The answer is saved as the full path (e.g. “A › B › C”).</p>
+                                        <CascadeTreeEditor :nodes="f.config.cascade_tree" />
                                     </div>
 
                                     <!-- Logic -->
@@ -290,6 +290,8 @@
 import { computed, ref, reactive, watch } from 'vue';
 import { api } from '../api.js';
 import Icon from './Icon.vue';
+import CascadeTreeEditor from './CascadeTreeEditor.vue';
+import CascadeField from './CascadeField.vue';
 import { useToast } from '../composables/useToast.js';
 
 const props = defineProps({
@@ -306,8 +308,8 @@ const saving = ref(null);
 const dragIdx = ref(null);
 const dragOverIdx = ref(null);
 const dragOverSide = ref(null);
-const cascadeInput = reactive({});
 const searchQuery = ref('');
+const previewAnswers = reactive({}); // field id => cascade preview path
 const collapsedGroups = ref([]);
 
 // Public success message editor
@@ -326,6 +328,7 @@ const paletteTypes = [
     { type: 'text',      label: 'Text',        icon: 'text' },
     { type: 'longtext',  label: 'Long Text',   icon: 'textarea' },
     { type: 'dropdown',  label: 'Dropdown',    icon: 'dropdown' },
+    { type: 'cascade',   label: 'Cascade',     icon: 'flow' },
     { type: 'checkbox',  label: 'Checkbox',    icon: 'checkbox-icon' },
     { type: 'radio',     label: 'Radio',       icon: 'radio-icon' },
     { type: 'date',      label: 'Date',        icon: 'calendar' },
@@ -344,6 +347,10 @@ watch(() => props.initialFields, (nextFields) => {
         if (f.type === 'dropdown') {
             if (!f.config.cascade_options || Array.isArray(f.config.cascade_options)) f.config.cascade_options = {};
         }
+        if (f.type === 'cascade') {
+            if (!Array.isArray(f.config.cascade_tree)) f.config.cascade_tree = [];
+            if (!f.config.cascade_style) f.config.cascade_style = 'dropdown';
+        }
     }
     editingId.value = null;
 }, { immediate: true, flush: 'pre' });
@@ -359,8 +366,41 @@ watch(() => props.initialAllowPublic, (next) => {
     allowPublic.value = !!next;
 }, { immediate: true });
 
+const cascadeStyles = [
+    { value: 'dropdown', label: 'Dropdowns', icon: 'dropdown', hint: 'Compact — one select per level' },
+    { value: 'pills',    label: 'Pills',     icon: 'tag',      hint: 'Fast for shallow trees (2–3 levels)' },
+    { value: 'columns',  label: 'Columns',   icon: 'grid',     hint: 'Deep trees — see context across levels' },
+    { value: 'search',   label: 'Search',    icon: 'search',   hint: 'Large trees — type to find a path' },
+];
+
+// Count leaf nodes and max depth of a cascade tree, then flag styles that
+// clearly mismatch the tree's shape.
+function cascadeFitHint(f) {
+    let leaves = 0;
+    let maxDepth = 0;
+    const walk = (nodes, depth) => {
+        for (const n of nodes || []) {
+            maxDepth = Math.max(maxDepth, depth);
+            if (n.children?.length) walk(n.children, depth + 1);
+            else leaves++;
+        }
+    };
+    walk(f.config?.cascade_tree, 1);
+    const style = f.config?.cascade_style || 'dropdown';
+    if (leaves > 30 && style !== 'search') {
+        return `This tree has ${leaves} leaf options — "Search" may be easier to navigate.`;
+    }
+    if (maxDepth >= 4 && style === 'pills') {
+        return `This tree is ${maxDepth} levels deep — pills will wrap a lot; "Columns" or "Dropdowns" may read better.`;
+    }
+    if (leaves > 0 && leaves <= 8 && style === 'search') {
+        return 'Small tree — "Pills" or "Dropdowns" are faster than typing to search.';
+    }
+    return '';
+}
+
 function typeIcon(type) {
-    const map = { text: 'text', longtext: 'textarea', dropdown: 'dropdown', checkbox: 'checkbox-icon', radio: 'radio-icon', date: 'calendar', number: 'hashtag', section: 'divider' };
+    const map = { text: 'text', longtext: 'textarea', dropdown: 'dropdown', cascade: 'flow', checkbox: 'checkbox-icon', radio: 'radio-icon', date: 'calendar', number: 'hashtag', section: 'divider' };
     return map[type] || 'list';
 }
 
@@ -446,7 +486,10 @@ function addField(type) {
     const label = type === 'section' ? 'New Section' : 'New ' + paletteTypes.find(t => t.type === type).label + ' Field';
     const config = {};
     if (['dropdown', 'radio', 'checkbox'].includes(type)) config.options = ['Option 1'];
-    if (type === 'dropdown') config.cascade_options = {};
+    if (type === 'cascade') {
+        config.cascade_style = 'dropdown';
+        config.cascade_tree = [{ label: 'Option 1', children: [] }];
+    }
     config.logic = { action: 'show', field_key: '', op: 'equals', value: '' };
 
     // Generate slug from label, with collision protection
@@ -474,27 +517,6 @@ function toggleEdit(id) {
 function addOption(f) {
     if (!f.config.options) f.config.options = [];
     f.config.options.push('Option ' + (f.config.options.length + 1));
-}
-
-function addCascadeOption(f, parentOpt) {
-    const key = f.field_key + '|' + parentOpt;
-    const val = (cascadeInput[key] || '').trim();
-    if (!val) return;
-    if (!f.config.cascade_options[parentOpt]) f.config.cascade_options[parentOpt] = [];
-    if (!f.config.cascade_options[parentOpt].includes(val)) {
-        f.config.cascade_options[parentOpt].push(val);
-    }
-    cascadeInput[key] = '';
-}
-
-function cascadeableParents(f) {
-    return fields.value.filter(x => x.id !== f.id && x.type === 'dropdown' && !x.config?.cascades_from);
-}
-
-function parentOptionsFor(f) {
-    if (!f.config?.cascades_from) return [];
-    const parent = fields.value.find(x => x.field_key === f.config.cascades_from);
-    return parent?.config?.options || [];
 }
 
 function otherFields(f) {
@@ -548,6 +570,10 @@ function saveField(f) {
                 if (!merged.config.cascade_options || Array.isArray(merged.config.cascade_options)) {
                     merged.config.cascade_options = {};
                 }
+            }
+            if (merged.type === 'cascade') {
+                if (!Array.isArray(merged.config.cascade_tree)) merged.config.cascade_tree = [];
+                if (!merged.config.cascade_style) merged.config.cascade_style = 'dropdown';
             }
             fields.value[idx] = merged;
         }

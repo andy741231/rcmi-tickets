@@ -1,33 +1,31 @@
 <template>
-    <div class="space-y-4">
-        <!-- Chain header -->
-        <div v-if="chain" class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
-            <div class="flex min-w-0 items-center gap-3">
-                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-800 text-white">
-                    <Icon name="flow" />
-                </span>
-                <div class="min-w-0">
-                    <p class="truncate text-sm font-semibold text-slate-800">{{ chain.name }}</p>
-                    <p class="mt-0.5 text-xs text-slate-500">{{ approvalSummary }}</p>
-                </div>
-            </div>
-            <span v-if="chain.on_reject" class="shrink-0 rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-inset ring-slate-200">
-                On reject: {{ chain.on_reject }}
-            </span>
-        </div>
-
-        <!-- Cycle groups -->
-        <div v-for="(group, idx) in cycleGroups" :key="group.cycle" class="space-y-4">
+    <!-- Single continuous spine: cycle steps → assignee → post-approval statuses -->
+    <ol class="relative space-y-3 border-l border-slate-200 pl-5">
+        <template v-for="group in cycleGroups" :key="group.cycle">
             <!-- Cycle divider (only show for cycle 2+) -->
-            <div v-if="group.cycle > 1" class="flex items-center gap-2 pt-2">
-                <span class="h-px flex-1 bg-gray-200"></span>
-                <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Resubmission {{ group.cycle }}</span>
-                <span class="h-px flex-1 bg-gray-200"></span>
-            </div>
+            <li v-if="group.cycle > 1" class="relative -ml-5 w-[calc(100%+1.25rem)]">
+                <div class="flex items-center gap-2 py-1 pl-5">
+                    <span class="h-px flex-1 bg-gray-200"></span>
+                    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Resubmission {{ group.cycle }}</span>
+                    <span class="h-px flex-1 bg-gray-200"></span>
+                </div>
+            </li>
+
+            <!-- Historical cycles: collapsed summary row -->
+            <li v-if="isHistoricalCycle(group) && !expandedCycles.includes(group.cycle)" class="relative">
+                <span class="absolute -left-[1.63rem] z-10 flex h-5 w-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full border-2 border-slate-300 bg-white text-slate-400 ring-4 ring-white">
+                    <Icon name="rotate-ccw" />
+                </span>
+                <button type="button" @click="expandedCycles.push(group.cycle)"
+                    class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-left text-xs text-slate-600 transition hover:border-slate-300 hover:bg-slate-100">
+                    <span class="font-semibold">{{ group.cycle === 1 ? 'First submission' : 'Resubmission ' + group.cycle }} — {{ cycleSummary(group) }}</span>
+                    <span class="ml-1 text-slate-400">Show history</span>
+                </button>
+            </li>
 
             <!-- Steps -->
-            <ol class="relative space-y-3 border-l border-slate-200 pl-5">
-                <li v-for="step in group.steps" :key="step.id" class="relative">
+            <template v-else>
+                <li v-for="(step, si) in group.steps" :key="step.id" class="relative">
                     <!-- Numbered marker: the sequence remains visible in every state. -->
                     <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-bold leading-none ring-4 ring-white',
                         step.status === 'approved' ? 'border-emerald-500 bg-emerald-500 text-white' :
@@ -49,18 +47,20 @@
                         <p class="mt-0.5 text-xs text-gray-500">
                             Approver:
                             <strong class="text-gray-700">{{ step.approver_name || step.approver_role || '—' }}</strong>
+                            <span v-if="step.status === 'pending' && waitingLabel(group, si)" class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">{{ waitingLabel(group, si) }}</span>
                         </p>
                         <p v-if="step.decided_at" class="mt-0.5 text-xs text-gray-400">
                             {{ formatDateTime(step.decided_at) }}
                             <span v-if="step.decided_by_name"> · by {{ step.decided_by_name }}</span>
+                            <span v-if="durationLabel(group, si)" class="text-slate-400"> · {{ durationLabel(group, si) }}</span>
                         </p>
                         <p v-if="step.comment" class="mt-2 rounded bg-white/70 px-2 py-1.5 text-xs text-gray-700 whitespace-pre-wrap">
                             "{{ step.comment }}"
                         </p>
                     </div>
                 </li>
-            </ol>
-        </div>
+            </template>
+        </template>
 
         <!-- Assignee row — appears below the approval steps. The assignee
              only becomes active once all approvers have approved (i.e. the
@@ -68,9 +68,7 @@
              "Waiting". After completion, it shows "Completed". Reads the
              live ticket assignee list so it stays in sync when a manager
              changes assignees from the Details card. -->
-        <div v-if="chain" class="space-y-4">
-            <ol class="relative space-y-3 border-l border-slate-200 pl-5">
-                <li class="relative">
+        <li v-if="chain" class="relative">
                     <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-white ring-4 ring-white',
                         assigneeState === 'active' ? 'bg-cyan-500 text-white' :
                         assigneeState === 'assigned' ? 'bg-indigo-500 text-white' :
@@ -79,29 +77,30 @@
                         <Icon v-else name="user-check" />
                     </span>
                     <div :class="['rounded-lg border border-l-4 bg-white px-3.5 py-3 shadow-sm', assigneeCardClass]">
-                        <div class="flex items-center justify-between gap-2">
-                            <p class="text-sm font-semibold text-slate-800">Assigned work</p>
-                            <span :class="['rcmi-timeline-status rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', assigneeStatusClass]">
-                                {{ assigneeStateLabel }}
-                            </span>
-                        </div>
+                        <p class="text-sm font-semibold" :class="assigneeState === 'waiting' ? 'text-slate-500' : 'text-slate-800'">
+                            {{ assigneeTitle }}
+                        </p>
                         <p class="mt-1 text-xs text-slate-500">
                             <span class="font-medium text-slate-600">Assignee</span>
                             <span class="mx-1 text-slate-300">·</span>
                             <strong class="text-slate-700">{{ assigneeNames || 'Unassigned' }}</strong>
                         </p>
                         <p v-if="assigneeState !== 'waiting' && assigneeSince" class="mt-0.5 text-xs text-gray-400">
-                            {{ formatDateTime(assigneeSince) }}
+                            Assigned {{ formatDateTime(assigneeSince) }}
+                        </p>
+                        <p v-if="startedEntry" class="mt-0.5 text-xs text-gray-400">
+                            Started {{ formatDateTime(startedEntry.changed_at) }}
+                            <span v-if="startedEntry.changed_by_name"> · by {{ startedEntry.changed_by_name }}</span>
+                        </p>
+                        <p v-if="completedEntry" class="mt-0.5 text-xs text-gray-400">
+                            Completed {{ formatDateTime(completedEntry.changed_at) }}
+                            <span v-if="completedEntry.changed_by_name"> · by {{ completedEntry.changed_by_name }}</span>
                         </p>
                     </div>
-                </li>
-            </ol>
-        </div>
+        </li>
 
         <!-- Post-approval status entries (In Progress, Completed, etc.) -->
-        <div v-if="postApprovalEntries.length > 0" class="space-y-4">
-            <ol class="relative space-y-3 border-l border-slate-200 pl-5">
-                <li v-for="entry in postApprovalEntries" :key="'status-' + entry.id" class="relative">
+        <li v-for="entry in postApprovalEntries" :key="'status-' + entry.id" class="relative">
                     <span :class="['absolute -left-[1.63rem] z-10 flex h-5 w-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-white ring-4 ring-white',
                         entry.new_status === 'Completed' ? 'bg-emerald-500 text-white' :
                         entry.new_status === 'In Progress' ? 'bg-cyan-500 text-white' : 'border-2 border-slate-300 text-slate-500']">
@@ -113,12 +112,7 @@
                     <div :class="['rounded-lg border border-l-4 bg-white px-3.5 py-3 shadow-sm',
                         entry.new_status === 'Completed' ? 'border-emerald-200' :
                         entry.new_status === 'In Progress' ? 'border-cyan-200' : 'border-slate-200']">
-                        <div class="flex items-center justify-between gap-2">
-                            <p class="text-sm font-semibold text-gray-800">{{ entry.new_status }}</p>
-                            <span :class="['rcmi-timeline-status rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', statusEntryClass(entry.new_status)]">
-                                {{ entry.new_status }}
-                            </span>
-                        </div>
+                        <p class="text-sm font-semibold text-gray-800">{{ statusEntryLabel(entry.new_status) }}</p>
                         <p class="mt-0.5 text-xs text-gray-500">
                             By:
                             <strong class="text-gray-700">{{ entry.changed_by_name || assigneeName(entry.changed_by) || '—' }}</strong>
@@ -130,14 +124,12 @@
                             "{{ entry.message }}"
                         </p>
                     </div>
-                </li>
-            </ol>
-        </div>
-    </div>
+        </li>
+    </ol>
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Icon from './Icon.vue';
 
 const props = defineProps({
@@ -145,7 +137,75 @@ const props = defineProps({
     chain: { type: Object, default: null },
     statusHistory: { type: Array, default: () => [] },
     assignees: { type: Array, default: () => [] },
+    startAt: { type: String, default: '' }, // ticket created_at — start of cycle 1
 });
+
+// Historical cycles are collapsed by default; expand on click.
+const expandedCycles = ref([]);
+const maxCycle = computed(() => {
+    const groups = cycleGroups.value;
+    return groups.length ? groups[groups.length - 1].cycle : 1;
+});
+function isHistoricalCycle(group) {
+    return group.cycle !== maxCycle.value;
+}
+function cycleSummary(group) {
+    const steps = group.steps || [];
+    const parts = [];
+    const approved = steps.filter(s => s.status === 'approved').length;
+    const rejected = steps.filter(s => s.status === 'rejected').length;
+    if (approved) parts.push(`${approved} approved`);
+    if (rejected) parts.push(`${rejected} rejected`);
+    return parts.join(', ') || `${steps.length} steps`;
+}
+
+// ── Step timing ──────────────────────────────────────────────────────
+// Duration between consecutive decided steps, and waiting time on the
+// pending step (since the previous decision, resubmission, or ticket
+// creation for the very first step).
+const now = Date.now();
+
+function fmtDuration(ms) {
+    const mins = Math.floor(ms / 60000);
+    if (mins < 1) return '<1m';
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d`;
+}
+
+// When this step's wait started: the previous decided step in the same
+// cycle, else the last decision of an earlier cycle, else ticket creation.
+function stepStartTime(group, idx) {
+    const steps = group.steps || [];
+    for (let i = idx - 1; i >= 0; i--) {
+        if (steps[i].decided_at) return new Date(steps[i].decided_at).getTime();
+    }
+    // First step of the cycle — look back to earlier cycles
+    for (const g of cycleGroups.value) {
+        if (g.cycle >= group.cycle) break;
+        const decided = (g.steps || []).filter(s => s.decided_at);
+        if (decided.length) return new Date(decided[decided.length - 1].decided_at).getTime();
+    }
+    return props.startAt ? new Date(props.startAt).getTime() : null;
+}
+
+function durationLabel(group, idx) {
+    const step = group.steps[idx];
+    if (!step?.decided_at) return '';
+    const start = stepStartTime(group, idx);
+    if (!start) return '';
+    return 'took ' + fmtDuration(new Date(step.decided_at).getTime() - start);
+}
+
+function waitingLabel(group, idx) {
+    const step = group.steps[idx];
+    if (step?.status !== 'pending') return '';
+    const start = stepStartTime(group, idx);
+    if (!start) return '';
+    return 'waiting ' + fmtDuration(now - start);
+}
 
 // Current assignee(s) — reads the live ticket assignee list, so it stays
 // in sync when a manager changes assignees from the Details card. The
@@ -180,8 +240,8 @@ const assigneeState = computed(() => {
     }
     return 'assigned';
 });
-const assigneeStateLabel = computed(() => {
-    return { waiting: 'Waiting', assigned: 'Project assigned', active: 'In progress', completed: 'Completed' }[assigneeState.value] || 'Waiting';
+const assigneeTitle = computed(() => {
+    return { waiting: 'Awaiting assignment', assigned: 'Project Assigned', active: 'Project In Progress', completed: 'Project Completed' }[assigneeState.value] || 'Awaiting assignment';
 });
 
 // When the work was assigned — the timestamp of the last approved action
@@ -194,25 +254,12 @@ const assigneeSince = computed(() => {
     const approved = steps.filter(s => s.status === 'approved' && s.decided_at);
     return approved.length ? approved[approved.length - 1].decided_at : null;
 });
-const assigneeStatusClass = computed(() => ({
-    waiting: 'bg-slate-100 text-slate-500',
-    assigned: 'bg-indigo-100 text-indigo-700',
-    active: 'bg-cyan-100 text-cyan-700',
-    completed: 'bg-emerald-100 text-emerald-700',
-}[assigneeState.value] || 'bg-slate-100 text-slate-500'));
 const assigneeCardClass = computed(() => ({
     waiting: 'border-slate-200',
     assigned: 'border-indigo-200',
     active: 'border-cyan-200',
     completed: 'border-emerald-200',
 }[assigneeState.value] || 'border-slate-200'));
-
-const approvalSummary = computed(() => {
-    const groups = cycleGroups.value;
-    const steps = groups.length ? groups[groups.length - 1].steps || [] : [];
-    const approved = steps.filter(step => step.status === 'approved').length;
-    return `${approved} of ${steps.length} approval${steps.length === 1 ? '' : 's'} complete`;
-});
 
 // Group steps by cycle, sorted by cycle then sort_order.
 // The latest cycle is merged with the chain's CURRENT definition so the
@@ -283,12 +330,23 @@ const cycleGroups = computed(() => {
     });
 });
 
-// Post-approval status entries: In Progress, Completed (and any other
-// non-approval-chain statuses). Approval/rejection transitions are already
-// represented by the approval step rows, so we filter those out.
+// Work lifecycle timestamps on the assignee card — pulled from the status
+// log so they carry the actor. Shown when the card reaches that state.
+const startedEntry = computed(() => {
+    if (!['active', 'completed'].includes(assigneeState.value)) return null;
+    return (props.statusHistory || []).find(e => e.new_status === 'In Progress') || null;
+});
+const completedEntry = computed(() => {
+    if (assigneeState.value !== 'completed') return null;
+    return (props.statusHistory || []).find(e => e.new_status === 'Completed') || null;
+});
+
+// Post-approval status entries. In Progress and Completed are omitted —
+// they're already represented by the assignee card's dynamic title and
+// workEntry line, so rendering them again would duplicate the card.
 const postApprovalEntries = computed(() => {
-    const approvalStatuses = ['Approved', 'Rejected', 'Rejected: Pending Revision', 'Pending Approval', 'Received'];
-    return (props.statusHistory || []).filter(e => !approvalStatuses.includes(e.new_status));
+    const skip = ['Approved', 'Rejected', 'Rejected: Pending Revision', 'Pending Approval', 'Received', 'In Progress', 'Completed'];
+    return (props.statusHistory || []).filter(e => !skip.includes(e.new_status));
 });
 
 function assigneeName(userId) {
@@ -319,11 +377,11 @@ function statusClass(s) {
         skipped: 'text-gray-500 bg-gray-100',
     }[s] || 'text-gray-600 bg-gray-100';
 }
-function statusEntryClass(s) {
+function statusEntryLabel(s) {
     return {
-        'Completed': 'text-emerald-700 bg-emerald-100',
-        'In Progress': 'text-cyan-700 bg-cyan-100',
-    }[s] || 'text-gray-600 bg-gray-100';
+        'In Progress': 'Project In Progress',
+        'Completed': 'Project Completed',
+    }[s] || s;
 }
 function formatDateTime(d) {
     if (!d) return '';
