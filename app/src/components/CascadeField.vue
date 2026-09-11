@@ -3,6 +3,9 @@
         <!-- ── Style: stacked dropdowns (one per level) ─────────────── -->
         <template v-if="style === 'dropdown'">
             <div v-for="(level, li) in levels" :key="li" class="rcmi-cascade-level">
+                <div v-if="li" class="rcmi-cascade-sep">
+                    <span v-if="path[li - 1]" class="rcmi-cascade-sep-label">under {{ path[li - 1] }}</span>
+                </div>
                 <select class="rcmi-input" :required="required && li === 0"
                     :value="activeOtherLevel === li ? OTHER : (path[li] || '')" @change="pick(li, $event.target.value)">
                     <option value="">{{ li === 0 ? 'Select…' : 'Select ' + (path[li - 1] || '').toLowerCase() + '…' }}</option>
@@ -18,7 +21,10 @@
 
         <!-- ── Style: pill tabs per level ───────────────────────────── -->
         <template v-else-if="style === 'pills'">
-            <div v-for="(level, li) in levels" :key="li">
+            <div v-for="(level, li) in levels" :key="li" class="rcmi-cascade-level">
+                <div v-if="li" class="rcmi-cascade-sep">
+                    <span v-if="path[li - 1]" class="rcmi-cascade-sep-label">under {{ path[li - 1] }}</span>
+                </div>
                 <div class="rcmi-cascade-pills">
                     <button v-for="n in level" :key="n.label" type="button"
                         class="rcmi-cascade-pill"
@@ -45,7 +51,11 @@
         <!-- ── Style: miller columns ────────────────────────────────── -->
         <template v-else-if="style === 'columns'">
             <div class="rcmi-cascade-columns">
-                <div v-for="(level, li) in levels" :key="li" class="rcmi-cascade-column">
+                <div v-for="(level, li) in levels" :key="li" class="rcmi-cascade-column"
+                    :style="{ backgroundColor: `rgba(148, 163, 184, ${Math.min(li * 0.05, 0.2)})` }">
+                    <div class="rcmi-cascade-col-head" :class="{ 'rcmi-cascade-col-head-done': path[li] }">
+                        <span class="rcmi-cascade-col-head-label">{{ li === 0 ? 'Start' : path[li - 1] }}</span>
+                    </div>
                     <button v-for="n in level" :key="n.label" type="button"
                         class="rcmi-cascade-col-item"
                         :class="{ 'rcmi-cascade-col-item-active': path[li] === n.label && activeOtherLevel !== li }"

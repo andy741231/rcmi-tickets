@@ -925,8 +925,68 @@
         gap: 0.5rem;
     }
 
+    .rcmi-cascade-level {
+        display: flex;
+        flex-direction: column;
+        gap: 0.375rem;
+    }
+
     .rcmi-cascade-level select {
         max-width: 28rem;
+    }
+
+    /* level separator: short accent tick + muted label + hairline */
+    .rcmi-cascade-sep {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.125rem;
+    }
+
+    .rcmi-cascade-sep::before {
+        content: '';
+        width: 0.875rem;
+        border-top: 2px solid var(--rcmi-border-strong);
+        border-radius: 1px;
+        flex-shrink: 0;
+    }
+
+    .rcmi-cascade-sep::after {
+        content: '';
+        flex: 1;
+        border-top: 1px solid var(--rcmi-border);
+    }
+
+    .rcmi-cascade-sep-label {
+        font-size: 0.6875rem;
+        font-weight: 600;
+        color: var(--rcmi-muted);
+        white-space: nowrap;
+    }
+
+    /* miller column headers */
+    .rcmi-cascade-col-head {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.25rem 0.5rem 0.375rem;
+        margin-bottom: 0.125rem;
+        border-bottom: 1px solid var(--rcmi-border);
+    }
+
+    .rcmi-cascade-col-head-label {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--rcmi-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .rcmi-cascade-col-head-done .rcmi-cascade-col-head-label {
+        color: var(--rcmi-red-dark);
     }
 
     .rcmi-cascade-guard {
