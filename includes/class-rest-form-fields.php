@@ -151,10 +151,14 @@ function rcmi_tickets_sanitize_cascade_tree($nodes) {
             $label = sanitize_text_field((string) ($node['label'] ?? ''));
             if ($label === '') continue;
             $count++;
-            $out[] = [
+            $item = [
                 'label'    => $label,
                 'children' => $sanitize($node['children'] ?? [], $depth + 1),
             ];
+            if (array_key_exists('visible', $node)) {
+                $item['visible'] = !empty($node['visible']);
+            }
+            $out[] = $item;
         }
         return $out;
     };

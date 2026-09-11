@@ -122,7 +122,17 @@ const emit = defineEmits(['update:modelValue']);
 const OTHER = '__other__';
 
 const style = computed(() => props.field.config?.cascade_style || 'dropdown');
-const tree = computed(() => Array.isArray(props.field.config?.cascade_tree) ? props.field.config.cascade_tree : []);
+// Hidden nodes (visible === false) are stripped from the rendered tree but
+// preserved in config, so stored answers and builder edits stay intact.
+function filterVisible(nodes) {
+    return nodes
+        .filter(n => n.visible !== false)
+        .map(n => ({ ...n, children: filterVisible(n.children || []) }));
+}
+const tree = computed(() => {
+    const raw = props.field.config?.cascade_tree;
+    return Array.isArray(raw) ? filterVisible(raw) : [];
+});
 const path = computed(() => Array.isArray(props.modelValue) ? props.modelValue : []);
 const otherEnabled = computed(() => !!props.field.config?.cascade_other);
 
