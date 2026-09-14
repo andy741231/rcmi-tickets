@@ -88,11 +88,21 @@
                         <label class="rcmi-field-label">Value</label>
                         <select v-model="chain.trigger_value" class="rcmi-input">
                             <option value="">Select value…</option>
-                            <option v-for="opt in triggerOptions" :key="opt" :value="opt">{{ opt }}</option>
+                            <template v-if="triggerTreeOptions">
+                                <option v-for="(opt, i) in triggerTreeOptions" :key="i" :value="opt.value">{{ opt.text }}</option>
+                            </template>
+                            <template v-else-if="triggerGroups">
+                                <optgroup v-for="g in triggerGroups" :key="g.parent" :label="g.parent">
+                                    <option v-for="c in g.children" :key="c" :value="c">{{ c }}</option>
+                                </optgroup>
+                            </template>
+                            <template v-else>
+                                <option v-for="opt in triggerPlainOptions" :key="opt" :value="opt">{{ opt }}</option>
+                            </template>
                         </select>
                     </div>
                 </div>
-                <p class="rcmi-field-help">If a trigger is set, this chain applies when the ticket's "{{ triggerFieldLabel }}" field equals the selected value. Otherwise it's the default chain (used when no other chain matches).</p>
+                <p class="rcmi-field-help">If a trigger is set, this chain applies when the ticket's "{{ triggerFieldLabel }}" field equals the selected value. Otherwise it's the default chain (used when no other chain matches).<template v-if="triggerTreeOptions"> Picking a parent item matches tickets that chose it or any of its sub-items.</template></p>
             </div>
 
             <!-- Steps -->
@@ -154,11 +164,11 @@
                 <p class="rcmi-field-help">The selected person is assigned when a ticket enters this approval chain (at creation). They receive the Approved notification once all steps clear, and can then start work (In Progress) and Complete.</p>
             </div>
 
-            <!-- Completion message -->
+            <!-- Completion email message -->
             <div class="rounded-md border border-gray-200 p-4">
-                <h4 class="rcmi-section-label mb-3">Completion Message</h4>
+                <h4 class="rcmi-section-label mb-3">Completion Email Message</h4>
                 <RichTextEditor v-model="chain.completion_message" />
-                <p class="rcmi-field-help mt-2">This message is included in the completion email sent to the ticket requestor. Use it to provide next steps, contact info, links, or a thank-you note specific to this approval chain. Leave blank to send a default notification.</p>
+                <p class="rcmi-field-help mt-2">Included in the <strong>email</strong> sent to the requestor when a ticket in this chain is completed. Use it for next steps, contact info, links, or a thank-you note specific to this approval chain. Leave blank to send the default notification.</p>
             </div>
 
             <!-- Save / Delete -->
@@ -211,25 +221,40 @@ const triggerFieldLabel = computed(() => {
     return f ? f.label : '';
 });
 
-const triggerOptions = computed(() => {
-    const f = formFields.value.find(f => f.field_key === chain.value?.trigger_field_key);
-    if (!f) return [];
-    // For cascade dropdowns, flatten all child options from cascade_options map
-    if (f.config?.cascade_options && typeof f.config.cascade_options === 'object' && !Array.isArray(f.config.cascade_options)) {
-        const all = new Set();
-        for (const children of Object.values(f.config.cascade_options)) {
-            if (Array.isArray(children)) children.forEach(c => all.add(c));
-        }
-        return [...all].sort();
-    }
-    // For cascade fields, flatten every label in the tree (any level can be a trigger)
-    if (f.type === 'cascade' && Array.isArray(f.config?.cascade_tree)) {
-        const all = new Set();
-        const walk = (nodes) => nodes.forEach(n => { all.add(n.label); walk(n.children || []); });
-        walk(f.config.cascade_tree);
-        return [...all].sort();
-    }
-    return f?.config?.options || [];
+const triggerField = computed(() =>
+    formFields.value.find(f => f.field_key === chain.value?.trigger_field_key));
+
+// Cascade fields: walk the tree in setup order so children render indented
+// beneath their parents. The trigger value is still just the node label —
+// the backend matches it against any segment of the ticket's stored path,
+// so picking a parent matches everything beneath it.
+const triggerTreeOptions = computed(() => {
+    const f = triggerField.value;
+    if (f?.type !== 'cascade' || !Array.isArray(f.config?.cascade_tree)) return null;
+    const out = [];
+    const walk = (nodes, depth) => nodes.forEach(n => {
+        const indent = depth ? '\u00A0\u00A0\u00A0\u00A0'.repeat(depth) + '└ ' : '';
+        out.push({ value: n.label, text: indent + n.label + (n.visible === false ? ' (hidden)' : '') });
+        walk(n.children || [], depth + 1);
+    });
+    walk(f.config.cascade_tree, 0);
+    return out.length ? out : null;
+});
+
+// Dropdowns that cascade from another field: cascade_options is a
+// parent-value => [children] map, shown as one optgroup per parent.
+const triggerGroups = computed(() => {
+    const co = triggerField.value?.config?.cascade_options;
+    if (!co || typeof co !== 'object' || Array.isArray(co)) return null;
+    const groups = Object.entries(co)
+        .filter(([, children]) => Array.isArray(children) && children.length)
+        .map(([parent, children]) => ({ parent, children }));
+    return groups.length ? groups : null;
+});
+
+const triggerPlainOptions = computed(() => {
+    if (triggerTreeOptions.value || triggerGroups.value) return [];
+    return triggerField.value?.config?.options || [];
 });
 
 function snapshotChain() {

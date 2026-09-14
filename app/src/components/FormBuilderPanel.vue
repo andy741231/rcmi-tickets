@@ -18,30 +18,19 @@
             <aside class="rcmi-formbuilder-sidebar">
                 <!-- Public submission settings -->
                 <div class="rcmi-card p-4">
-                    <details>
-                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">Public Submissions</summary>
-                        <p class="mt-2 text-xs text-gray-500">Allow people without a UH account to submit tickets anonymously.</p>
-                        <div class="mt-3 space-y-3">
-                            <label class="flex items-center gap-2 text-sm text-gray-700">
-                                <input v-model="allowPublic" type="checkbox" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
-                                <span>Allow public submissions</span>
-                            </label>
-                            <p class="text-xs text-gray-500">When off (default), /create asks visitors to sign in with UH SSO and the public API rejects anonymous submissions. Existing public tickets stay viewable via their links.</p>
-                            <div class="flex items-center gap-2">
-                                <button @click="saveSuccessMessage" :disabled="savingSuccess"
-                                    class="rcmi-button-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50">
-                                    <Icon name="save" /> {{ savingSuccess ? 'Saving…' : 'Save' }}
-                                </button>
-                            </div>
-                        </div>
-                    </details>
-                </div>
-                <!-- Public success message editor -->
-                <div class="rcmi-card p-4">
-                    <details>
-                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">Public Success Message</summary>
-                        <p class="mt-2 text-xs text-gray-500">Shown to external users after they submit a ticket.</p>
-                        <div class="mt-3 space-y-3">
+                    <p class="rcmi-section-label mb-2">Public Submissions</p>
+                    <p class="text-xs text-gray-500">Allow people without a UH account to submit tickets anonymously.</p>
+                    <div class="mt-3 space-y-3">
+                        <label class="flex items-center gap-2 text-sm text-gray-700">
+                            <input v-model="allowPublic" type="checkbox" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                            <span>Allow public submissions</span>
+                        </label>
+                        <p class="text-xs text-gray-500">When off (default), /create asks visitors to sign in with UH SSO and the public API rejects anonymous submissions. Existing public tickets stay viewable via their links.</p>
+                    </div>
+                    <div class="mt-4 border-t border-gray-100 pt-4">
+                        <p class="rcmi-field-label mb-1">Submission confirmation (on-screen)</p>
+                        <p class="text-xs text-gray-500 mb-3">Shown to the guest right after they submit — not an email.</p>
+                        <div class="space-y-3">
                             <div>
                                 <label class="rcmi-field-label">Heading</label>
                                 <input v-model="successConfig.heading" class="rcmi-input" placeholder="Thank you for your submission" />
@@ -50,15 +39,15 @@
                                 <label class="rcmi-field-label">Message</label>
                                 <textarea v-model="successConfig.message" rows="3" class="rcmi-input" placeholder="Your ticket has been submitted. A confirmation has been sent to your email."></textarea>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <button @click="saveSuccessMessage" :disabled="savingSuccess"
-                                    class="rcmi-button-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50">
-                                    <Icon name="save" /> {{ savingSuccess ? 'Saving…' : 'Save' }}
-                                </button>
-                                <button @click="resetSuccessMessage" class="rcmi-button-ghost px-2 py-1.5 text-xs">Reset to default</button>
-                            </div>
                         </div>
-                    </details>
+                    </div>
+                    <div class="mt-4 flex items-center gap-2">
+                        <button @click="saveSuccessMessage" :disabled="savingSuccess"
+                            class="rcmi-button-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50">
+                            <Icon name="save" /> {{ savingSuccess ? 'Saving…' : 'Save' }}
+                        </button>
+                        <button @click="resetSuccessMessage" class="rcmi-button-ghost px-2 py-1.5 text-xs">Reset message to default</button>
+                    </div>
                 </div>
                 <div class="rcmi-card p-4">
                     <p class="rcmi-section-label mb-3">Add field</p>
