@@ -188,6 +188,10 @@ function rcmi_tickets_enqueue_app() {
         'apiBase'  => esc_url_raw(home_url('/wp-json/rcmi/v1')),
         'nonce'    => wp_create_nonce('wp_rest'),
         'loginUrl' => wp_login_url(get_permalink()),
+        // Standard WP logout — runs the OIDC plugin's logout_redirect
+        // filter so the browser passes through the Entra end_session
+        // endpoint and the Microsoft session is ended too.
+        'logoutUrl' => wp_logout_url(get_permalink()),
         'isLoggedIn' => is_user_logged_in(),
         'ajaxUrl'  => admin_url('admin-ajax.php'),
         'appUrl'   => get_permalink(),
@@ -254,18 +258,6 @@ function rcmi_tickets_ajax_reset() {
     // Always return a generic success message — don't leak whether
     // the account exists (security best practice).
     wp_send_json_success(['message' => 'If an account exists for that email/username, a reset link has been sent.']);
-}
-
-// ============================================================
-// AJAX LOGOUT — destroy the session and return success so the SPA
-// can redirect to the in-app login page (not wp-login.php).
-// ============================================================
-add_action('wp_ajax_rcmi_tickets_ajax_logout', 'rcmi_tickets_ajax_logout');
-
-function rcmi_tickets_ajax_logout() {
-    check_ajax_referer('wp_rest', 'nonce');
-    wp_logout();
-    wp_send_json_success(['message' => 'Logged out.']);
 }
 
 add_filter('script_loader_tag', 'rcmi_tickets_module_script', 10, 3);

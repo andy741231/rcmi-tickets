@@ -80,26 +80,12 @@ async function loadMeta() {
     }
 }
 
-async function handleLogout() {
+function handleLogout() {
     loggingOut.value = true;
-    try {
-        const formData = new FormData();
-        formData.append('action', 'rcmi_tickets_ajax_logout');
-        formData.append('nonce', config.nonce);
-        await fetch(config.ajaxUrl || '/wp-admin/admin-ajax.php', {
-            method: 'POST',
-            body: formData,
-            credentials: 'same-origin',
-        });
-    } catch (e) {
-        // proceed to redirect even if the AJAX call fails
-    }
-    // Force a full page reload so PHP re-evaluates is_user_logged_in()
-    // and the SPA re-initializes in public mode. The public guard will
-    // redirect to /login?redirect=<currentPath>.
-    // Use window.location.reload() to guarantee a fresh page load, then
-    // the hash stays the same so the guard can pick up the redirect target.
-    window.location.reload();
+    // Full navigation through wp-login.php?action=logout so the OIDC
+    // plugin's logout_redirect filter sends the browser through the
+    // Entra end_session endpoint — ending the Microsoft session too.
+    window.location.href = config.logoutUrl || '/wp-login.php?action=logout';
 }
 
 onMounted(loadMeta);

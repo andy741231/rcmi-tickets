@@ -17,8 +17,14 @@
             </router-link>
         </div>
 
+        <!-- Loading state until meta resolves (avoids flashing the form
+             before we know whether public submissions are closed) -->
+        <div v-if="!metaLoaded && !error" class="rcmi-card p-8 text-center">
+            <p class="text-sm text-gray-500">Loading…</p>
+        </div>
+
         <!-- Success message (public mode) -->
-        <div v-if="publicSuccess" class="rcmi-card p-8 text-center">
+        <div v-else-if="publicSuccess" class="rcmi-card p-8 text-center">
             <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-teal-100">
                 <Icon name="check" />
             </div>
@@ -124,6 +130,7 @@ const toast = useToast();
 const meta = reactive({ priorities: [], tags: [], assignable_users: [], caps: {}, form_fields: [], allowed_mime_types: [] });
 const submitting = ref(false);
 const error = ref('');
+const metaLoaded = ref(false);
 const uploadProgress = ref('');
 const publicSuccess = ref(false);
 const publicSuccessMessage = ref('');
@@ -152,6 +159,7 @@ async function loadMeta() {
         const data = await api(path);
         Object.assign(meta, data);
         staged.allowedMimes = data.allowed_mime_types || [];
+        metaLoaded.value = true;
     } catch (e) {
         error.value = 'Failed to load form data.';
     }
