@@ -6,9 +6,9 @@ const state = reactive({
 
 let nextId = 1;
 
-function addToast(message, type = 'info', timeout = 4000) {
+function addToast(message, type = 'info', timeout = 4000, action = null) {
     const id = nextId++;
-    state.toasts.push({ id, message, type });
+    state.toasts.push({ id, message, type, action });
     if (timeout > 0 && type !== 'error') {
         setTimeout(() => dismiss(id), timeout);
     }
@@ -27,6 +27,7 @@ export function useToast() {
         error:   (msg) => addToast(msg, 'error', 0),
         warning: (msg, timeout) => addToast(msg, 'warning', timeout ?? 5000),
         info:    (msg, timeout) => addToast(msg, 'info', timeout ?? 4000),
+        action:  (msg, label, fn, timeout) => addToast(msg, 'info', timeout ?? 8000, { label, fn }),
         dismiss,
     };
 }

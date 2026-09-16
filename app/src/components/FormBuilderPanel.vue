@@ -55,6 +55,16 @@
                         <p class="text-xs text-gray-500">{{ fields.length }} field{{ fields.length === 1 ? '' : 's' }} · {{ searchQuery ? 'Clear search to reorder' : 'Drag the handle to reorder' }}</p>
                     </div>
                     <div class="rcmi-formbuilder-toolbar">
+                        <div class="flex items-center" role="group" aria-label="Undo and redo">
+                            <button type="button" class="rcmi-button-ghost p-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                                :disabled="!canUndo" @click="undo" title="Undo (Ctrl+Z)" aria-label="Undo">
+                                <Icon name="rotate-ccw" />
+                            </button>
+                            <button type="button" class="rcmi-button-ghost p-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                                :disabled="!canRedo" @click="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
+                                <Icon name="rotate-cw" />
+                            </button>
+                        </div>
                         <label class="rcmi-formbuilder-search">
                             <span class="sr-only">Search fields</span>
                             <Icon name="search" />
@@ -261,7 +271,7 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, watch } from 'vue';
+import { computed, ref, reactive, watch, onMounted, onUnmounted } from 'vue';
 import { api } from '../api.js';
 import Icon from './Icon.vue';
 import CascadeTreeEditor from './CascadeTreeEditor.vue';
@@ -300,22 +310,29 @@ const paletteTypes = [
     { type: 'section',   label: 'Section',     icon: 'divider' },
 ];
 
+function normalizeField(f) {
+    if (!f.config) f.config = {};
+    if (!f.config.logic) f.config.logic = { action: 'show', field_key: '', op: 'equals', value: '' };
+    if (['dropdown', 'radio', 'checkbox'].includes(f.type) && !f.config.options) f.config.options = [];
+    if (f.type === 'dropdown') {
+        // Ensure cascade_options is always a plain object ({}), never an
+        // array ([]). PHP's empty array serializes to JSON [] which loses
+        // string-keyed properties on JSON.stringify in JS.
+        if (!f.config.cascade_options || Array.isArray(f.config.cascade_options)) f.config.cascade_options = {};
+    }
+    if (f.type === 'cascade') {
+        if (!Array.isArray(f.config.cascade_tree)) f.config.cascade_tree = [];
+        if (!f.config.cascade_style) f.config.cascade_style = 'dropdown';
+    }
+    return f;
+}
+
 // Sync local fields when the page data loads (flush:'pre' guarantees
 // config.logic exists before the template accesses it).
 watch(() => props.initialFields, (nextFields) => {
-    fields.value = JSON.parse(JSON.stringify(nextFields || []));
-    for (const f of fields.value) {
-        if (!f.config) f.config = {};
-        if (!f.config.logic) f.config.logic = { action: 'show', field_key: '', op: 'equals', value: '' };
-        if (['dropdown', 'radio', 'checkbox'].includes(f.type) && !f.config.options) f.config.options = [];
-        if (f.type === 'dropdown') {
-            if (!f.config.cascade_options || Array.isArray(f.config.cascade_options)) f.config.cascade_options = {};
-        }
-        if (f.type === 'cascade') {
-            if (!Array.isArray(f.config.cascade_tree)) f.config.cascade_tree = [];
-            if (!f.config.cascade_style) f.config.cascade_style = 'dropdown';
-        }
-    }
+    const cloned = JSON.parse(JSON.stringify(nextFields || []));
+    cloned.forEach(normalizeField);
+    fields.value = cloned;
     editingId.value = null;
 }, { immediate: true, flush: 'pre' });
 
@@ -429,6 +446,99 @@ function toggleAllGroups() {
     collapsedGroups.value = allGroupsCollapsed.value ? [] : [...groupIds.value];
 }
 
+// ── Undo/redo (in-session command history; server stays source of truth) ──
+const HISTORY_LIMIT = 50;
+const history = ref([]);
+const historyIndex = ref(-1);
+const canUndo = computed(() => historyIndex.value >= 0);
+const canRedo = computed(() => historyIndex.value < history.value.length - 1);
+const editSnapshots = reactive({}); // field id => deep clone captured when its editor opened
+
+function pushHistory(cmd) {
+    history.value = history.value.slice(0, historyIndex.value + 1);
+    history.value.push(cmd);
+    if (history.value.length > HISTORY_LIMIT) history.value.shift();
+    historyIndex.value = history.value.length - 1;
+}
+
+let historyBusy = false; // an in-flight undo/redo must finish before the next can capture the cursor
+
+async function undo() {
+    const cmd = history.value[historyIndex.value];
+    if (!cmd || historyBusy) return;
+    historyBusy = true;
+    try {
+        await cmd.undo();
+        historyIndex.value--;
+    } catch (e) {
+        toast.error(e.message || 'Undo failed');
+    } finally {
+        historyBusy = false;
+    }
+}
+
+async function redo() {
+    const cmd = history.value[historyIndex.value + 1];
+    if (!cmd || historyBusy) return;
+    historyBusy = true;
+    try {
+        await cmd.redo();
+        historyIndex.value++;
+    } catch (e) {
+        toast.error(e.message || 'Redo failed');
+    } finally {
+        historyBusy = false;
+    }
+}
+
+function removeFieldLocal(id) {
+    fields.value = fields.value.filter(x => x.id !== id);
+    if (editingId.value === id) editingId.value = null;
+}
+
+function insertFieldLocal(field, idx = fields.value.length) {
+    fields.value.splice(Math.min(idx, fields.value.length), 0, field);
+}
+
+function orderFieldsByIds(ids) {
+    const map = new Map(fields.value.map(x => [x.id, x]));
+    fields.value = ids.map(id => map.get(id)).filter(Boolean)
+        .concat(fields.value.filter(x => !ids.includes(x.id)));
+}
+
+// The exact body PUT /form-fields/{id} and POST /form-fields accept.
+function buildFieldPayload(f) {
+    const config = { ...f.config };
+    if (config.logic && !config.logic.field_key) delete config.logic;
+    if (config.cascades_from === '') delete config.cascades_from;
+    if (config.cascade_options && Object.keys(config.cascade_options).length === 0) delete config.cascade_options;
+    if (!config.allow_other) delete config.allow_other;
+    return { label: f.label, field_key: f.field_key, type: f.type, required: f.required, config };
+}
+
+// PUT a snapshot back — used by undo/redo of field saves.
+async function putFieldSnapshot(snapshot) {
+    const updated = await api('/form-fields/' + snapshot.id, { method: 'PUT', body: buildFieldPayload(snapshot) });
+    const idx = fields.value.findIndex(x => x.id === snapshot.id);
+    const merged = normalizeField({ ...(idx >= 0 ? fields.value[idx] : {}), ...updated });
+    if (idx >= 0) fields.value[idx] = merged; else insertFieldLocal(merged);
+}
+
+function onHistoryKeydown(e) {
+    const tag = e.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return;
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT' || active.isContentEditable)) return;
+    if (document.querySelector('.rcmi-modal-root')) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+}
+
+onMounted(() => window.addEventListener('keydown', onHistoryKeydown));
+onUnmounted(() => window.removeEventListener('keydown', onHistoryKeydown));
+
 function autoKey(f) {
     // Always derive key from label (slugified). Add suffix if collision.
     const base = (f.label || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 50) || 'field';
@@ -462,14 +572,46 @@ function addField(type) {
         method: 'POST',
         body: { label, field_key, type, required: false, config },
     }).then((created) => {
-        fields.value.push(created);
+        fields.value.push(normalizeField(created));
         editingId.value = created.id;
+        const cell = { id: created.id };
+        pushHistory({
+            label: 'Add field',
+            undo: async () => {
+                // The row may have been re-created under a new id by an
+                // intervening delete+undo — resolve by field_key, which is
+                // unique and survives re-creation.
+                const current = fields.value.find(x => x.field_key === field_key);
+                const targetId = current ? current.id : cell.id;
+                try {
+                    await api('/form-fields/' + targetId, { method: 'DELETE' });
+                } catch (err) {
+                    if (current) throw err; // already gone server-side = goal achieved
+                }
+                removeFieldLocal(targetId);
+            },
+            redo: async () => {
+                const again = normalizeField(await api('/form-fields', {
+                    method: 'POST',
+                    body: { label, field_key, type, required: false, config },
+                }));
+                cell.id = again.id;
+                fields.value.push(again);
+            },
+        });
         toast.success('Field added');
     }).catch((e) => toast.error(e.message || 'Failed to add field'));
 }
 
 function toggleEdit(id) {
-    editingId.value = editingId.value === id ? null : id;
+    const opening = editingId.value !== id;
+    editingId.value = opening ? id : null;
+    if (opening) {
+        const f = fields.value.find(x => x.id === id);
+        if (f) editSnapshots[id] = JSON.parse(JSON.stringify(f));
+    } else {
+        delete editSnapshots[id];
+    }
 }
 
 function addOption(f) {
@@ -493,48 +635,26 @@ function saveField(f) {
         return;
     }
     saving.value = f.id;
-    // Clean config: drop empty logic if no field_key
-    const config = { ...f.config };
-    if (config.logic && !config.logic.field_key) delete config.logic;
-    if (config.cascades_from === '') delete config.cascades_from;
-    if (config.cascade_options && Object.keys(config.cascade_options).length === 0) delete config.cascade_options;
-    if (!config.allow_other) delete config.allow_other;
+    const before = editSnapshots[f.id] ? JSON.parse(JSON.stringify(editSnapshots[f.id])) : null;
 
     api('/form-fields/' + f.id, {
         method: 'PUT',
-        body: {
-            label: f.label,
-            field_key: f.field_key,
-            type: f.type,
-            required: f.required,
-            config,
-        },
+        body: buildFieldPayload(f),
     }).then((updated) => {
         const idx = fields.value.findIndex(x => x.id === f.id);
         if (idx >= 0) {
             // Preserve the current position; merge server response but
             // keep local config.logic if the server stripped the empty one
-            const merged = { ...fields.value[idx], ...updated };
-            if (!merged.config) merged.config = {};
-            if (!merged.config.logic) {
-                merged.config.logic = { action: 'show', field_key: '', op: 'equals', value: '' };
-            }
-            if (['dropdown', 'radio', 'checkbox'].includes(merged.type) && !merged.config.options) {
-                merged.config.options = [];
-            }
-            if (merged.type === 'dropdown') {
-                // Ensure cascade_options is always a plain object ({}), never an
-                // array ([]). PHP's empty array serializes to JSON [] which loses
-                // string-keyed properties on JSON.stringify in JS.
-                if (!merged.config.cascade_options || Array.isArray(merged.config.cascade_options)) {
-                    merged.config.cascade_options = {};
-                }
-            }
-            if (merged.type === 'cascade') {
-                if (!Array.isArray(merged.config.cascade_tree)) merged.config.cascade_tree = [];
-                if (!merged.config.cascade_style) merged.config.cascade_style = 'dropdown';
-            }
-            fields.value[idx] = merged;
+            fields.value[idx] = normalizeField({ ...fields.value[idx], ...updated });
+        }
+        delete editSnapshots[f.id];
+        if (before && idx >= 0) {
+            const after = JSON.parse(JSON.stringify(fields.value[idx]));
+            pushHistory({
+                label: 'Save field',
+                undo: () => putFieldSnapshot(before),
+                redo: () => putFieldSnapshot(after),
+            });
         }
         toast.success('Field saved');
     }).catch((e) => {
@@ -549,12 +669,55 @@ function saveField(f) {
       .finally(() => { saving.value = null; });
 }
 
+// Delete is delayed by the undo window — the API call only fires once the
+// toast expires, so undoing in time never touches submitted answers.
+const DELETE_UNDO_MS = 8000;
+
 function deleteField(id) {
-    if (!confirm('Delete this field? Submitted answers will also be removed.')) return;
-    api('/form-fields/' + id, { method: 'DELETE' }).then(() => {
-        fields.value = fields.value.filter(f => f.id !== id);
-        toast.success('Field deleted');
-    }).catch((e) => toast.error(e.message || 'Failed to delete field'));
+    const idx = fields.value.findIndex(x => x.id === id);
+    if (idx < 0) return;
+    const field = fields.value[idx];
+    const snapshot = JSON.parse(JSON.stringify(field));
+    fields.value.splice(idx, 1);
+    if (editingId.value === id) editingId.value = null;
+
+    let committed = false;
+    let timer = null;
+    const cell = { id };
+    const schedule = () => {
+        timer = setTimeout(() => {
+            committed = true;
+            api('/form-fields/' + cell.id, { method: 'DELETE' })
+                .catch(e => toast.error(e.message || 'Failed to delete field'));
+        }, DELETE_UNDO_MS);
+    };
+    schedule();
+
+    pushHistory({
+        label: 'Delete field',
+        undo: async () => {
+            if (!committed) {
+                clearTimeout(timer);
+                insertFieldLocal(field, idx);
+                return;
+            }
+            // Already deleted server-side — restore the definition by re-creating
+            // it (same label/key/config; previously submitted answers stay gone).
+            const recreated = normalizeField(await api('/form-fields', { method: 'POST', body: buildFieldPayload(snapshot) }));
+            cell.id = recreated.id;
+            insertFieldLocal(recreated, idx);
+        },
+        redo: async () => {
+            if (!committed) {
+                removeFieldLocal(cell.id);
+                schedule();
+                return;
+            }
+            await api('/form-fields/' + cell.id, { method: 'DELETE' });
+            removeFieldLocal(cell.id);
+        },
+    });
+    toast.action(`Deleted "${field.label || 'field'}"`, 'Undo', undo, DELETE_UNDO_MS);
 }
 
 // Drag-and-drop reorder (only the grip handle is draggable)
@@ -578,15 +741,28 @@ function onDrop(targetIdx, side) {
     let insertAt = side === 'below' ? targetIdx + 1 : targetIdx;
     if (from < insertAt) insertAt -= 1;
     if (from === insertAt) return;
+    const beforeIds = fields.value.map(f => f.id);
     const moved = fields.value.splice(from, 1)[0];
     fields.value.splice(insertAt, 0, moved);
+    const afterIds = fields.value.map(f => f.id);
     dragIdx.value = null;
     // Persist reorder
     api('/form-fields/reorder', {
         method: 'PUT',
-        body: { ids: fields.value.map(f => f.id) },
+        body: { ids: afterIds },
     }).then(() => {
         emit('updated');
+        pushHistory({
+            label: 'Reorder fields',
+            undo: async () => {
+                await api('/form-fields/reorder', { method: 'PUT', body: { ids: beforeIds } });
+                orderFieldsByIds(beforeIds);
+            },
+            redo: async () => {
+                await api('/form-fields/reorder', { method: 'PUT', body: { ids: afterIds } });
+                orderFieldsByIds(afterIds);
+            },
+        });
         toast.success('Order saved');
     }).catch((e) => toast.error(e.message || 'Failed to reorder'));
 }

@@ -10,6 +10,10 @@
                         <Icon :name="iconFor(toast.type)" />
                     </span>
                     <p class="flex-1 text-sm font-medium">{{ toast.message }}</p>
+                    <button v-if="toast.action" @click="toast.action.fn(); dismiss(toast.id)"
+                        class="flex-shrink-0 rounded px-2 py-0.5 text-sm font-semibold underline underline-offset-2 hover:opacity-80">
+                        {{ toast.action.label }}
+                    </button>
                     <button @click="dismiss(toast.id)" class="flex-shrink-0 rounded p-0.5 opacity-70 hover:opacity-100" aria-label="Dismiss notification">
                         <Icon name="x" />
                     </button>
