@@ -354,6 +354,51 @@
         color: var(--rcmi-red);
     }
 
+    .rcmi-nav-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        min-width: 10.5rem;
+        padding: 0.25rem;
+        background: var(--rcmi-surface);
+        border: 1px solid var(--rcmi-border);
+        border-radius: var(--rcmi-radius-md);
+        box-shadow: var(--rcmi-shadow-md);
+    }
+
+    .rcmi-nav-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--rcmi-muted);
+        text-decoration: none;
+        border-radius: var(--rcmi-radius-sm);
+    }
+
+    .rcmi-nav-menu-item:hover {
+        background: var(--rcmi-bg);
+        color: var(--rcmi-ink);
+    }
+
+    .rcmi-nav-menu-item-active {
+        background: var(--rcmi-red-soft);
+        color: var(--rcmi-red);
+    }
+
+    .rcmi-nav-caret {
+        transition: transform 150ms ease;
+    }
+
+    .rcmi-nav-caret-open {
+        transform: rotate(180deg);
+    }
+
     .rcmi-nav-badge {
         display: inline-flex;
         align-items: center;

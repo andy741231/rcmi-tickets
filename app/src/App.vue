@@ -26,15 +26,25 @@
                         <Icon name="bell" /> Approvals
                         <span v-if="pendingCount > 0" class="rcmi-nav-badge">{{ pendingCount }}</span>
                     </router-link>
-                    <router-link v-if="meta.caps.manage" to="/approval-edit" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
-                        <Icon name="flow" /> Chains
-                    </router-link>
-                    <router-link v-if="meta.caps.manage" to="/tag-rules" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
-                        <Icon name="tag" /> Tag Rules
-                    </router-link>
-                    <router-link v-if="meta.caps.manage" to="/messages" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
-                        <Icon name="inbox" /> Messages
-                    </router-link>
+                    <div v-if="meta.caps.manage" ref="settingsRoot" class="relative">
+                        <button type="button" class="rcmi-nav-link" :class="{ 'rcmi-nav-link-active': settingsActive }"
+                            aria-haspopup="true" :aria-expanded="settingsOpen"
+                            @click="settingsOpen = !settingsOpen" @keydown.escape="closeSettings">
+                            <Icon name="settings" /> Settings
+                            <Icon name="chevron-down" class="rcmi-nav-caret" :class="{ 'rcmi-nav-caret-open': settingsOpen }" />
+                        </button>
+                        <div v-if="settingsOpen" class="rcmi-nav-menu" role="menu" aria-label="Settings" @keydown.escape="closeSettings(true)">
+                            <router-link to="/approval-edit" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
+                                <Icon name="flow" /> Chains
+                            </router-link>
+                            <router-link to="/tag-rules" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
+                                <Icon name="tag" /> Tag Rules
+                            </router-link>
+                            <router-link to="/messages" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
+                                <Icon name="inbox" /> Messages
+                            </router-link>
+                        </div>
+                    </div>
                     <router-link v-if="meta.caps.manage" to="/ticket-heaven" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
                         <Icon name="archive" /> Ticket Heaven
                     </router-link>
@@ -58,8 +68,8 @@
 </template>
 
 <script setup>
-import { reactive, onMounted, ref, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { reactive, onMounted, onUnmounted, ref, computed, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { api } from './api.js';
 import Toast from './components/Toast.vue';
 import Icon from './components/Icon.vue';
@@ -67,10 +77,27 @@ import Icon from './components/Icon.vue';
 const config = window.rcmiTickets || {};
 const isPublic = computed(() => !config.isLoggedIn);
 const router = useRouter();
+const route = useRoute();
 
 const meta = reactive({ caps: {} });
 const pendingCount = ref(0);
 const loggingOut = ref(false);
+
+const SETTINGS_PATHS = ['/approval-edit', '/tag-rules', '/messages'];
+const settingsOpen = ref(false);
+const settingsRoot = ref(null);
+const settingsActive = computed(() => SETTINGS_PATHS.some((p) => route.path.startsWith(p)));
+
+function closeSettings(refocus = false) {
+    settingsOpen.value = false;
+    if (refocus) settingsRoot.value?.querySelector('button')?.focus();
+}
+
+function onDocumentClick(e) {
+    if (settingsRoot.value && !settingsRoot.value.contains(e.target)) settingsOpen.value = false;
+}
+
+watch(() => route.path, () => { settingsOpen.value = false; });
 
 async function loadMeta() {
     if (isPublic.value) return; // public mode doesn't need full meta
@@ -91,5 +118,12 @@ function handleLogout() {
     window.location.href = config.logoutUrl || '/wp-login.php?action=logout';
 }
 
-onMounted(loadMeta);
+onMounted(() => {
+    loadMeta();
+    document.addEventListener('click', onDocumentClick);
+});
+
+onUnmounted(() => {
+    document.removeEventListener('click', onDocumentClick);
+});
 </script>
