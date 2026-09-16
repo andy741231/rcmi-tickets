@@ -41,6 +41,11 @@ function rcmi_tickets_email_ticket_url($ticket_id) {
  * @return bool
  */
 function rcmi_tickets_send_email($to, $subject, $html, $plain = '') {
+    if (!empty($GLOBALS['rcmi_tickets_email_dry_run'])) {
+        $GLOBALS['rcmi_tickets_email_captured'][] = compact('to', 'subject', 'html', 'plain');
+        return true;
+    }
+
     $headers = [
         'MIME-Version: 1.0',
         'Content-Type: text/html; charset=UTF-8',

@@ -32,6 +32,13 @@ function rcmi_tickets_register_meta_route() {
             'permission_callback' => 'rcmi_tickets_perm_settings',
         ],
     ]);
+
+    // Rendered previews of every automated email (dry-run — never sends)
+    register_rest_route('rcmi/v1', '/settings/email-previews', [
+        'methods'             => 'GET',
+        'callback'            => 'rcmi_tickets_handle_email_previews',
+        'permission_callback' => 'rcmi_tickets_perm_settings',
+    ]);
 }
 add_action('rest_api_init', 'rcmi_tickets_register_meta_route');
 
@@ -266,4 +273,114 @@ function rcmi_tickets_handle_meta() {
         'public_success'   => rcmi_tickets_get_success_message(),
         'allow_public_submit' => rcmi_tickets_public_submissions_enabled(),
     ], 200);
+}
+
+// ============================================================
+// Email previews — render the real templates without sending
+// ============================================================
+
+/**
+ * Run an email function with wp_mail captured instead of sent.
+ * Returns the captured payloads: [{to, subject, html, plain}].
+ */
+function rcmi_tickets_email_preview_collect(callable $fn) {
+    $GLOBALS['rcmi_tickets_email_dry_run']  = true;
+    $GLOBALS['rcmi_tickets_email_captured'] = [];
+    try {
+        $fn();
+    } catch (\Throwable $e) {
+        // Preview failures degrade to "unavailable" — never fatal.
+    }
+    unset($GLOBALS['rcmi_tickets_email_dry_run']);
+    $captured = $GLOBALS['rcmi_tickets_email_captured'] ?? [];
+    unset($GLOBALS['rcmi_tickets_email_captured']);
+    return $captured;
+}
+
+/**
+ * GET /rcmi/v1/settings/email-previews
+ * Renders every automated email against the latest ticket (or
+ * ?ticket_id=) so managers can see exactly what goes out.
+ */
+function rcmi_tickets_handle_email_previews(WP_REST_Request $request) {
+    global $wpdb;
+    $ticket_id = absint($request->get_param('ticket_id'));
+    if (!$ticket_id) {
+        $ticket_id = (int) $wpdb->get_var("SELECT id FROM {$wpdb->prefix}rcmi_tickets ORDER BY id DESC LIMIT 1");
+    }
+    $ticket = $ticket_id ? rcmi_tickets_load_ticket($ticket_id) : null;
+
+    $me        = get_current_user_id();
+    $assignees = $ticket && !empty($ticket['assignee_ids']) ? array_map('intval', (array) $ticket['assignee_ids']) : [$me];
+    $author    = $ticket && !empty($ticket['author_id']) ? (int) $ticket['author_id'] : $me;
+
+    $defs = [];
+    if ($ticket) {
+        $defs['ticket_created']    = function () use ($ticket_id, $author, $assignees) { rcmi_tickets_email_ticket_created($ticket_id, $author, $assignees); };
+        $defs['submitter_receipt'] = function () use ($ticket_id, $author, $assignees) { rcmi_tickets_email_submitter_receipt($ticket_id, $author, $assignees); };
+        $defs['public_receipt']    = function () use ($ticket) { rcmi_tickets_email_public_receipt((int) $ticket['id'], 'Jane Doe', 'submitter@example.com', (string) $ticket['title']); };
+        $defs['due_date_changed']  = function () use ($ticket_id) { rcmi_tickets_email_due_date_changed($ticket_id, gmdate('Y-m-d'), gmdate('Y-m-d', strtotime('+7 days'))); };
+        $defs['assignees_changed'] = function () use ($ticket_id, $assignees) { rcmi_tickets_email_assignees_changed($ticket_id, $assignees, []); };
+        $defs['status_approved']   = function () use ($ticket_id) { rcmi_tickets_email_status_changed($ticket_id, 'Approved', 'Pending Approval', null); };
+        $defs['status_completed']  = function () use ($ticket_id) { rcmi_tickets_email_status_changed($ticket_id, 'Completed', 'In Progress', null); };
+        $defs['approval_rejected'] = function () use ($ticket_id) { rcmi_tickets_email_approval_rejected($ticket_id, 'restart', 'Please revise the scope and resubmit — a few details are missing.'); };
+
+        // Mention preview needs a real comment for the excerpt, and the shared
+        // guest account must already exist — the mailer would otherwise create
+        // it, and a preview must not mutate state.
+        $comment = $wpdb->get_row("SELECT id, ticket_id, user_id FROM {$wpdb->prefix}rcmi_ticket_comments ORDER BY id DESC LIMIT 1", ARRAY_A);
+        if ($comment && get_user_by('login', 'guest_submitter')) {
+            $defs['mention'] = function () use ($comment, $me) {
+                rcmi_tickets_email_mentions((int) $comment['id'], (int) $comment['ticket_id'], (int) $comment['user_id'], [$me]);
+            };
+        }
+
+        // Approval-needed email needs a pending approval row to render.
+        $approval = $wpdb->get_row("SELECT id, ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE status = 'pending' ORDER BY id DESC LIMIT 1", ARRAY_A);
+        if ($approval) {
+            $defs['approval_step'] = function () use ($approval) {
+                rcmi_tickets_email_approval_step((int) $approval['ticket_id'], (int) $approval['id'], 'chain_started');
+            };
+        }
+    }
+
+    $unavailable_notes = [
+        'mention'       => 'Needs a ticket comment and an existing guest submitter account to preview.',
+        'approval_step' => 'Needs a pending approval step to preview.',
+    ];
+    $all_keys = ['ticket_created', 'submitter_receipt', 'public_receipt', 'approval_step', 'approval_rejected', 'status_approved', 'status_completed', 'due_date_changed', 'assignees_changed', 'mention'];
+    $previews = [];
+    foreach ($all_keys as $key) {
+        if (!isset($defs[$key])) {
+            $previews[$key] = [
+                'available' => false,
+                'note'      => $ticket
+                    ? ($unavailable_notes[$key] ?? 'Not available for this ticket.')
+                    : 'Create a ticket first to preview this email.',
+            ];
+            continue;
+        }
+        $captured = rcmi_tickets_email_preview_collect($defs[$key]);
+        if (!$captured) {
+            $previews[$key] = [
+                'available' => false,
+                'note'      => 'This email would not be sent for the selected ticket (no matching recipients).',
+            ];
+            continue;
+        }
+        $mail = $captured[0];
+        $previews[$key] = [
+            'available' => true,
+            'subject'   => (string) $mail['subject'],
+            'to'        => array_values(array_map('strval', (array) $mail['to'])),
+            'html'      => (string) $mail['html'],
+            'plain'     => (string) $mail['plain'],
+            'sent'      => count($captured),
+        ];
+    }
+
+    return rest_ensure_response([
+        'ticket_id' => $ticket_id,
+        'previews'  => $previews,
+    ]);
 }

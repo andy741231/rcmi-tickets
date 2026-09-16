@@ -19,7 +19,7 @@
         <div v-else-if="error" class="rcmi-card p-8 text-center text-sm text-red-700">{{ error }}</div>
 
         <template v-else>
-            <div class="grid gap-5 xl:grid-cols-2">
+            <div class="grid grid-cols-1 gap-5 xl:grid-cols-2">
                 <!-- Public submissions settings -->
                 <div class="rcmi-card p-5">
                     <p class="rcmi-section-label mb-2">Public Submissions</p>
@@ -83,20 +83,67 @@
                             <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
                                 <th class="pb-2 pr-4 font-semibold">Notification</th>
                                 <th class="pb-2 pr-4 font-semibold">Sent when</th>
-                                <th class="pb-2 font-semibold">Goes to</th>
+                                <th class="pb-2 pr-4 font-semibold">Goes to</th>
+                                <th class="pb-2 text-right font-semibold">Preview</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
-                            <tr v-for="n in emailNotifications" :key="n.name">
+                            <tr v-for="n in emailNotifications" :key="n.key">
                                 <td class="py-2.5 pr-4 font-medium text-gray-800">{{ n.name }}</td>
                                 <td class="py-2.5 pr-4 text-gray-600">{{ n.when }}</td>
-                                <td class="py-2.5 text-gray-600">{{ n.to }}</td>
+                                <td class="py-2.5 pr-4 text-gray-600">{{ n.to }}</td>
+                                <td class="py-2.5 text-right">
+                                    <button @click="openPreview(n)" class="rcmi-button-ghost inline-flex items-center gap-1 px-2 py-1 text-xs">
+                                        <Icon name="eye" /> Preview
+                                    </button>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
         </template>
+
+        <!-- Email preview modal -->
+        <Modal v-if="previewModal" :title="previewModal.name" wide @close="previewModal = null">
+            <div class="space-y-3">
+                <p class="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
+                    <Icon name="eye" /> Preview only — rendered from real ticket data, nothing was sent.
+                </p>
+
+                <div v-if="previewLoading" class="py-10 text-center text-sm text-gray-500">Rendering preview…</div>
+
+                <template v-else-if="previewData">
+                    <template v-if="previewData.available">
+                        <dl class="space-y-1 border-b border-gray-100 pb-3 text-sm">
+                            <div class="flex gap-2">
+                                <dt class="w-14 shrink-0 font-medium text-gray-500">Subject</dt>
+                                <dd class="font-semibold text-gray-900">{{ previewData.subject }}</dd>
+                            </div>
+                            <div class="flex gap-2">
+                                <dt class="w-14 shrink-0 font-medium text-gray-500">To</dt>
+                                <dd class="text-gray-700">{{ previewData.to.join(', ') }}</dd>
+                            </div>
+                        </dl>
+                        <p v-if="previewData.sent > 1" class="text-xs text-gray-500">
+                            This notification sends {{ previewData.sent }} separate emails (one per recipient group); showing the first.
+                        </p>
+                        <div class="flex gap-1 border-b border-gray-200" role="tablist" aria-label="Preview format">
+                            <button v-for="t in ['rendered', 'plain']" :key="t" role="tab" :aria-selected="previewTab === t"
+                                @click="previewTab = t"
+                                class="px-3 py-1.5 text-xs font-medium"
+                                :class="previewTab === t ? 'border-b-2 border-red-700 text-red-800' : 'text-gray-500 hover:text-gray-700'">
+                                {{ t === 'rendered' ? 'HTML email' : 'Plain text' }}
+                            </button>
+                        </div>
+                        <iframe v-if="previewTab === 'rendered'" :srcdoc="previewData.html" sandbox
+                            title="Rendered email preview" class="h-[26rem] w-full rounded-md border border-gray-200 bg-white"></iframe>
+                        <pre v-else class="max-h-[26rem] overflow-auto whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800">{{ previewData.plain || '(no plain-text version)' }}</pre>
+                    </template>
+                    <p v-else class="py-6 text-center text-sm text-gray-500">{{ previewData.note }}</p>
+                </template>
+            </div>
+        </Modal>
     </div>
 </template>
 
@@ -104,6 +151,7 @@
 import { reactive, ref, onMounted } from 'vue';
 import { api } from '../api.js';
 import Icon from '../components/Icon.vue';
+import Modal from '../components/Modal.vue';
 import { useToast } from '../composables/useToast.js';
 
 const toast = useToast();
@@ -120,16 +168,42 @@ const saving = ref(false);
 const error = ref('');
 
 const emailNotifications = [
-    { name: 'New ticket assigned', when: 'A ticket is created with assignees', to: 'The assignees' },
-    { name: 'Submission receipt', when: 'Any ticket is submitted', to: 'The submitter (guests: the email they entered)' },
-    { name: 'Approval needed', when: 'A ticket reaches an approval step', to: "That step's approvers" },
-    { name: 'Approval decision', when: 'An approver approves or rejects', to: 'The submitter (includes the reviewer\u2019s comment)' },
-    { name: 'Status changed', when: 'A ticket is approved or completed', to: 'Approved \u2192 assignees; Completed \u2192 submitter' },
-    { name: 'Due date changed', when: 'Someone edits the due date', to: 'Submitter + assignees' },
-    { name: 'New assignee', when: 'Someone is added as an assignee', to: 'The newly added assignees' },
-    { name: 'Mention', when: 'Someone @mentions a user in a comment', to: 'The mentioned users' },
-    { name: 'Completion message', when: 'Included in the Completed email', to: 'Set per approval chain in the Chains editor' },
+    { key: 'ticket_created', name: 'New ticket assigned', when: 'A ticket is created with assignees', to: 'The assignees' },
+    { key: 'submitter_receipt', name: 'Submission receipt', when: 'A signed-in user submits a ticket', to: 'The submitter' },
+    { key: 'public_receipt', name: 'Public submission receipt', when: 'An anonymous guest submits a ticket', to: 'The email address they entered' },
+    { key: 'approval_step', name: 'Approval needed', when: 'A ticket reaches an approval step', to: "That step's approvers" },
+    { key: 'approval_rejected', name: 'Approval rejected', when: 'An approver rejects the ticket', to: 'The submitter (includes the reviewer\u2019s comment)' },
+    { key: 'status_approved', name: 'Status: Approved', when: 'A ticket is approved', to: 'The assignees' },
+    { key: 'status_completed', name: 'Status: Completed', when: 'A ticket is completed', to: 'The submitter (includes the chain completion message when set)' },
+    { key: 'due_date_changed', name: 'Due date changed', when: 'Someone edits the due date', to: 'Submitter + assignees' },
+    { key: 'assignees_changed', name: 'New assignee', when: 'Someone is added as an assignee', to: 'The newly added assignees' },
+    { key: 'mention', name: 'Mention', when: 'Someone @mentions a user in a comment', to: 'The mentioned users' },
 ];
+
+const previews = ref(null);
+const previewLoading = ref(false);
+const previewModal = ref(null);
+const previewData = ref(null);
+const previewTab = ref('rendered');
+
+async function openPreview(n) {
+    previewModal.value = n;
+    previewData.value = null;
+    previewTab.value = 'rendered';
+    if (!previews.value) {
+        previewLoading.value = true;
+        try {
+            const data = await api('/settings/email-previews');
+            previews.value = data.previews || {};
+        } catch (e) {
+            toast.error(e.message || 'Failed to load email previews');
+            previews.value = {};
+        } finally {
+            previewLoading.value = false;
+        }
+    }
+    previewData.value = previews.value[n.key] || { available: false, note: 'Preview is not available for this email.' };
+}
 
 async function load() {
     try {

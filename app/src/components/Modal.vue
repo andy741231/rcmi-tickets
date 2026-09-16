@@ -5,7 +5,7 @@
             <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="onScrimClick"></div>
 
             <!-- Panel -->
-            <div ref="panel" class="rcmi-modal-panel relative w-full max-w-md rounded-xl bg-white shadow-2xl" @click.stop>
+            <div ref="panel" class="rcmi-modal-panel relative w-full rounded-xl bg-white shadow-2xl" :class="wide ? 'max-w-3xl' : 'max-w-md'" @click.stop>
                 <!-- Header -->
                 <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4">
                     <h3 class="text-base font-semibold text-gray-900">{{ title }}</h3>
@@ -35,6 +35,7 @@ import Icon from './Icon.vue';
 const props = defineProps({
     title: { type: String, default: '' },
     closeOnScrim: { type: Boolean, default: true },
+    wide: { type: Boolean, default: false },
 });
 const emit = defineEmits(['close']);
 
