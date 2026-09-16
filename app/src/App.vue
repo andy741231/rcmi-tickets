@@ -26,6 +26,9 @@
                         <Icon name="bell" /> Approvals
                         <span v-if="pendingCount > 0" class="rcmi-nav-badge">{{ pendingCount }}</span>
                     </router-link>
+                    <router-link v-if="meta.caps.manage" to="/ticket-heaven" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
+                        <Icon name="archive" /> Ticket Heaven
+                    </router-link>
                     <div v-if="meta.caps.manage" ref="settingsRoot" class="relative">
                         <button type="button" class="rcmi-nav-link" :class="{ 'rcmi-nav-link-active': settingsActive }"
                             aria-haspopup="true" :aria-expanded="settingsOpen"
@@ -45,9 +48,6 @@
                             </router-link>
                         </div>
                     </div>
-                    <router-link v-if="meta.caps.manage" to="/ticket-heaven" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
-                        <Icon name="archive" /> Ticket Heaven
-                    </router-link>
                     <router-link to="/create" class="rcmi-button-primary inline-flex items-center gap-1.5 px-4 py-2 text-sm shadow-sm">
                         <Icon name="plus" /> New Ticket
                     </router-link>
