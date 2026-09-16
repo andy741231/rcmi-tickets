@@ -77,13 +77,20 @@
                     <p v-else-if="dateHint(f)" class="rcmi-field-help">{{ dateHint(f) }}</p>
                 </template>
 
-                <!-- dropdown (with optional cascading) -->
-                <select v-else-if="f.type === 'dropdown'" :id="'field-' + f.field_key"
-                    v-model="answers[f.field_key]" :required="f.required" class="rcmi-input"
-                    :disabled="f.config?.cascades_from && !answers[f.config.cascades_from]">
-                    <option value="">{{ f.config?.cascades_from ? 'Select ' + f.label.toLowerCase() + '…' : 'Select…' }}</option>
-                    <option v-for="opt in dropdownOptions(f)" :key="opt" :value="opt">{{ opt }}</option>
-                </select>
+                <!-- dropdown (with optional cascading + "Other" free-text) -->
+                <template v-else-if="f.type === 'dropdown'">
+                    <select :id="'field-' + f.field_key"
+                        :value="dropdownSelectValue(f)" :required="f.required" class="rcmi-input"
+                        :disabled="f.config?.cascades_from && !answers[f.config.cascades_from]"
+                        @change="onDropdownChange(f, $event.target.value)">
+                        <option value="">{{ f.config?.cascades_from ? 'Select ' + f.label.toLowerCase() + '…' : 'Select…' }}</option>
+                        <option v-for="opt in dropdownOptions(f)" :key="opt" :value="opt">{{ opt }}</option>
+                        <option v-if="f.config?.allow_other" :value="DROPDOWN_OTHER">Other (specify…)</option>
+                    </select>
+                    <input v-if="dropdownIsOther(f)" type="text"
+                        v-model="answers[f.field_key]" class="rcmi-input mt-2"
+                        placeholder="Type your answer…" :required="f.required" />
+                </template>
                 <p v-if="f.config?.cascades_from && !answers[f.config.cascades_from]"
                     class="rcmi-field-help">Select "{{ parentFieldLabel(f.config.cascades_from) }}" first.</p>
 
@@ -147,6 +154,12 @@ const answers = computed({
     set: (val) => emit('update:modelValue', val),
 });
 
+// "Other" free-text support for dropdowns. OTHER is a UI-only sentinel —
+// the typed text itself is stored as the answer (same as CascadeField).
+const DROPDOWN_OTHER = '__other__';
+// field_key => true while the user has Other selected but hasn't typed yet
+const dropdownOther = ref({});
+
 // Ensure every field has an entry in answers
 watch(normalizedFields, (fields) => {
     if (!fields) return;
@@ -159,6 +172,7 @@ watch(normalizedFields, (fields) => {
             changed = true;
         }
     }
+    dropdownOther.value = {};
     if (changed) emit('update:modelValue', a);
 }, { immediate: true });
 
@@ -203,6 +217,27 @@ function dropdownOptions(field) {
         return config.cascade_options[parentVal] || [];
     }
     return config.options || [];
+}
+
+function dropdownIsOther(f) {
+    if (!f.config?.allow_other) return false;
+    if (dropdownOther.value[f.field_key]) return true;
+    const v = answers.value[f.field_key];
+    return Boolean(v) && !dropdownOptions(f).includes(v);
+}
+
+function dropdownSelectValue(f) {
+    return dropdownIsOther(f) ? DROPDOWN_OTHER : (answers.value[f.field_key] || '');
+}
+
+function onDropdownChange(f, val) {
+    if (val === DROPDOWN_OTHER) {
+        dropdownOther.value = { ...dropdownOther.value, [f.field_key]: true };
+        answers.value[f.field_key] = '';
+        return;
+    }
+    dropdownOther.value = { ...dropdownOther.value, [f.field_key]: false };
+    answers.value[f.field_key] = val;
 }
 
 // Compute min date for date fields with min_days config
@@ -272,7 +307,7 @@ function validateDate(field) {
 watch(answers, (a) => {
     if (!normalizedFields.value) return;
     for (const f of normalizedFields.value) {
-        if (f.type === 'dropdown' && f.config?.cascades_from) {
+        if (f.type === 'dropdown' && f.config?.cascades_from && !f.config?.allow_other) {
             const parentVal = a[f.config.cascades_from];
             const validChildren = (f.config?.cascade_options || {})[parentVal] || [];
             if (a[f.field_key] && !validChildren.includes(a[f.field_key])) {

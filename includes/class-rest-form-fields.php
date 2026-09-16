@@ -18,6 +18,7 @@
  *     logic: { field_key, op, value, action: 'show'|'hide' },
  *     cascades_from: "<field_key>",  // dropdown only
  *     cascade_options: { "<parent_value>": ["Sub A","Sub B"] },
+ *     allow_other: true,             // dropdown only — appends an "Other" free-text option
  *     cascade_tree: [{ label, children: [...] }], // cascade type: nested tree, any depth
  *     cascade_style: "dropdown"|"pills"|"columns"|"search"
  *   }
@@ -42,7 +43,7 @@ function rcmi_tickets_allowed_config_keys($type) {
     $map = [
         'text'      => array_merge($common, ['placeholder']),
         'longtext'  => array_merge($common, ['placeholder']),
-        'dropdown'  => array_merge($common, ['options', 'cascades_from', 'cascade_options']),
+        'dropdown'  => array_merge($common, ['options', 'cascades_from', 'cascade_options', 'allow_other']),
         'checkbox'  => array_merge($common, ['options']),
         'radio'     => array_merge($common, ['options']),
         'date'      => array_merge($common, ['min_days', 'include_weekend']),
@@ -114,6 +115,7 @@ function rcmi_tickets_validate_field_config($config, $type) {
                 $clean[$k] = is_numeric($v) ? 0 + $v : null;
                 break;
             case 'include_weekend':
+            case 'allow_other':
                 $clean[$k] = !empty($v);
                 break;
             case 'logic':

@@ -160,6 +160,10 @@
                                         <button @click="addOption(f)" class="rcmi-button-secondary mt-2 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs">
                                             <Icon name="plus" /> Add option
                                         </button>
+                                        <label v-if="f.type === 'dropdown'" class="mt-2 inline-flex items-center gap-2 text-sm text-gray-700">
+                                            <input type="checkbox" v-model="f.config.allow_other" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                                            Allow "Other" — add a free-text option to the list
+                                        </label>
                                     </div>
 
                                     <!-- Cascade tree (cascade type only) -->
@@ -529,6 +533,7 @@ function saveField(f) {
     if (config.logic && !config.logic.field_key) delete config.logic;
     if (config.cascades_from === '') delete config.cascades_from;
     if (config.cascade_options && Object.keys(config.cascade_options).length === 0) delete config.cascade_options;
+    if (!config.allow_other) delete config.allow_other;
 
     api('/form-fields/' + f.id, {
         method: 'PUT',

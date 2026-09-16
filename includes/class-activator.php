@@ -2,7 +2,7 @@
 /**
  * Database schema for RCMI Tickets.
  *
- * Creates the 7 custom tables defined in ticket-plan.md §3 via dbDelta.
+ * Creates the custom tables owned by the plugin via dbDelta.
  * Versioned via the `rcmi_tickets_db_version` option so schema upgrades
  * re-run dbDelta when the version constant is bumped.
  */
@@ -20,7 +20,7 @@ if (!defined('RCMI_TICKETS_DB_VERSION')) {
 }
 
 /**
- * Build the dbDelta statements for all 7 tables.
+ * Build the dbDelta statements for all plugin tables.
  *
  * dbDelta is picky: each statement on its own line, two spaces after
  * PRIMARY KEY, lowercase `key` in index clauses, no trailing commas in

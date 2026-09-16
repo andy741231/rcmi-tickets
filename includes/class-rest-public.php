@@ -647,6 +647,9 @@ function rcmi_tickets_save_public_attachment($ticket_id, $file, $guest_user_id) 
     }
 
     $dir = rcmi_tickets_upload_dir($ticket_id);
+    if (is_wp_error($dir)) {
+        return $dir;
+    }
     $filename = rcmi_tickets_random_filename($original_name);
     $dest = trailingslashit($dir['path']) . $filename;
 

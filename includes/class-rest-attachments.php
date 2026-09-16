@@ -93,20 +93,58 @@ add_action('rest_api_init', 'rcmi_tickets_register_attachment_routes');
 // ── helpers ──────────────────────────────────────────────────────────
 
 /**
+ * Get the root directory for protected ticket uploads.
+ *
+ * @return string
+ */
+function rcmi_tickets_upload_root() {
+    $manifest = rcmi_tickets_data_manifest();
+    return trailingslashit(WP_CONTENT_DIR) . $manifest['upload_directory'];
+}
+
+function rcmi_tickets_upload_protection_files() {
+    return [
+        'index.php' => "<?php\nexit;\n",
+        '.htaccess' => "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Deny from all\n</IfModule>\n",
+        'web.config' => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<configuration>\n    <system.webServer>\n        <security>\n            <requestFiltering>\n                <hiddenSegments>\n                    <remove segment=\"rcmi-tickets\" />\n                    <add segment=\"rcmi-tickets\" />\n                </hiddenSegments>\n            </requestFiltering>\n        </security>\n    </system.webServer>\n</configuration>\n",
+    ];
+}
+
+function rcmi_tickets_ensure_upload_protection() {
+    $root = rcmi_tickets_upload_root();
+    if (!is_dir($root) && !wp_mkdir_p($root)) {
+        return false;
+    }
+
+    foreach (rcmi_tickets_upload_protection_files() as $filename => $contents) {
+        $path = trailingslashit($root) . $filename;
+        $current = file_exists($path) ? @file_get_contents($path) : false;
+        if ($current !== $contents && false === @file_put_contents($path, $contents, LOCK_EX)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+add_action('init', 'rcmi_tickets_ensure_upload_protection');
+
+/**
  * Get the upload directory for a ticket (creates it if missing).
  *
  * @param int $ticket_id
- * @return array ['path' => absolute path, 'url' => public URL]
+ * @return array|WP_Error ['path' => absolute path]
  */
 function rcmi_tickets_upload_dir($ticket_id) {
-    $base = trailingslashit(WP_CONTENT_DIR) . 'uploads/rcmi-tickets/' . (int) $ticket_id;
-    if (!is_dir($base)) {
-        wp_mkdir_p($base);
+    if (!rcmi_tickets_ensure_upload_protection()) {
+        return new WP_Error('rcmi_tickets_upload_unprotected', 'Secure upload storage is unavailable.', ['status' => 500]);
     }
-    return [
-        'path' => $base,
-        'url'  => content_url('uploads/rcmi-tickets/' . (int) $ticket_id),
-    ];
+
+    $base = trailingslashit(rcmi_tickets_upload_root()) . (int) $ticket_id;
+    if (!is_dir($base) && !wp_mkdir_p($base)) {
+        return new WP_Error('rcmi_tickets_upload_directory_failed', 'Failed to create the ticket upload directory.', ['status' => 500]);
+    }
+
+    return ['path' => $base];
 }
 
 /**
@@ -152,7 +190,7 @@ function rcmi_tickets_load_attachment($id) {
  */
 function rcmi_tickets_attachment_path($attachment) {
     $ticket_id = $attachment['ticket_id'] ?: 0;
-    return trailingslashit(WP_CONTENT_DIR) . 'uploads/rcmi-tickets/' . $ticket_id . '/' . $attachment['file_path'];
+    return trailingslashit(rcmi_tickets_upload_root()) . $ticket_id . '/' . $attachment['file_path'];
 }
 
 /**
@@ -244,6 +282,17 @@ function rcmi_tickets_perm_attachment_download($request) {
         return new WP_Error('rcmi_tickets_not_found', 'Ticket not found.', ['status' => 404]);
     }
 
+    $token = (string) $request->get_param('token');
+    if ($token !== '') {
+        $validated = rcmi_tickets_validate_view_token($ticket_id, $token);
+        if (!is_wp_error($validated)) {
+            return true;
+        }
+        if (!get_current_user_id()) {
+            return $validated;
+        }
+    }
+
     return rcmi_tickets_can(get_current_user_id(), 'view', $ticket);
 }
 
@@ -328,6 +377,9 @@ function rcmi_tickets_save_one_attachment($ticket_id, $file) {
     }
 
     $dir = rcmi_tickets_upload_dir($ticket_id);
+    if (is_wp_error($dir)) {
+        return $dir;
+    }
     $filename = rcmi_tickets_random_filename($original_name);
     $dest = trailingslashit($dir['path']) . $filename;
 

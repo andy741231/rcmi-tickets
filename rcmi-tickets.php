@@ -22,6 +22,7 @@ define('RCMI_TICKETS_URL', plugin_dir_url(__FILE__));
 $rcmi_tickets_includes = [
     'includes/class-roles.php',
     'includes/class-permissions.php',
+    'includes/class-data-lifecycle.php',
     'includes/class-activator.php',
     'includes/class-deactivator.php',
     'includes/class-rest-tickets.php',
