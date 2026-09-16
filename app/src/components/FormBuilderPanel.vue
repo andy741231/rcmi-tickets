@@ -16,38 +16,19 @@
         </header>
         <div class="rcmi-formbuilder-workspace">
             <aside class="rcmi-formbuilder-sidebar">
-                <!-- Public submission settings -->
+                <!-- Public submissions status — editing lives on the Messages page -->
                 <div class="rcmi-card p-4">
                     <p class="rcmi-section-label mb-2">Public Submissions</p>
-                    <p class="text-xs text-gray-500">Allow people without a UH account to submit tickets anonymously.</p>
-                    <div class="mt-3 space-y-3">
-                        <label class="flex items-center gap-2 text-sm text-gray-700">
-                            <input v-model="allowPublic" type="checkbox" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
-                            <span>Allow public submissions</span>
-                        </label>
-                        <p class="text-xs text-gray-500">When off (default), /create asks visitors to sign in with UH SSO and the public API rejects anonymous submissions. Existing public tickets stay viewable via their links.</p>
-                    </div>
-                    <div class="mt-4 border-t border-gray-100 pt-4">
-                        <p class="rcmi-field-label mb-1">Submission confirmation (on-screen)</p>
-                        <p class="text-xs text-gray-500 mb-3">Shown to the guest right after they submit — not an email.</p>
-                        <div class="space-y-3">
-                            <div>
-                                <label class="rcmi-field-label">Heading</label>
-                                <input v-model="successConfig.heading" class="rcmi-input" placeholder="Thank you for your submission" />
-                            </div>
-                            <div>
-                                <label class="rcmi-field-label">Message</label>
-                                <textarea v-model="successConfig.message" rows="3" class="rcmi-input" placeholder="Your ticket has been submitted. A confirmation has been sent to your email."></textarea>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mt-4 flex items-center gap-2">
-                        <button @click="saveSuccessMessage" :disabled="savingSuccess"
-                            class="rcmi-button-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50">
-                            <Icon name="save" /> {{ savingSuccess ? 'Saving…' : 'Save' }}
-                        </button>
-                        <button @click="resetSuccessMessage" class="rcmi-button-ghost px-2 py-1.5 text-xs">Reset message to default</button>
-                    </div>
+                    <p class="text-xs text-gray-500">Let people without a UH account submit tickets anonymously.</p>
+                    <p class="mt-3">
+                        <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
+                            :class="allowPublic ? 'bg-teal-100 text-teal-800' : 'bg-gray-100 text-gray-600'">
+                            {{ allowPublic ? 'Enabled' : 'Disabled' }}
+                        </span>
+                    </p>
+                    <router-link to="/messages" class="rcmi-button-secondary mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs">
+                        <Icon name="inbox" /> Manage messages &amp; settings
+                    </router-link>
                 </div>
                 <div class="rcmi-card p-4">
                     <p class="rcmi-section-label mb-3">Add field</p>
@@ -289,7 +270,6 @@ import { useToast } from '../composables/useToast.js';
 
 const props = defineProps({
     initialFields: { type: Array, default: () => [] },
-    initialSuccess: { type: Object, default: () => ({ heading: '', message: '' }) },
     initialAllowPublic: { type: Boolean, default: false },
 });
 const emit = defineEmits(['updated']);
@@ -305,17 +285,8 @@ const searchQuery = ref('');
 const previewAnswers = reactive({}); // field id => cascade preview path
 const collapsedGroups = ref([]);
 
-// Public success message editor
-const successConfig = reactive({ heading: '', message: '' });
-const savingSuccess = ref(false);
-
-// Public submissions toggle (SSO-only policy: off by default)
+// Public submissions status badge (edited on the Messages page)
 const allowPublic = ref(false);
-
-const DEFAULT_SUCCESS = {
-    heading: 'Thank you for your submission',
-    message: 'Your ticket has been submitted. A confirmation has been sent to your email.',
-};
 
 const paletteTypes = [
     { type: 'text',      label: 'Text',        icon: 'text' },
@@ -347,12 +318,6 @@ watch(() => props.initialFields, (nextFields) => {
     }
     editingId.value = null;
 }, { immediate: true, flush: 'pre' });
-
-// Sync success message from parent when meta loads
-watch(() => props.initialSuccess, (next) => {
-    successConfig.heading = next?.heading || DEFAULT_SUCCESS.heading;
-    successConfig.message = next?.message || DEFAULT_SUCCESS.message;
-}, { immediate: true });
 
 // Sync public submissions toggle from parent when meta loads
 watch(() => props.initialAllowPublic, (next) => {
@@ -590,34 +555,6 @@ function deleteField(id) {
         fields.value = fields.value.filter(f => f.id !== id);
         toast.success('Field deleted');
     }).catch((e) => toast.error(e.message || 'Failed to delete field'));
-}
-
-// Public success message save / reset (also persists the public
-// submissions toggle — both live in the same settings option group)
-async function saveSuccessMessage() {
-    savingSuccess.value = true;
-    try {
-        const updated = await api('/settings', {
-            method: 'PUT',
-            body: {
-                public_success: { heading: successConfig.heading, message: successConfig.message },
-                allow_public_submit: allowPublic.value,
-            },
-        });
-        successConfig.heading = updated.public_success.heading;
-        successConfig.message = updated.public_success.message;
-        allowPublic.value = !!updated.allow_public_submit;
-        toast.success('Settings saved');
-    } catch (e) {
-        toast.error(e.message || 'Failed to save settings');
-    } finally {
-        savingSuccess.value = false;
-    }
-}
-
-function resetSuccessMessage() {
-    successConfig.heading = DEFAULT_SUCCESS.heading;
-    successConfig.message = DEFAULT_SUCCESS.message;
 }
 
 // Drag-and-drop reorder (only the grip handle is draggable)

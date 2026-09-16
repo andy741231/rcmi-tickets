@@ -32,6 +32,9 @@
                     <router-link v-if="meta.caps.manage" to="/tag-rules" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
                         <Icon name="tag" /> Tag Rules
                     </router-link>
+                    <router-link v-if="meta.caps.manage" to="/messages" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
+                        <Icon name="inbox" /> Messages
+                    </router-link>
                     <router-link v-if="meta.caps.manage" to="/ticket-heaven" class="rcmi-nav-link" active-class="rcmi-nav-link-active">
                         <Icon name="archive" /> Ticket Heaven
                     </router-link>

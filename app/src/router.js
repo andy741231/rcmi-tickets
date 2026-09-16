@@ -7,6 +7,7 @@ import ApprovalCenter from './pages/ApprovalCenter.vue';
 import ApprovalChainList from './pages/ApprovalChainList.vue';
 import ApprovalChainEditor from './pages/ApprovalChainEditor.vue';
 import FormBuilderPage from './pages/FormBuilderPage.vue';
+import MessagesPage from './pages/MessagesPage.vue';
 import TagRulesPage from './pages/TagRulesPage.vue';
 import TicketHeaven from './pages/TicketHeaven.vue';
 import LoginPage from './pages/LoginPage.vue';
@@ -25,6 +26,7 @@ export const routes = [
     { path: '/approval-edit', name: 'approval-chain-list', component: ApprovalChainList },
     { path: '/approval-edit/:id', name: 'approval-chain-editor', component: ApprovalChainEditor, props: true },
     { path: '/form-builder', name: 'form-builder', component: FormBuilderPage },
+    { path: '/messages', name: 'messages', component: MessagesPage },
     { path: '/tag-rules', name: 'tag-rules', component: TagRulesPage },
     { path: '/ticket-heaven', name: 'ticket-heaven', component: TicketHeaven },
     { path: '/login', name: 'login', component: LoginPage },
