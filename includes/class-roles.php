@@ -71,11 +71,35 @@ function rcmi_tickets_sso_grant_ticket_user($user) {
     if ($user->has_cap('manage_options') || $user->has_cap('edit_posts')) {
         return;
     }
-    if (array_intersect(['rcmi_ticket_user', 'rcmi_ticket_manager'], (array) $user->roles)) {
-        return;
+    if (!array_intersect(['rcmi_ticket_user', 'rcmi_ticket_manager'], (array) $user->roles)) {
+        $user->add_role('rcmi_ticket_user');
     }
-    $user->add_role('rcmi_ticket_user');
+    rcmi_tickets_remove_default_role($user);
 }
+
+/**
+ * Drop the site's auto-assigned default role (usually Subscriber) once a
+ * ticket role is in place — wp_insert_user adds it at creation, but the
+ * ticket user role already carries the 'read' cap it provides.
+ */
+function rcmi_tickets_remove_default_role($user) {
+    $default_role = get_option('default_role', 'subscriber');
+    if ($default_role && $default_role !== 'rcmi_ticket_user' && in_array($default_role, (array) $user->roles, true)) {
+        $user->remove_role($default_role);
+    }
+}
+
+/**
+ * Create SSO users with the ticket role directly so they never receive
+ * the default role in the first place. Only applies when nothing else
+ * has set a role on the pending user.
+ */
+add_filter('openid-connect-generic-alter-user-data', function ($user_data, $user_claim) {
+    if (empty($user_data['role'])) {
+        $user_data['role'] = 'rcmi_ticket_user';
+    }
+    return $user_data;
+}, 10, 2);
 
 /**
  * Keep pure ticket users out of wp-admin. Users who also have content
