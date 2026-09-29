@@ -330,5 +330,180 @@ export function useConfetti() {
         rafId = requestAnimationFrame(animate);
     }
 
-    return { burst, fireworks };
+    /**
+     * Ticket-submitted celebration: balloons float up while confetti cannons
+     * fire from both bottom corners, with gold curly streamers mixed in.
+     *
+     * @param {object} opts
+     * @param {number} opts.duration — total duration in ms (default 4200)
+     * @param {string} opts.text     — headline (default 'Ticket submitted!')
+     */
+    function submitted(opts = {}) {
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+
+        const duration = opts.duration ?? 4200;
+        const text = opts.text ?? 'Ticket submitted!';
+        const textColor = opts.textColor ?? '#c8102e';
+
+        const { canvas, ctx, resize } = createCanvas();
+        const textOverlay = text ? createTextOverlay(text, textColor, duration) : null;
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+
+        const CONFETTI = ['#c8102e', '#00B388', '#fbbf24', '#ffffff', '#d1d5db', '#f472b6'];
+        const BALLOONS = ['#f5f5f5', '#00B388', '#c8102e', '#fbbf24'];
+
+        const pieces = [];
+        function fire(originX, dir, count) {
+            for (let i = 0; i < count; i++) {
+                const angle = -Math.PI / 2 + dir * (0.15 + Math.random() * 0.5);
+                const speed = 12 + Math.random() * 12;
+                pieces.push({
+                    x: originX,
+                    y: h + 10,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    gravity: 0.22 + Math.random() * 0.1,
+                    size: 6 + Math.random() * 7,
+                    color: Math.random() < 0.25 ? '#fbbf24' : CONFETTI[Math.floor(Math.random() * CONFETTI.length)],
+                    shape: Math.random() < 0.2 ? 'ribbon' : 'rect',
+                    rotation: Math.random() * Math.PI * 2,
+                    rotationSpeed: (Math.random() - 0.5) * 0.3,
+                    wobble: Math.random() * Math.PI * 2,
+                });
+            }
+        }
+        // Two volleys per side
+        fire(0, 1, 55);
+        fire(w, -1, 55);
+        const volleyTimer = setTimeout(() => { fire(0, 1, 40); fire(w, -1, 40); }, 450);
+
+        const balloons = [];
+        const balloonCount = w < 640 ? 6 : 10;
+        for (let i = 0; i < balloonCount; i++) {
+            balloons.push({
+                x: w * (0.06 + (i / (balloonCount - 1)) * 0.88) + (Math.random() - 0.5) * 40,
+                y: h + 80 + Math.random() * 120,
+                delay: Math.random() * 600,
+                vy: 2 + Math.random() * 1.6,
+                r: 26 + Math.random() * 14,
+                color: BALLOONS[i % BALLOONS.length],
+                phase: Math.random() * Math.PI * 2,
+                sway: 0.02 + Math.random() * 0.02,
+            });
+        }
+
+        function drawBalloon(b, alpha) {
+            const rx = b.r * 0.85;
+            const ry = b.r * 1.05;
+            const swayX = Math.sin(b.phase) * 14;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.translate(b.x + swayX, b.y);
+
+            // String
+            ctx.strokeStyle = 'rgba(107,114,128,0.7)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(0, ry + 6);
+            ctx.bezierCurveTo(-8, ry + 30, 8, ry + 55, -swayX * 0.4, ry + 95);
+            ctx.stroke();
+
+            // Body
+            const grad = ctx.createRadialGradient(-rx * 0.35, -ry * 0.4, rx * 0.1, 0, 0, ry * 1.1);
+            grad.addColorStop(0, 'rgba(255,255,255,0.85)');
+            grad.addColorStop(0.25, b.color);
+            grad.addColorStop(1, b.color);
+            ctx.shadowColor = 'rgba(0,0,0,0.22)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetY = 4;
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowColor = 'transparent';
+            ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Knot
+            ctx.fillStyle = b.color;
+            ctx.beginPath();
+            ctx.moveTo(0, ry - 1);
+            ctx.lineTo(-5, ry + 7);
+            ctx.lineTo(5, ry + 7);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        const start = performance.now();
+        let rafId;
+
+        function animate(now) {
+            const elapsed = now - start;
+            const progress = elapsed / duration;
+            const fade = progress > 0.75 ? Math.max(0, 1 - (progress - 0.75) / 0.25) : 1;
+
+            ctx.clearRect(0, 0, w, h);
+
+            for (const b of balloons) {
+                if (elapsed < b.delay) continue;
+                b.y -= b.vy;
+                b.phase += b.sway;
+                drawBalloon(b, fade);
+            }
+
+            for (const p of pieces) {
+                p.vy += p.gravity;
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vx *= 0.985;
+                p.vy *= 0.99;
+                p.rotation += p.rotationSpeed;
+                p.wobble += 0.15;
+
+                ctx.save();
+                ctx.globalAlpha = fade;
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.rotation);
+                if (p.shape === 'ribbon') {
+                    ctx.strokeStyle = p.color;
+                    ctx.lineWidth = 3;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    const len = p.size * 2.2;
+                    for (let x = -len / 2; x <= len / 2; x += 2) {
+                        const y = Math.sin(x * 0.45 + p.wobble) * 3.5;
+                        if (x === -len / 2) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                } else {
+                    ctx.fillStyle = p.color;
+                    // Squash on one axis so pieces appear to flutter
+                    ctx.scale(1, Math.abs(Math.cos(p.wobble)) * 0.8 + 0.2);
+                    ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+                }
+                ctx.restore();
+            }
+
+            if (progress < 1) {
+                rafId = requestAnimationFrame(animate);
+            } else {
+                cleanup();
+            }
+        }
+
+        function cleanup() {
+            clearTimeout(volleyTimer);
+            cancelAnimationFrame(rafId);
+            window.removeEventListener('resize', resize);
+            canvas.remove();
+            if (textOverlay) textOverlay.remove();
+        }
+
+        rafId = requestAnimationFrame(animate);
+    }
+
+    return { burst, fireworks, submitted };
 }

@@ -118,6 +118,7 @@ import DynamicForm from '../components/DynamicForm.vue';
 import FileStager from '../components/FileStager.vue';
 import Icon from '../components/Icon.vue';
 import { useToast } from '../composables/useToast.js';
+import { useConfetti } from '../composables/useConfetti.js';
 import { useStagedFiles } from '../composables/useStagedFiles.js';
 
 const config = window.rcmiTickets || {};
@@ -127,6 +128,7 @@ const publicClosed = computed(() => isPublic.value && meta.allow_public_submit =
 
 const router = useRouter();
 const toast = useToast();
+const confetti = useConfetti();
 const meta = reactive({ priorities: [], tags: [], assignable_users: [], caps: {}, form_fields: [], allowed_mime_types: [] });
 const submitting = ref(false);
 const error = ref('');
@@ -254,12 +256,14 @@ async function submit() {
             publicSuccess.value = true;
             publicSuccessMessage.value = result.message || meta.public_success?.message || 'Your ticket has been submitted. A confirmation has been sent to your email.';
             toast.success('Request submitted');
+            confetti.submitted();
         } else {
             // Logged-in submission
             const body = { ...form };
             const ticket = await api('/tickets', { method: 'POST', body });
             await uploadStagedFiles(ticket.id);
             toast.success('Ticket created');
+            confetti.submitted();
             router.push(`/ticket/${ticket.id}`);
         }
     } catch (e) {
