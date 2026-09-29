@@ -50,7 +50,7 @@
                     <div class="mt-1.5 flex flex-wrap gap-1.5">
                         <button v-for="s in visibleStatuses" :key="s" @click="toggleStatus(s)"
                             :class="['rounded-full border px-3 py-1 text-xs font-semibold transition', local.status.includes(s) ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300']">
-                            {{ s }}
+                            {{ statusDisplayLabel(s) }}
                         </button>
                     </div>
                 </div>
@@ -151,6 +151,13 @@ const filterableFields = computed(() =>
 // pre-triage state (backend still stores it; the Pending Approval filter
 // matches both server-side).
 const visibleStatuses = computed(() => props.statuses.filter(s => s !== 'Received'));
+
+// Display-only renames matching StatusBadge's labels map — stored values
+// stay canonical, so 'Approved' still filters server-side as 'Approved'.
+const statusDisplayLabels = { 'Approved': 'Assigned' };
+function statusDisplayLabel(s) {
+    return statusDisplayLabels[s] || s;
+}
 
 // Value options for the selected field. Cascade trees are flattened into
 // full-path labels ("A › B › C"); the filter value is the node label itself,

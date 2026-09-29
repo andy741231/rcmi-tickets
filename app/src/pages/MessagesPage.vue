@@ -173,7 +173,7 @@ const emailNotifications = [
     { key: 'public_receipt', name: 'Public submission receipt', when: 'An anonymous guest submits a ticket', to: 'The email address they entered' },
     { key: 'approval_step', name: 'Approval needed', when: 'A ticket reaches an approval step', to: "That step's approvers" },
     { key: 'approval_rejected', name: 'Approval rejected', when: 'An approver rejects the ticket', to: 'The submitter (includes the reviewer\u2019s comment)' },
-    { key: 'status_approved', name: 'Status: Approved', when: 'A ticket is approved', to: 'The assignees' },
+    { key: 'status_approved', name: 'Status: Assigned', when: 'A ticket is approved', to: 'The assignees' },
     { key: 'status_completed', name: 'Status: Completed', when: 'A ticket is completed', to: 'The submitter (includes the chain completion message when set)' },
     { key: 'due_date_changed', name: 'Due date changed', when: 'Someone edits the due date', to: 'Submitter + assignees' },
     { key: 'assignees_changed', name: 'New assignee', when: 'Someone is added as an assignee', to: 'The newly added assignees' },
