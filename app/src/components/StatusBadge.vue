@@ -21,8 +21,11 @@ const labels = {
     'Approved': 'Assigned',
 };
 
+// 'Received' is merged into 'Pending Approval' for display — it is an
+// internal pre-triage state that pending-approval tickets pass through.
+const normalized = computed(() => props.status === 'Received' ? 'Pending Approval' : props.status);
+
 const classes = {
-    'Received':          'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200',
     'Pending Approval':  'bg-purple-50 text-purple-800 ring-1 ring-inset ring-purple-200',
     'Approved':          'bg-blue-50 text-blue-800 ring-1 ring-inset ring-blue-200',
     'In Progress':       'bg-cyan-50 text-cyan-800 ring-1 ring-inset ring-cyan-200',
@@ -32,7 +35,6 @@ const classes = {
 };
 
 const icons = {
-    'Received':          'clock',
     'Pending Approval':  'bell',
     'Approved':          'user-check',
     'In Progress':       'arrow-right',
@@ -41,7 +43,7 @@ const icons = {
     'Completed':         'check-badge',
 };
 
-const statusLabel = computed(() => labels[props.status] || props.status);
-const badgeClass = computed(() => classes[props.status] || 'bg-gray-100 text-gray-800');
-const iconName = computed(() => icons[props.status] || 'check');
+const statusLabel = computed(() => labels[normalized.value] || normalized.value);
+const badgeClass = computed(() => classes[normalized.value] || 'bg-gray-100 text-gray-800');
+const iconName = computed(() => icons[normalized.value] || 'check');
 </script>

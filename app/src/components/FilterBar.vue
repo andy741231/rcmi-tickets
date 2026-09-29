@@ -48,7 +48,7 @@
                 <div>
                     <span class="text-xs font-medium text-gray-500">Status</span>
                     <div class="mt-1.5 flex flex-wrap gap-1.5">
-                        <button v-for="s in statuses" :key="s" @click="toggleStatus(s)"
+                        <button v-for="s in visibleStatuses" :key="s" @click="toggleStatus(s)"
                             :class="['rounded-full border px-3 py-1 text-xs font-semibold transition', local.status.includes(s) ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300']">
                             {{ s }}
                         </button>
@@ -146,6 +146,11 @@ const activeCount = computed(() => {
 const filterableFields = computed(() =>
     props.formFields.filter(f => ['dropdown', 'radio', 'checkbox', 'cascade'].includes(f.type))
 );
+
+// 'Received' is merged into 'Pending Approval' in the UI — it's an internal
+// pre-triage state (backend still stores it; the Pending Approval filter
+// matches both server-side).
+const visibleStatuses = computed(() => props.statuses.filter(s => s !== 'Received'));
 
 // Value options for the selected field. Cascade trees are flattened into
 // full-path labels ("A › B › C"); the filter value is the node label itself,

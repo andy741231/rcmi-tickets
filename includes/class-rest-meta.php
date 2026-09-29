@@ -242,10 +242,12 @@ function rcmi_tickets_handle_meta() {
     ));
     $total_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_tickets t {$vis_clause}");
 
+    // 'Received' is merged into 'Pending Approval' in the UI (internal
+    // pre-triage state); the received count folds into pending_approval.
     $inbox_summary = [
         'total'            => $total_count,
         'received'         => $status_counts['Received'] ?? 0,
-        'pending_approval' => $status_counts['Pending Approval'] ?? 0,
+        'pending_approval' => ($status_counts['Pending Approval'] ?? 0) + ($status_counts['Received'] ?? 0),
         'approved'         => $status_counts['Approved'] ?? 0,
         'rejected'         => $status_counts['Rejected'] ?? 0,
         'completed'        => $status_counts['Completed'] ?? 0,

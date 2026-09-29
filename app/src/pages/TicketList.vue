@@ -9,10 +9,6 @@
                 :class="['rcmi-queue-chip', queue === 'pending_approval' ? 'rcmi-queue-chip-active-warning' : '']">
                 Needs approval <span class="rcmi-queue-chip-count">{{ meta.inbox_summary.pending_approval }}</span>
             </button>
-            <button v-if="meta.inbox_summary.received > 0" @click="setQueue('received')"
-                :class="['rcmi-queue-chip', queue === 'received' ? 'rcmi-queue-chip-active' : '']">
-                Received <span class="rcmi-queue-chip-count">{{ meta.inbox_summary.received }}</span>
-            </button>
             <button v-if="meta.inbox_summary.due_soon > 0" @click="setQueue('due_soon')"
                 :class="['rcmi-queue-chip', queue === 'due_soon' ? 'rcmi-queue-chip-active-warning' : '']">
                 Due soon <span class="rcmi-queue-chip-count">{{ meta.inbox_summary.due_soon }}</span>
@@ -431,9 +427,8 @@ function applyQueueFilter() {
     filters.value.date_to = '';
 
     if (queue.value === 'pending_approval') {
+        // Backend expands 'Pending Approval' to also match stored 'Received'.
         filters.value.status = ['Pending Approval'];
-    } else if (queue.value === 'received') {
-        filters.value.status = ['Received'];
     } else if (queue.value === 'due_soon') {
         const today = new Date();
         const soon = new Date();

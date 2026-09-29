@@ -1,21 +1,6 @@
 <template>
     <!-- Single continuous spine: cycle steps → assignee → post-approval statuses -->
     <ol class="relative space-y-3 border-l border-slate-200 pl-5">
-        <!-- Intake node: every ticket starts at 'Received' — chained tickets
-             flip to Pending Approval instantly on creation, so without this
-             row the intake step was invisible. -->
-        <li v-if="startAt" class="relative">
-            <span class="absolute -left-[1.63rem] z-10 flex h-5 w-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full border-2 border-amber-400 bg-amber-50 text-amber-800 ring-4 ring-white">
-                <Icon name="clock" />
-            </span>
-            <div class="rounded-lg border border-l-4 border-l-amber-500 border-slate-200 bg-white px-3.5 py-3 shadow-sm">
-                <div class="flex items-center justify-between gap-2">
-                    <p class="text-sm font-semibold text-gray-800">Received</p>
-                    <span class="rcmi-timeline-status rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">Received</span>
-                </div>
-                <p class="mt-0.5 text-xs text-gray-400">{{ formatDateTime(startAt) }}</p>
-            </div>
-        </li>
         <template v-for="group in cycleGroups" :key="group.cycle">
             <!-- Cycle divider (only show for cycle 2+) -->
             <li v-if="group.cycle > 1" class="relative -ml-5 w-[calc(100%+1.25rem)]">

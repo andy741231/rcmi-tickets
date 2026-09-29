@@ -901,11 +901,15 @@ function rcmi_tickets_handle_list($request) {
         $args[] = $search;
     }
 
-    // Status filter
+    // Status filter — 'Pending Approval' also matches stored 'Received'
+    // rows (the UI merges the internal pre-triage state into it).
     if (!empty($params['status']) && is_array($params['status'])) {
         $statuses = array_filter($params['status'], function ($s) {
             return in_array($s, rcmi_tickets_valid_statuses(), true);
         });
+        if (in_array('Pending Approval', $statuses, true)) {
+            $statuses[] = 'Received';
+        }
         if ($statuses) {
             $placeholders = implode(',', array_fill(0, count($statuses), '%s'));
             $where[] = "t.status IN ($placeholders)";
