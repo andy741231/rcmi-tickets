@@ -229,7 +229,8 @@ function removeFilter(key) {
     if (key === 'search') local.search = '';
     else if (key === 'scope') local.scope = 'all';
     else if (key.startsWith('status:')) {
-        const s = key.split(':')[1];
+        // Slice after the prefix — 'Rejected: Pending Revision' contains a colon.
+        const s = key.slice('status:'.length);
         const idx = local.status.indexOf(s);
         if (idx >= 0) local.status.splice(idx, 1);
     }
