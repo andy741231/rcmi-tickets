@@ -26,6 +26,10 @@
                 <input v-model="node.label" class="rcmi-input flex-1 text-xs"
                     :class="{ 'line-through decoration-gray-400': !isVisible(node) }"
                     placeholder="Option label" />
+                <span v-if="isDup(node.label)" class="shrink-0 text-amber-500"
+                    title="Duplicate label — approval chains trigger on the label alone, so both copies would match the same chain">
+                    <Icon name="alert" />
+                </span>
                 <button type="button" @click="node.visible = !isVisible(node)"
                     class="rcmi-button-ghost px-2 py-1 text-xs"
                     :class="{ 'text-red-600': !isVisible(node) }"
@@ -43,7 +47,7 @@
                 </button>
             </div>
             <CascadeTreeEditor v-if="node.children?.length && !node._collapsed"
-                :nodes="node.children" :depth="depth + 1" />
+                :nodes="node.children" :depth="depth + 1" :dup-labels="dupLabels" />
         </li>
         <li>
             <button type="button" @click="addSibling"
@@ -55,13 +59,37 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import Icon from './Icon.vue';
 
 const props = defineProps({
     nodes: { type: Array, required: true },
     depth: { type: Number, default: 0 },
+    // Set of normalized labels that appear more than once anywhere in the
+    // tree — computed at the root instance and handed down through recursion.
+    dupLabels: { type: Object, default: null },
 });
+
+const norm = (s) => (s || '').trim().toLowerCase();
+
+const dupLabels = computed(() => {
+    if (props.dupLabels) return props.dupLabels;
+    const counts = new Map();
+    const walk = (list) => list.forEach(n => {
+        const k = norm(n.label);
+        if (k) counts.set(k, (counts.get(k) || 0) + 1);
+        if (n.children?.length) walk(n.children);
+    });
+    walk(props.nodes);
+    const dup = new Set();
+    for (const [k, c] of counts) if (c > 1) dup.add(k);
+    return dup;
+});
+
+function isDup(label) {
+    const k = norm(label);
+    return !!k && dupLabels.value.has(k);
+}
 
 // Sibling reorder within this level only. Each recursive instance owns its
 // own drag state, so drags can't cross levels.

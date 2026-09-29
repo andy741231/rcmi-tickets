@@ -145,6 +145,10 @@
                                         <ul class="space-y-1.5">
                                             <li v-for="(opt, oi) in (f.config.options || [])" :key="oi" class="flex items-center gap-2">
                                                 <input v-model="f.config.options[oi]" class="rcmi-input flex-1" />
+                                                <span v-if="isDupOption(f, opt)" class="shrink-0 text-amber-500"
+                                                    title="Duplicate label — approval chains trigger on the label alone, so both copies would match the same chain">
+                                                    <Icon name="alert" />
+                                                </span>
                                                 <button @click="f.config.options.splice(oi, 1)" class="rcmi-button-ghost px-2 py-1 text-xs text-red-700"><Icon name="x" /></button>
                                             </li>
                                         </ul>
@@ -350,6 +354,13 @@ const cascadeStyles = [
 
 // Count leaf nodes and max depth of a cascade tree, then flag styles that
 // clearly mismatch the tree's shape.
+// True when this option's label appears more than once in the field's list —
+// approval chains trigger on the label alone, so duplicates are ambiguous.
+function isDupOption(f, opt) {
+    const k = (opt || '').trim().toLowerCase();
+    return !!k && (f.config.options || []).filter(o => (o || '').trim().toLowerCase() === k).length > 1;
+}
+
 function cascadeFitHint(f) {
     let leaves = 0;
     let maxDepth = 0;
