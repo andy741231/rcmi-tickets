@@ -477,7 +477,12 @@ function rcmi_tickets_resolve_approval_chain($form_answers) {
         return null;
     }
 
-    // First pass: exact match on trigger_field_key + trigger_value
+    // First pass: trigger match, most specific wins. Cascade answers store
+    // the full path (parent → … → leaf), so score by how deep in the path
+    // the trigger label sits — a child trigger beats a parent trigger that
+    // merely contains it. Ties keep chain order (first match wins).
+    $best = null;
+    $best_depth = -1;
     foreach ($chains as $chain) {
         if (!$chain['is_active']) {
             continue;
@@ -485,12 +490,18 @@ function rcmi_tickets_resolve_approval_chain($form_answers) {
         $tfk = $chain['trigger_field_key'];
         $tv = $chain['trigger_value'];
         $ans = $form_answers[$tfk] ?? null;
-        $hit = is_array($ans)
-            ? in_array((string) $tv, array_map('strval', $ans), true)
-            : (string) $ans === (string) $tv;
-        if ($tfk && $tv && $ans !== null && $hit) {
-            return $chain;
+        if (!$tfk || !$tv || $ans === null) {
+            continue;
         }
+        $path = array_map('strval', (array) $ans);
+        $depth = array_search((string) $tv, $path, true);
+        if ($depth !== false && $depth > $best_depth) {
+            $best = $chain;
+            $best_depth = $depth;
+        }
+    }
+    if ($best) {
+        return $best;
     }
 
     // Second pass: default chain (no trigger)

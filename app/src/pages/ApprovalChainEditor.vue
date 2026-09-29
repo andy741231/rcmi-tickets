@@ -102,7 +102,7 @@
                         </select>
                     </div>
                 </div>
-                <p class="rcmi-field-help">If a trigger is set, this chain applies when the ticket's "{{ triggerFieldLabel }}" field equals the selected value. Otherwise it's the default chain (used when no other chain matches).<template v-if="triggerTreeOptions"> Picking a parent item matches tickets that chose it or any of its sub-items.</template></p>
+                <p class="rcmi-field-help">If a trigger is set, this chain applies when the ticket's "{{ triggerFieldLabel }}" field equals the selected value. Otherwise it's the default chain (used when no other chain matches).<template v-if="triggerTreeOptions"> Picking a parent item matches tickets that chose it or any of its sub-items. If more than one chain matches, the one triggered on the most specific (deepest) item wins.</template></p>
             </div>
 
             <!-- Steps -->
