@@ -75,7 +75,7 @@ function rcmi_tickets_email_ticket_details($ticket) {
     // Core fields
     $detail_rows = [
         'Due date'  => $ticket['due_date'] ?: '—',
-        'Status'    => $ticket['status'],
+        'Status'    => rcmi_tickets_display_status($ticket['status']),
     ];
     foreach ($detail_rows as $label => $val) {
         $details_html .= '<tr><td style="padding:4px 12px 4px 0;color:#666;font-size:13px;white-space:nowrap;">' . rcmi_tickets_email_esc($label) . ':</td>'
@@ -358,7 +358,7 @@ function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status,
     }
 
     $recipients = [];
-    $event_label = $new_status;
+    $event_label = rcmi_tickets_display_status($new_status);
     $is_public_ticket = function_exists('rcmi_tickets_is_public_ticket') && rcmi_tickets_is_public_ticket($ticket);
 
     if ($new_status === 'Approved') {
@@ -400,11 +400,10 @@ function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status,
     $url = esc_url($is_public_ticket && function_exists('rcmi_tickets_public_ticket_url')
         ? rcmi_tickets_public_ticket_url($ticket_id)
         : rcmi_tickets_email_ticket_url($ticket_id));
-    $status_html = rcmi_tickets_email_esc($new_status);
     $subject = sprintf(__('Ticket #%d %s: %s', 'rcmi-tickets'), $ticket_id, $event_label, $ticket['title']);
 
-    // Headline: "Ticket Approved" / "Ticket Completed"
-    $headline = sprintf(__('Ticket %s', 'rcmi-tickets'), $new_status);
+    // Headline: "Ticket Assigned" / "Ticket Completed" (display label)
+    $headline = sprintf(__('Ticket %s', 'rcmi-tickets'), $event_label);
     $intro = '';
     if ($new_status === 'Approved') {
         $intro = __('You have been assigned to this ticket. It has been approved and is ready for you to work on.');

@@ -194,7 +194,7 @@ const activeFilterChips = computed(() => {
     const chips = [];
     if (local.search) chips.push({ key: 'search', label: `Search: "${local.search}"` });
     if (local.scope !== 'all') chips.push({ key: 'scope', label: { all: 'All', assigned: 'Assigned to me', submitted: 'Submitted by me' }[local.scope] || local.scope });
-    local.status.forEach(s => chips.push({ key: `status:${s}`, label: `Status: ${s}` }));
+    local.status.forEach(s => chips.push({ key: `status:${s}`, label: `Status: ${statusDisplayLabel(s)}` }));
     if (local.assigneeId) {
         const u = props.assignableUsers.find(u => u.id === local.assigneeId);
         chips.push({ key: 'assigneeId', label: `Assignee: ${u?.display_name || local.assigneeId}` });

@@ -24,6 +24,18 @@ function rcmi_tickets_valid_statuses() {
     return ['Received', 'Pending Approval', 'Approved', 'In Progress', 'Rejected', 'Rejected: Pending Revision', 'Completed'];
 }
 
+/**
+ * Display label for a stored status — the frontend maps these the same way
+ * (StatusBadge/FilterBar). Stored values stay canonical.
+ */
+function rcmi_tickets_display_status($status) {
+    $map = [
+        'Approved' => 'Assigned',
+        'Received' => 'Pending Approval',
+    ];
+    return $map[$status] ?? $status;
+}
+
 function rcmi_tickets_status_transition_allowed($old_status, $new_status) {
     $transitions = [
         'Received' => ['Approved', 'Rejected'],

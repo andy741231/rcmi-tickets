@@ -88,7 +88,7 @@
                             </div>
                             <div>
                                 <dt class="text-xs font-semibold text-gray-500">Status</dt>
-                                <dd class="mt-1 text-sm text-gray-700">{{ ticket.status }}</dd>
+                                <dd class="mt-1 text-sm text-gray-700"><StatusBadge :status="ticket.status" /></dd>
                             </div>
                             <div>
                                 <dt class="text-xs font-semibold text-gray-500">Requestor</dt>
