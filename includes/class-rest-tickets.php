@@ -550,6 +550,10 @@ function rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain, $cycle = 1)
     }
 
     // Set ticket to Pending Approval
+    $old_status = $wpdb->get_var($wpdb->prepare(
+        "SELECT status FROM {$wpdb->prefix}rcmi_tickets WHERE id = %d",
+        $ticket_id
+    ));
     $wpdb->update(
         $wpdb->prefix . 'rcmi_tickets',
         ['status' => 'Pending Approval'],
@@ -557,6 +561,14 @@ function rcmi_tickets_init_ticket_approval_chain($ticket_id, $chain, $cycle = 1)
         ['%s'],
         ['%d']
     );
+
+    // Log the transition so the timeline/audit trail records the intake step
+    // (Received on create, Rejected: Pending Revision on resubmit). No email
+    // is sent for Pending Approval — email_status_changed has no recipients
+    // for it.
+    if ($old_status && $old_status !== 'Pending Approval') {
+        do_action('rcmi_ticket_status_changed', $ticket_id, 'Pending Approval', $old_status, null);
+    }
 
     // Apply the chain's default assignee (completion_assignee_id) at chain
     // init time so they are assigned upfront. They receive the "Approved"
