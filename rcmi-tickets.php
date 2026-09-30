@@ -68,9 +68,15 @@ add_action('phpmailer_init', function ($phpmailer) {
     // EHLO hostname — some SMTP servers reject default localhost
     $phpmailer->Helo = 'central.uh.edu';
 
-    // From address — overrides WordPress defaults
-    $phpmailer->From     = 'donotreply@uh.edu';
-    $phpmailer->FromName = get_bloginfo('name') ?: 'RCMI';
+    // Default sender — only stamps mail that didn't carry its own
+    // "From:" header (wp_mail parses one into ->From before this runs).
+    // Protected-download request emails set uhrcmi@uh.edu explicitly so
+    // recipient replies reach a monitored mailbox; everything else
+    // (password resets, admin notices, ticket mail) stays donotreply.
+    if ( '' === trim( (string) $phpmailer->From ) || 'donotreply@uh.edu' === strtolower( (string) $phpmailer->From ) ) {
+        $phpmailer->From     = 'donotreply@uh.edu';
+        $phpmailer->FromName = get_bloginfo('name') ?: 'RCMI';
+    }
 });
 
 // Also set the From header at the wp_mail filter level so it's
