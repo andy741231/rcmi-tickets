@@ -81,11 +81,17 @@ add_action('phpmailer_init', function ($phpmailer) {
 
 // Also set the From header at the wp_mail filter level so it's
 // consistent even if phpmailer_init is bypassed by other plugins.
-add_filter('wp_mail_from', function () {
-    return 'donotreply@uh.edu';
+// NOTE: wp_mail() applies these filters AFTER parsing a "From:" header,
+// so an unconditional return would clobber an explicit per-message
+// sender (e.g. protected-download links send as uhrcmi@uh.edu). Only
+// replace WP's generated wordpress@<host> / "WordPress" defaults.
+add_filter('wp_mail_from', function ($from_email) {
+    $host       = wp_parse_url( network_home_url(), PHP_URL_HOST );
+    $wp_default = 'wordpress@' . preg_replace( '/^www\./', '', (string) $host );
+    return ( '' === trim( (string) $from_email ) || $wp_default === $from_email ) ? 'donotreply@uh.edu' : $from_email;
 });
-add_filter('wp_mail_from_name', function () {
-    return get_bloginfo('name') ?: 'RCMI';
+add_filter('wp_mail_from_name', function ($from_name) {
+    return ( 'WordPress' === $from_name || '' === trim( (string) $from_name ) ) ? ( get_bloginfo('name') ?: 'RCMI' ) : $from_name;
 });
 
 register_activation_hook(__FILE__, 'rcmi_tickets_activate');
