@@ -51,7 +51,35 @@ function rcmi_tickets_send_email($to, $subject, $html, $plain = '') {
         'Content-Type: text/html; charset=UTF-8',
     ];
 
+    // Ticket mail should come from the monitored RCMI mailbox so
+    // recipient replies land with the program team (the site-wide
+    // default is donotreply@uh.edu). Editable under Tickets → Email;
+    // the rcmi_tickets_mail_from filter remains a code-level override —
+    // empty keeps the site default.
+    $from = trim(preg_replace('/[\r\n]+/', ' ', (string) apply_filters('rcmi_tickets_mail_from', rcmi_tickets_mail_from_default())));
+    if ('' !== $from) {
+        $headers[] = 'From: ' . $from;
+    }
+
     return wp_mail($to, $subject, $html, $headers);
+}
+
+/**
+ * The From header for ticket mail, from the Tickets → Email settings
+ * (option rcmi_tickets_mail). Falls back to the RCMI program mailbox
+ * when unconfigured or invalid.
+ */
+function rcmi_tickets_mail_from_default() {
+    $opt = get_option('rcmi_tickets_mail', []);
+    if (!is_array($opt)) {
+        $opt = [];
+    }
+    $email = isset($opt['from_email']) && is_email($opt['from_email']) ? $opt['from_email'] : 'uhrcmi@uh.edu';
+    $name  = isset($opt['from_name']) ? trim(preg_replace('/[\r\n]+/', ' ', wp_strip_all_tags((string) $opt['from_name']))) : '';
+    if ('' === $name) {
+        $name = 'RCMI at University of Houston';
+    }
+    return $name . ' <' . $email . '>';
 }
 
 /**

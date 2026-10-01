@@ -78,6 +78,26 @@ function rcmi_tickets_handle_page_form() {
         wp_safe_redirect(add_query_arg('rcmi_tickets_page_error', urlencode($page_id->get_error_message()), admin_url('admin.php?page=rcmi-tickets')));
         exit;
     }
+
+    // Email identity (Tickets → Email tab)
+    if (isset($_POST['rcmi_tickets_save_mail']) && check_admin_referer('rcmi_tickets_save_mail')) {
+        $base    = admin_url('admin.php?page=rcmi-tickets&tab=email');
+        $raw_adr = isset($_POST['rcmi_tickets_from_email']) ? trim((string) wp_unslash($_POST['rcmi_tickets_from_email'])) : '';
+        $email   = sanitize_email($raw_adr);
+        if ('' !== $raw_adr && !is_email($email)) {
+            wp_safe_redirect(add_query_arg('rcmi_tickets_mail_err', urlencode('Enter a valid From email address.'), $base));
+            exit;
+        }
+        $name = isset($_POST['rcmi_tickets_from_name'])
+            ? substr(trim(preg_replace('/[\r\n]+/', ' ', wp_strip_all_tags((string) wp_unslash($_POST['rcmi_tickets_from_name'])))), 0, 150)
+            : '';
+        update_option('rcmi_tickets_mail', [
+            'from_name'  => $name,
+            'from_email' => '' !== $email ? $email : 'uhrcmi@uh.edu',
+        ]);
+        wp_safe_redirect(add_query_arg('rcmi_tickets_mail_saved', '1', $base));
+        exit;
+    }
 }
 add_action('admin_init', 'rcmi_tickets_handle_page_form');
 
@@ -130,10 +150,13 @@ function rcmi_tickets_render_settings_page() {
 
         <h2 class="nav-tab-wrapper">
             <a href="<?php echo esc_url(admin_url('admin.php?page=rcmi-tickets&tab=setup')); ?>" class="nav-tab <?php echo $tab === 'setup' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Setup', 'rcmi-tickets'); ?></a>
+            <a href="<?php echo esc_url(admin_url('admin.php?page=rcmi-tickets&tab=email')); ?>" class="nav-tab <?php echo $tab === 'email' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Email', 'rcmi-tickets'); ?></a>
             <a href="<?php echo esc_url(admin_url('admin.php?page=rcmi-tickets&tab=info')); ?>" class="nav-tab <?php echo $tab === 'info' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Info & Updates', 'rcmi-tickets'); ?></a>
         </h2>
 
-        <?php if ($tab === 'setup'): ?>
+        <?php if ($tab === 'email'): ?>
+            <?php rcmi_tickets_render_email_tab(); ?>
+        <?php elseif ($tab === 'setup'): ?>
             <?php rcmi_tickets_render_setup_tab($shortcode_page_id); ?>
         <?php else: ?>
             <?php rcmi_tickets_render_info_tab(); ?>
@@ -218,6 +241,52 @@ function rcmi_tickets_render_setup_tab($shortcode_page_id) {
             </div>
         <?php endif; ?>
 
+    </div>
+    <?php
+}
+
+// ============================================================
+// Email tab — sender identity for ticket notification mail
+// ============================================================
+
+function rcmi_tickets_render_email_tab() {
+    $opt = get_option('rcmi_tickets_mail', []);
+    if (!is_array($opt)) {
+        $opt = [];
+    }
+    $from_name  = isset($opt['from_name']) && '' !== trim((string) $opt['from_name']) ? $opt['from_name'] : 'RCMI at University of Houston';
+    $from_email = isset($opt['from_email']) && '' !== trim((string) $opt['from_email']) ? $opt['from_email'] : 'uhrcmi@uh.edu';
+    ?>
+    <div style="max-width:800px;margin-top:20px;">
+        <h2><?php esc_html_e('Email Identity', 'rcmi-tickets'); ?></h2>
+
+        <?php if (isset($_GET['rcmi_tickets_mail_saved'])): ?>
+            <div class="notice notice-success is-dismissible"><p><?php esc_html_e('Email settings saved.', 'rcmi-tickets'); ?></p></div>
+        <?php endif; ?>
+        <?php if (isset($_GET['rcmi_tickets_mail_err'])): ?>
+            <div class="notice notice-error is-dismissible"><p><?php echo esc_html(urldecode((string) $_GET['rcmi_tickets_mail_err'])); ?></p></div>
+        <?php endif; ?>
+
+        <p><?php esc_html_e('Ticket notification emails (new ticket, assignment, mentions, due dates, approvals) are sent from this mailbox so recipient replies reach the program team. Other site email — password resets, admin notices — still uses the site-wide donotreply@uh.edu default.', 'rcmi-tickets'); ?></p>
+
+        <form method="post" action="">
+            <?php wp_nonce_field('rcmi_tickets_save_mail'); ?>
+            <table class="form-table" role="presentation" style="max-width:600px;">
+                <tr>
+                    <th scope="row"><label for="rcmi_tickets_from_name"><?php esc_html_e('From name', 'rcmi-tickets'); ?></label></th>
+                    <td><input type="text" id="rcmi_tickets_from_name" name="rcmi_tickets_from_name" class="regular-text" maxlength="150" value="<?php echo esc_attr($from_name); ?>" /></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="rcmi_tickets_from_email"><?php esc_html_e('From email', 'rcmi-tickets'); ?></label></th>
+                    <td>
+                        <input type="email" id="rcmi_tickets_from_email" name="rcmi_tickets_from_email" class="regular-text" maxlength="254" value="<?php echo esc_attr($from_email); ?>" />
+                        <p class="description"><?php esc_html_e('The campus mail relay must accept this sender — use a real @uh.edu mailbox. Clearing the field falls back to uhrcmi@uh.edu.', 'rcmi-tickets'); ?></p>
+                    </td>
+                </tr>
+            </table>
+            <p><button type="submit" name="rcmi_tickets_save_mail" class="button button-primary"><?php esc_html_e('Save email settings', 'rcmi-tickets'); ?></button></p>
+        </form>
+        <p style="color:#666;font-size:13px;"><?php esc_html_e('Per-notification subjects are built into each email type; code-level override for the sender: the rcmi_tickets_mail_from filter.', 'rcmi-tickets'); ?></p>
     </div>
     <?php
 }
