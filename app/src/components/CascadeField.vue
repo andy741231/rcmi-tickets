@@ -67,12 +67,10 @@
                         <!-- answered level: collapsed summary -->
                         <template v-if="openStep !== li && path[li] !== undefined">
                             <span class="rcmi-cascade-step-label">{{ stepLabel(li) }}</span>
-                            <div class="rcmi-cascade-step-answer">
-                                <span class="rcmi-cascade-step-value">{{ path[li] }}</span>
-                                <button type="button" class="rcmi-cascade-step-change"
-                                    :aria-label="'Change ' + stepLabel(li)"
-                                    @click="editing = li">Change</button>
-                            </div>
+                            <button type="button" class="rcmi-cascade-step-value"
+                                :aria-label="'Change ' + stepLabel(li) + ' (currently ' + path[li] + ')'"
+                                title="Click to change"
+                                @click="editing = li">{{ path[li] }}</button>
                         </template>
                         <!-- open level: pick an option -->
                         <template v-else-if="openStep === li">
