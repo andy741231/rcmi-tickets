@@ -20,7 +20,8 @@
  *     cascade_options: { "<parent_value>": ["Sub A","Sub B"] },
  *     allow_other: true,             // dropdown only — appends an "Other" free-text option
  *     cascade_tree: [{ label, children: [...] }], // cascade type: nested tree, any depth
- *     cascade_style: "dropdown"|"pills"|"columns"|"search"
+ *     cascade_style: "dropdown"|"pills"|"steps"|"columns"|"search",
+ *     cascade_level_labels: ["Step 1","Step 2"], // cascade + steps style: optional per-level labels
  *   }
  */
 
@@ -49,7 +50,7 @@ function rcmi_tickets_allowed_config_keys($type) {
         'date'      => array_merge($common, ['min_days', 'include_weekend']),
         'number'    => array_merge($common, ['placeholder', 'min', 'max', 'step']),
         'section'   => [],
-        'cascade'   => array_merge($common, ['cascade_tree', 'cascade_style', 'cascade_other']),
+        'cascade'   => array_merge($common, ['cascade_tree', 'cascade_style', 'cascade_other', 'cascade_level_labels']),
     ];
     return $map[$type] ?? $common;
 }
@@ -99,7 +100,13 @@ function rcmi_tickets_validate_field_config($config, $type) {
                 }
                 break;
             case 'cascade_style':
-                $clean['cascade_style'] = in_array($v, ['dropdown', 'pills', 'columns', 'search'], true) ? $v : 'dropdown';
+                $clean['cascade_style'] = in_array($v, ['dropdown', 'pills', 'steps', 'columns', 'search'], true) ? $v : 'dropdown';
+                break;
+            case 'cascade_level_labels':
+                if (is_array($v)) {
+                    // Keep positions: an empty string means "use the default label".
+                    $clean['cascade_level_labels'] = array_slice(array_values(array_map('sanitize_text_field', array_map('strval', $v))), 0, 10);
+                }
                 break;
             case 'cascade_other':
                 $clean['cascade_other'] = !empty($v);

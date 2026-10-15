@@ -179,6 +179,18 @@
                                         </div>
                                         <p v-if="cascadeFitHint(f)" class="mt-2 text-xs text-amber-600">{{ cascadeFitHint(f) }}</p>
 
+                                        <div v-if="f.config.cascade_style === 'steps'" class="mt-3">
+                                            <label class="rcmi-field-label">Step labels</label>
+                                            <div class="mt-1 space-y-1.5">
+                                                <input v-for="si in cascadeTreeStats(f).maxDepth" :key="si" type="text"
+                                                    class="rcmi-input"
+                                                    :value="f.config.cascade_level_labels?.[si - 1] || ''"
+                                                    :placeholder="`Step ${si} label`"
+                                                    @input="setCascadeLevelLabel(f, si - 1, $event.target.value)" />
+                                            </div>
+                                            <p class="mt-1 text-xs text-gray-500">Optional — blank steps fall back to "Choose an option", then "Under ‹previous answer›".</p>
+                                        </div>
+
                                         <label class="rcmi-field-label mt-3">Preview</label>
                                         <div class="rounded-md border border-dashed border-gray-300 p-3">
                                             <CascadeField :field="f"
@@ -348,6 +360,7 @@ watch(() => props.initialAllowPublic, (next) => {
 const cascadeStyles = [
     { value: 'dropdown', label: 'Dropdowns', icon: 'dropdown', hint: 'Compact — one select per level' },
     { value: 'pills',    label: 'Pills',     icon: 'tag',      hint: 'Fast for shallow trees (2–3 levels)' },
+    { value: 'steps',    label: 'Steps',     icon: 'list',     hint: 'Guided — one level at a time, answered levels collapse' },
     { value: 'columns',  label: 'Columns',   icon: 'grid',     hint: 'Deep trees — see context across levels' },
     { value: 'search',   label: 'Search',    icon: 'search',   hint: 'Large trees — type to find a path' },
 ];
@@ -361,7 +374,8 @@ function isDupOption(f, opt) {
     return !!k && (f.config.options || []).filter(o => (o || '').trim().toLowerCase() === k).length > 1;
 }
 
-function cascadeFitHint(f) {
+// Leaf count and max depth of a cascade tree.
+function cascadeTreeStats(f) {
     let leaves = 0;
     let maxDepth = 0;
     const walk = (nodes, depth) => {
@@ -372,8 +386,20 @@ function cascadeFitHint(f) {
         }
     };
     walk(f.config?.cascade_tree, 1);
+    return { leaves, maxDepth };
+}
+
+// Steps style: set a per-level label, initializing the config array lazily.
+// Blank entries fall back to the built-in step labels in CascadeField.
+function setCascadeLevelLabel(f, i, v) {
+    if (!Array.isArray(f.config.cascade_level_labels)) f.config.cascade_level_labels = [];
+    f.config.cascade_level_labels[i] = v;
+}
+
+function cascadeFitHint(f) {
+    const { leaves, maxDepth } = cascadeTreeStats(f);
     const style = f.config?.cascade_style || 'dropdown';
-    if (leaves > 30 && style !== 'search') {
+    if (leaves > 30 && style !== 'search' && style !== 'steps') {
         return `This tree has ${leaves} leaf options — "Search" may be easier to navigate.`;
     }
     if (maxDepth >= 4 && style === 'pills') {

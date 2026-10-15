@@ -48,6 +48,81 @@
             <input type="text" class="rcmi-cascade-guard" :required="required" :value="isComplete ? 'ok' : ''" tabindex="-1" aria-hidden="true" />
         </template>
 
+        <!-- ── Style: progressive stepper (one level open at a time) ── -->
+        <template v-else-if="style === 'steps'">
+            <ol class="rcmi-cascade-steps">
+                <li v-for="(level, li) in levels" :key="li" class="rcmi-cascade-step"
+                    :class="{
+                        'rcmi-cascade-step-open': openStep === li,
+                        'rcmi-cascade-step-done': openStep !== li && path[li] !== undefined,
+                    }">
+                    <div class="rcmi-cascade-step-rail" aria-hidden="true">
+                        <span class="rcmi-cascade-step-badge">
+                            <Icon v-if="openStep !== li && path[li] !== undefined" name="check" />
+                            <template v-else>{{ li + 1 }}</template>
+                        </span>
+                        <span v-if="li < levels.length - 1" class="rcmi-cascade-step-connector"></span>
+                    </div>
+                    <div class="rcmi-cascade-step-body">
+                        <!-- answered level: collapsed summary -->
+                        <template v-if="openStep !== li && path[li] !== undefined">
+                            <span class="rcmi-cascade-step-label">{{ stepLabel(li) }}</span>
+                            <div class="rcmi-cascade-step-answer">
+                                <span class="rcmi-cascade-step-value">{{ path[li] }}</span>
+                                <button type="button" class="rcmi-cascade-step-change"
+                                    :aria-label="'Change ' + stepLabel(li)"
+                                    @click="editing = li">Change</button>
+                            </div>
+                        </template>
+                        <!-- open level: pick an option -->
+                        <template v-else-if="openStep === li">
+                            <p class="rcmi-cascade-step-heading">{{ stepLabel(li) }}</p>
+                            <div class="rcmi-cascade-step-options"
+                                :class="[STEP_LAYOUT_CLASSES[stepOptionLayout(level, li)].group, { 'rcmi-cascade-step-options-nested': li > 0 }]"
+                                role="radiogroup" :aria-label="stepLabel(li)">
+                                <button v-for="n in level" :key="n.label" type="button" role="radio"
+                                    class="rcmi-cascade-step-opt"
+                                    :class="STEP_LAYOUT_CLASSES[stepOptionLayout(level, li)].opt"
+                                    :aria-checked="path[li] === n.label && activeOtherLevel !== li"
+                                    @click="pickStep(li, n.label)">
+                                    <template v-if="stepOptionLayout(level, li) === 'radios'">
+                                        <span class="rcmi-cascade-step-radio" aria-hidden="true"></span>
+                                        <span class="rcmi-cascade-step-opt-label">{{ n.label }}</span>
+                                    </template>
+                                    <template v-else-if="stepOptionLayout(level, li) === 'cards'">
+                                        <span class="rcmi-cascade-step-opt-title">{{ n.label }}</span>
+                                        <span class="rcmi-cascade-step-opt-sub">{{ n.children.length }} option{{ n.children.length === 1 ? '' : 's' }}</span>
+                                    </template>
+                                    <template v-else>
+                                        <span class="rcmi-cascade-step-opt-label">{{ n.label }}</span>
+                                        <Icon v-if="n.children.length" name="chevron-right" />
+                                    </template>
+                                </button>
+                                <button v-if="otherEnabled" type="button" role="radio"
+                                    class="rcmi-cascade-step-opt rcmi-cascade-step-opt-other"
+                                    :class="STEP_LAYOUT_CLASSES[stepOptionLayout(level, li)].opt"
+                                    :aria-checked="activeOtherLevel === li"
+                                    @click="pickStep(li, OTHER)">
+                                    <span v-if="stepOptionLayout(level, li) === 'radios'"
+                                        class="rcmi-cascade-step-radio" aria-hidden="true"></span>
+                                    <span class="rcmi-cascade-step-opt-label italic">Other…</span>
+                                </button>
+                            </div>
+                            <input v-if="otherEnabled && activeOtherLevel === li" type="text"
+                                class="rcmi-input rcmi-cascade-other" :value="otherText(li)"
+                                placeholder="Type your answer…"
+                                @input="setOther(li, $event.target.value)" />
+                        </template>
+                        <!-- upcoming level: muted label only -->
+                        <template v-else>
+                            <span class="rcmi-cascade-step-label">{{ stepLabel(li) }}</span>
+                        </template>
+                    </div>
+                </li>
+            </ol>
+            <input type="text" class="rcmi-cascade-guard" :required="required" :value="isComplete ? 'ok' : ''" tabindex="-1" aria-hidden="true" />
+        </template>
+
         <!-- ── Style: miller columns ────────────────────────────────── -->
         <template v-else-if="style === 'columns'">
             <div class="rcmi-cascade-columns">
@@ -111,8 +186,8 @@
             </template>
         </template>
 
-        <!-- Breadcrumb of current partial path (non-search styles) -->
-        <p v-if="style !== 'search' && path.length" class="rcmi-field-help mt-1">
+        <!-- Breadcrumb of current partial path (non-search, non-steps styles) -->
+        <p v-if="style !== 'search' && style !== 'steps' && path.length" class="rcmi-field-help mt-1">
             {{ path.join(' › ') }}<span v-if="!isComplete" class="text-gray-400"> — keep going…</span>
         </p>
     </div>
@@ -196,7 +271,7 @@ const isComplete = computed(() => {
         if (!node) return false;
         siblings = node.children || [];
     }
-    return true;
+    return siblings.length === 0;
 });
 
 // Selecting a label at level i truncates the path at i and appends the label.
@@ -238,6 +313,56 @@ watch(path, (p) => {
         otherAt.value = null;
     }
 });
+
+// ── steps style ──────────────────────────────────────────────────────
+// Level index opened for editing via its "Change" button, if any.
+const editing = ref(null);
+
+// Only one level is open at a time: the one being edited, else the one
+// with an active "Other" input, else the first unanswered level. A fully
+// answered path leaves every level collapsed.
+const openStep = computed(() => {
+    if (editing.value !== null && editing.value < levels.value.length) return editing.value;
+    if (activeOtherLevel.value !== null && activeOtherLevel.value < levels.value.length) {
+        return activeOtherLevel.value;
+    }
+    const i = levels.value.findIndex((_, li) => path.value[li] === undefined);
+    return i === -1 ? null : i;
+});
+
+// Label for step i: configured label, else a sensible default.
+function stepLabel(i) {
+    const l = props.field.config?.cascade_level_labels?.[i];
+    if (typeof l === 'string' && l.trim()) return l.trim();
+    return i === 0 ? 'Choose an option' : `Under ${path.value[i - 1]}`;
+}
+
+// Literal class names per control type — building them with template
+// literals hides them from Tailwind's content scan, which purges the
+// matching @layer components rules in production builds.
+const STEP_LAYOUT_CLASSES = {
+    cards:  { group: 'rcmi-cascade-step-options-cards',  opt: 'rcmi-cascade-step-opt-cards' },
+    tiles:  { group: 'rcmi-cascade-step-options-tiles',  opt: 'rcmi-cascade-step-opt-tiles' },
+    radios: { group: 'rcmi-cascade-step-options-radios', opt: 'rcmi-cascade-step-opt-radios' },
+};
+
+// Control type for an open level: all-leaf levels get a radio list, the
+// root level gets cards, deeper mixed levels get compact tiles.
+function stepOptionLayout(level, i) {
+    if (level.every(n => !(n.children || []).length)) return 'radios';
+    return i === 0 ? 'cards' : 'tiles';
+}
+
+// Picking at level i: re-picking the same value while editing keeps the
+// deeper path intact; anything else truncates the path at i via pick().
+function pickStep(i, label) {
+    if (editing.value === i && label !== OTHER && label === path.value[i]) {
+        editing.value = null;
+        return;
+    }
+    pick(i, label);
+    editing.value = null;
+}
 
 // ── search style ─────────────────────────────────────────────────────
 const query = ref('');
