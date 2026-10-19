@@ -8,7 +8,7 @@
             <div ref="panel" class="rcmi-modal-panel relative w-full rounded-xl bg-white shadow-2xl" :class="wide ? 'max-w-3xl' : 'max-w-md'" @click.stop>
                 <!-- Header -->
                 <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-                    <h3 class="text-base font-semibold text-gray-900">{{ title }}</h3>
+                    <h3 class="text-base font-semibold text-gray-900" :class="titleClass">{{ title }}</h3>
                     <button @click="close" class="rcmi-button-ghost rounded-md p-1.5" aria-label="Close dialog">
                         <Icon name="x" />
                     </button>
@@ -34,6 +34,7 @@ import Icon from './Icon.vue';
 
 const props = defineProps({
     title: { type: String, default: '' },
+    titleClass: { type: String, default: '' },
     closeOnScrim: { type: Boolean, default: true },
     wide: { type: Boolean, default: false },
 });

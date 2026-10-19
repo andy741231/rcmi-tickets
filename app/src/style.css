@@ -18,6 +18,14 @@
 }
 
 @layer components {
+    /* Modals teleport to <body>, outside .rcmi-tickets — restore the body
+       font on titles that shouldn't inherit the theme's heading font. */
+    .rcmi-modal-title-sans {
+        font-family: 'Source Sans 3', 'Source Sans Pro', system-ui, sans-serif;
+        text-transform: none;
+        letter-spacing: normal;
+    }
+
     .rcmi-surface {
         border: 1px solid var(--rcmi-border);
         border-radius: var(--rcmi-radius-md);

@@ -392,7 +392,7 @@
             </div>
 
             <!-- Requestor profile modal -->
-            <Modal v-if="requestorProfileOpen" @close="requestorProfileOpen = false" title="Requestor">
+            <Modal v-if="requestorProfileOpen" @close="requestorProfileOpen = false" title="Requestor" titleClass="rcmi-modal-title-sans">
                 <div class="flex items-center gap-3 border-b border-gray-100 pb-4">
                     <img v-if="ticket.author_photo" :src="ticket.author_photo" :alt="ticket.author_name" class="h-14 w-14 rounded-full object-cover" />
                     <span v-else class="rcmi-avatar h-14 w-14 text-xl">{{ initials(ticket.author_name) }}</span>
