@@ -274,7 +274,11 @@
                             <div>
                                 <dt class="text-xs font-semibold text-gray-500">Requestor</dt>
                                 <dd class="mt-1 flex items-center gap-2 text-sm text-gray-700">
-                                    <span class="rcmi-avatar h-7 w-7 text-xs">{{ initials(ticket.author_name) }}</span>
+                                    <button type="button" @click="requestorProfileOpen = true"
+                                        :aria-label="`View requestor profile (${ticket.author_name || 'Unknown'})`"
+                                        class="rounded-full transition hover:ring-2 hover:ring-red-300 focus:outline-none focus:ring-2 focus:ring-red-400">
+                                        <span class="rcmi-avatar h-7 w-7 text-xs block">{{ initials(ticket.author_name) }}</span>
+                                    </button>
                                     <span>{{ ticket.author_name || 'Unknown' }}</span>
                                 </dd>
                                 <dd v-if="ticket.author_email" class="mt-1 pl-9 text-xs text-gray-500">
@@ -386,6 +390,40 @@
                 </div>
             </div>
 
+            <!-- Requestor profile modal -->
+            <Modal v-if="requestorProfileOpen" @close="requestorProfileOpen = false" title="Requestor">
+                <div class="flex items-center gap-3 border-b border-gray-100 pb-4">
+                    <span class="rcmi-avatar h-14 w-14 text-xl">{{ initials(ticket.author_name) }}</span>
+                    <div class="min-w-0">
+                        <div class="truncate text-base font-semibold text-gray-900">{{ ticket.author_name || 'Unknown' }}</div>
+                        <div v-if="ticket.author_job_title" class="truncate text-sm text-gray-600">{{ ticket.author_job_title }}</div>
+                        <div v-if="ticket.author_department" class="truncate text-xs text-gray-500">{{ ticket.author_department }}</div>
+                    </div>
+                </div>
+                <dl class="mt-4 space-y-3 text-sm">
+                    <div v-if="ticket.author_email" class="flex items-baseline gap-3">
+                        <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Email</dt>
+                        <dd><a :href="`mailto:${ticket.author_email}`" class="text-red-700 hover:underline">{{ ticket.author_email }}</a></dd>
+                    </div>
+                    <div v-if="ticket.author_phone" class="flex items-baseline gap-3">
+                        <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Phone</dt>
+                        <dd class="text-gray-700">{{ ticket.author_phone }}</dd>
+                    </div>
+                    <div v-if="ticket.author_employee_id" class="flex items-baseline gap-3">
+                        <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Employee ID</dt>
+                        <dd class="text-gray-700">{{ ticket.author_employee_id }}</dd>
+                    </div>
+                    <div v-if="ticket.author_company" class="flex items-baseline gap-3">
+                        <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Company</dt>
+                        <dd class="text-gray-700">{{ ticket.author_company }}</dd>
+                    </div>
+                    <div v-if="ticket.author_office" class="flex items-baseline gap-3">
+                        <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Office</dt>
+                        <dd class="text-gray-700">{{ ticket.author_office }}</dd>
+                    </div>
+                </dl>
+            </Modal>
+
             <!-- Delete confirmation modal -->
             <Modal v-if="confirmDelete" @close="confirmDelete = false" title="Delete ticket">
                 <p class="text-sm text-gray-700">
@@ -430,6 +468,7 @@ const loadError = ref('');
 const statusChanging = ref(false);
 const deleting = ref(false);
 const confirmDelete = ref(false);
+const requestorProfileOpen = ref(false);
 const rejectOpen = ref(false);
 const rejectMessage = ref('');
 const chainRejectOpen = ref(false);

@@ -186,7 +186,7 @@ function rcmi_tickets_sso_sync_job_info($user) {
     }
 
     $response = wp_remote_get(
-        'https://graph.microsoft.com/v1.0/me?$select=jobTitle,department,companyName,employeeId,officeLocation',
+        'https://graph.microsoft.com/v1.0/me?$select=jobTitle,department,companyName,employeeId,officeLocation,businessPhones',
         [
             'headers' => ['Authorization' => 'Bearer ' . $access_token],
             'timeout' => 5,
@@ -213,5 +213,15 @@ function rcmi_tickets_sso_sync_job_info($user) {
         } else {
             delete_user_meta($user->ID, $meta_key);
         }
+    }
+
+    // businessPhones is an array — use the first entry as the contact number.
+    $phone = !empty($me['businessPhones']) && is_array($me['businessPhones'])
+        ? (string) reset($me['businessPhones'])
+        : '';
+    if ($phone !== '') {
+        update_user_meta($user->ID, 'rcmi_phone', sanitize_text_field($phone));
+    } else {
+        delete_user_meta($user->ID, 'rcmi_phone');
     }
 }
