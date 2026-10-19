@@ -1132,7 +1132,7 @@ function rcmi_tickets_handle_csv_export($request) {
     // fields, then supplementary audit columns at the end.
     $primary_headers   = ['ID', 'Title', 'Status', 'Assignee', 'Due Date', 'Updated'];
     $field_headers     = array_map(function ($f) { return $f['label']; }, $form_fields);
-    $extra_headers     = ['Requestor', 'Requestor Email', 'Tags', 'Created'];
+    $extra_headers     = ['Requestor', 'Requestor Email', 'Requestor Job Title', 'Requestor Department', 'Requestor Phone', 'Requestor Employee ID', 'Tags', 'Created'];
     $all_headers       = array_merge($primary_headers, $field_headers, $extra_headers);
 
     $output = fopen('php://temp', 'r+');
@@ -1175,6 +1175,10 @@ function rcmi_tickets_handle_csv_export($request) {
         $extra_row = [
             $formatted['author_name'],
             $formatted['author_email'],
+            $formatted['author_job_title'],
+            $formatted['author_department'],
+            $formatted['author_phone'],
+            $formatted['author_employee_id'],
             $tag_names,
             $formatted['created_at'],
         ];
