@@ -99,6 +99,9 @@
                                 <dd v-if="ticket.author_email" class="mt-1 pl-9 text-xs text-gray-500">
                                     <a :href="`mailto:${ticket.author_email}`" class="hover:text-red-700 hover:underline">{{ ticket.author_email }}</a>
                                 </dd>
+                                <dd v-if="ticket.author_job_title || ticket.author_department" class="mt-0.5 pl-9 text-xs text-gray-500">
+                                    {{ [ticket.author_job_title, ticket.author_department].filter(Boolean).join(' · ') }}
+                                </dd>
                             </div>
                             <div>
                                 <dt class="text-xs font-semibold text-gray-500">Assignee{{ ticket.assignees && ticket.assignees.length > 1 ? 's' : '' }}</dt>

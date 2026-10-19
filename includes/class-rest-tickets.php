@@ -366,6 +366,8 @@ function rcmi_tickets_format_ticket($row) {
         'author_id'       => (int) $row['author_id'],
         'author_name'     => $author_name,
         'author_email'    => $author_email,
+        'author_job_title'  => $author ? (string) get_user_meta($row['author_id'], 'rcmi_job_title', true) : '',
+        'author_department' => $author ? (string) get_user_meta($row['author_id'], 'rcmi_department', true) : '',
         'title'           => $row['title'],
         'description'     => $row['description'],
         'status'          => $row['status'],

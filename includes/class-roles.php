@@ -153,3 +153,65 @@ function rcmi_tickets_get_app_url() {
 add_action('save_post_page', function () {
     delete_transient('rcmi_tickets_app_url');
 });
+
+/**
+ * Request the Graph `User.Read` scope during SSO so the access token can
+ * read the Entra profile. Injected via the plugin's settings filter so it
+ * works regardless of whether the scope comes from DB settings or
+ * wp-config constants — jobTitle/department are not emittable token claims.
+ */
+add_filter('openid-connect-generic-settings', function ($settings) {
+    $scope = (string) ($settings->scope ?? '');
+    if (!preg_match('/\bUser\.Read\b/i', $scope)) {
+        $settings->scope = trim($scope . ' User.Read');
+    }
+    return $settings;
+});
+
+/**
+ * Sync Entra job info (jobTitle, department, …) into user meta on SSO
+ * login. Reads the Graph access token the plugin stores per login; if the
+ * token lacks User.Read, the call fails silently and login proceeds.
+ */
+add_action('openid-connect-generic-user-logged-in', 'rcmi_tickets_sso_sync_job_info', 20);
+
+function rcmi_tickets_sso_sync_job_info($user) {
+    if (!$user instanceof WP_User || !$user->ID) {
+        return;
+    }
+    $token_response = get_user_option('openid-connect-generic-last-token-response', $user->ID);
+    $access_token = is_array($token_response) ? ($token_response['access_token'] ?? '') : '';
+    if (!$access_token) {
+        return;
+    }
+
+    $response = wp_remote_get(
+        'https://graph.microsoft.com/v1.0/me?$select=jobTitle,department,companyName,employeeId,officeLocation',
+        [
+            'headers' => ['Authorization' => 'Bearer ' . $access_token],
+            'timeout' => 5,
+        ]
+    );
+    if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+        return;
+    }
+    $me = json_decode(wp_remote_retrieve_body($response), true);
+    if (!is_array($me)) {
+        return;
+    }
+
+    $map = [
+        'jobTitle'       => 'rcmi_job_title',
+        'department'     => 'rcmi_department',
+        'companyName'    => 'rcmi_company_name',
+        'employeeId'     => 'rcmi_employee_id',
+        'officeLocation' => 'rcmi_office_location',
+    ];
+    foreach ($map as $field => $meta_key) {
+        if (!empty($me[$field]) && is_string($me[$field])) {
+            update_user_meta($user->ID, $meta_key, sanitize_text_field($me[$field]));
+        } else {
+            delete_user_meta($user->ID, $meta_key);
+        }
+    }
+}
