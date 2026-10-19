@@ -55,13 +55,27 @@
                     </div>
                 </div>
 
-                <!-- Assignee + Tag row -->
+                <!-- Assignee + Requestor + Department + Tag row -->
                 <div class="flex flex-wrap gap-4">
                     <label class="flex flex-col gap-1">
                         <span class="text-xs font-medium text-gray-500">Assignee</span>
                         <select v-model="local.assigneeId" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange">
                             <option :value="null">Anyone</option>
                             <option v-for="u in assignableUsers" :key="u.id" :value="u.id">{{ u.display_name }}</option>
+                        </select>
+                    </label>
+                    <label v-if="requestors.length" class="flex flex-col gap-1">
+                        <span class="text-xs font-medium text-gray-500">Requestor</span>
+                        <select v-model="local.requestorId" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange">
+                            <option :value="null">Any requestor</option>
+                            <option v-for="r in requestors" :key="r.id" :value="r.id">{{ r.name }} ({{ r.count }})</option>
+                        </select>
+                    </label>
+                    <label v-if="departments.length" class="flex flex-col gap-1">
+                        <span class="text-xs font-medium text-gray-500">Department</span>
+                        <select v-model="local.department" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange">
+                            <option value="">Any department</option>
+                            <option v-for="d in departments" :key="d.value" :value="d.value">{{ d.value }} ({{ d.count }})</option>
                         </select>
                     </label>
                     <label class="flex flex-col gap-1">
@@ -119,6 +133,8 @@ const props = defineProps({
     statuses:        { type: Array, default: () => [] },
     tags:            { type: Array, default: () => [] },
     assignableUsers: { type: Array, default: () => [] },
+    requestors:      { type: Array, default: () => [] },
+    departments:     { type: Array, default: () => [] },
     formFields:      { type: Array, default: () => [] },
     modelValue:      { type: Object, default: () => ({}) },
 });
@@ -127,6 +143,7 @@ const emit = defineEmits(['update:modelValue']);
 const defaults = {
     search: '', scope: 'all', status: [],
     assigneeId: null, tagId: null,
+    requestorId: null, department: '',
     dateFrom: '', dateTo: '',
     fieldKey: '', fieldValue: '',
 };
@@ -145,6 +162,8 @@ const activeCount = computed(() => {
     if (local.scope !== 'all') count++;
     if (local.status.length) count++;
     if (local.assigneeId) count++;
+    if (local.requestorId) count++;
+    if (local.department) count++;
     if (local.tagId) count++;
     if (local.dateFrom) count++;
     if (local.dateTo) count++;
@@ -247,6 +266,13 @@ const activeFilterChips = computed(() => {
         const u = props.assignableUsers.find(u => u.id === local.assigneeId);
         chips.push({ key: 'assigneeId', label: `Assignee: ${u?.display_name || local.assigneeId}` });
     }
+    if (local.requestorId) {
+        const r = props.requestors.find(r => r.id === local.requestorId);
+        chips.push({ key: 'requestorId', label: `Requestor: ${r?.name || local.requestorId}` });
+    }
+    if (local.department) {
+        chips.push({ key: 'department', label: `Department: ${local.department}` });
+    }
     if (local.tagId) {
         const t = props.tags.find(t => t.id === local.tagId);
         chips.push({ key: 'tagId', label: `Tag: ${t?.name || local.tagId}` });
@@ -283,6 +309,8 @@ function removeFilter(key) {
         if (idx >= 0) local.status.splice(idx, 1);
     }
     else if (key === 'assigneeId') local.assigneeId = null;
+    else if (key === 'requestorId') local.requestorId = null;
+    else if (key === 'department') local.department = '';
     else if (key === 'tagId') local.tagId = null;
     else if (key === 'dateFrom') local.dateFrom = '';
     else if (key === 'dateTo') local.dateTo = '';
@@ -300,8 +328,10 @@ function emitChange() {
     const payload = { ...local };
     payload.assignee_ids = payload.assigneeId ? [payload.assigneeId] : [];
     payload.tag_ids = payload.tagId ? [payload.tagId] : [];
+    payload.author_id = payload.requestorId || '';
     delete payload.assigneeId;
     delete payload.tagId;
+    delete payload.requestorId;
     payload.field_filters = (payload.fieldKey && payload.fieldValue)
         ? { [payload.fieldKey]: payload.fieldValue }
         : {};

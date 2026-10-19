@@ -21,6 +21,7 @@
 
         <!-- Filter bar -->
         <FilterBar v-model="filters" :statuses="meta.statuses" :tags="meta.tags" :assignable-users="meta.assignable_users"
+            :requestors="meta.requestors || []" :departments="meta.departments || []"
             :form-fields="meta.form_fields || []"
             class="mb-5" />
 
@@ -297,7 +298,7 @@ const page = ref(1);
 const perPage = ref(parseInt(localStorage.getItem('rcmi_tickets_per_page'), 10) || 9);
 const total = ref(0);
 const totalPages = ref(0);
-const filters = ref({ search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '', field_filters: {} });
+const filters = ref({ search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], author_id: '', department: '', date_from: '', date_to: '', field_filters: {} });
 const queue = ref('all');
 
 // Batch actions state
@@ -395,6 +396,8 @@ const activeFilterCount = computed(() => {
     if (filters.value.scope !== 'all') c++;
     if (filters.value.status?.length) c++;
     if (filters.value.assignee_ids?.length) c++;
+    if (filters.value.author_id) c++;
+    if (filters.value.department) c++;
     if (filters.value.tag_ids?.length) c++;
     if (filters.value.date_from) c++;
     if (filters.value.date_to) c++;
@@ -445,7 +448,7 @@ function applyQueueFilter() {
 
 function clearAllFilters() {
     queue.value = 'all';
-    filters.value = { search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], date_from: '', date_to: '', field_filters: {} };
+    filters.value = { search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], author_id: '', department: '', date_from: '', date_to: '', field_filters: {} };
 }
 
 function toggleOrder() {
@@ -535,6 +538,8 @@ async function loadTickets() {
         if (filters.value.status?.length) filters.value.status.forEach(s => params.append('status[]', s));
         if (filters.value.assignee_ids?.length) filters.value.assignee_ids.forEach(id => params.append('assignee_ids[]', id));
         if (filters.value.tag_ids?.length) filters.value.tag_ids.forEach(id => params.append('tag_ids[]', id));
+        if (filters.value.author_id) params.set('author_id', filters.value.author_id);
+        if (filters.value.department) params.set('department', filters.value.department);
         if (filters.value.date_from) params.set('date_from', filters.value.date_from);
         if (filters.value.date_to) params.set('date_to', filters.value.date_to);
         if (filters.value.field_filters) {
@@ -579,6 +584,8 @@ async function exportCsv() {
         if (filters.value.status?.length) filters.value.status.forEach(s => params.append('status[]', s));
         if (filters.value.assignee_ids?.length) filters.value.assignee_ids.forEach(id => params.append('assignee_ids[]', id));
         if (filters.value.tag_ids?.length) filters.value.tag_ids.forEach(id => params.append('tag_ids[]', id));
+        if (filters.value.author_id) params.set('author_id', filters.value.author_id);
+        if (filters.value.department) params.set('department', filters.value.department);
         if (filters.value.date_from) params.set('date_from', filters.value.date_from);
         if (filters.value.date_to) params.set('date_to', filters.value.date_to);
         if (filters.value.field_filters) {

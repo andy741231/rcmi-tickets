@@ -255,6 +255,45 @@ function rcmi_tickets_handle_meta() {
         'overdue'          => $overdue_count,
     ];
 
+    // Requestor + department filter options — data-driven from the tickets
+    // the user can see (non-archived), matching the list's scope rules.
+    $opt_where = ['t.archived = 0'];
+    $opt_args = [];
+    rcmi_tickets_append_scope_where('all', $user_id, $is_manager, $opt_where, $opt_args);
+    $opt_sql = implode(' AND ', $opt_where);
+
+    $requestor_rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT t.author_id, COUNT(*) AS ticket_count
+         FROM {$wpdb->prefix}rcmi_tickets t
+         WHERE {$opt_sql}
+         GROUP BY t.author_id
+         ORDER BY ticket_count DESC
+         LIMIT 200",
+        $opt_args
+    ), ARRAY_A);
+    $requestors = [];
+    foreach ($requestor_rows as $r) {
+        $u = get_userdata((int) $r['author_id']);
+        $requestors[] = [
+            'id'    => (int) $r['author_id'],
+            'name'  => $u ? $u->display_name : __('Unknown user', 'rcmi-tickets'),
+            'count' => (int) $r['ticket_count'],
+        ];
+    }
+
+    $department_rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT um.meta_value AS department, COUNT(DISTINCT t.id) AS ticket_count
+         FROM {$wpdb->prefix}rcmi_tickets t
+         INNER JOIN {$wpdb->usermeta} um ON um.user_id = t.author_id AND um.meta_key = 'rcmi_department'
+         WHERE {$opt_sql} AND um.meta_value <> ''
+         GROUP BY um.meta_value
+         ORDER BY ticket_count DESC, department ASC",
+        $opt_args
+    ), ARRAY_A);
+    $departments = array_map(function ($r) {
+        return ['value' => $r['department'], 'count' => (int) $r['ticket_count']];
+    }, $department_rows);
+
     return new WP_REST_Response([
         'statuses'  => rcmi_tickets_valid_statuses(),
         'current_user' => [
@@ -266,6 +305,8 @@ function rcmi_tickets_handle_meta() {
         'caps'             => $caps,
         'tags'             => $tags,
         'assignable_users' => $assignable_users,
+        'requestors'       => $requestors,
+        'departments'      => $departments,
         'form_fields'      => $form_fields,
         'approval_chains'  => $approval_chains,
         'tag_rules'        => $tag_rules,

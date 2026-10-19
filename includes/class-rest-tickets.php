@@ -199,6 +199,8 @@ function rcmi_tickets_list_args() {
         'tag_ids'        => ['type' => 'array', 'items' => ['type' => 'integer']],
         'assignee_ids'   => ['type' => 'array', 'items' => ['type' => 'integer']],
         'scope'          => ['type' => 'string', 'validate_callback' => function ($v) { return in_array($v, ['assigned', 'submitted', 'all'], true); }],
+        'author_id'      => ['type' => 'integer', 'sanitize_callback' => 'absint'],
+        'department'     => ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field'],
         'archived'       => ['type' => 'boolean', 'default' => false],
         'date_from'      => ['type' => 'string'],
         'date_to'        => ['type' => 'string'],
@@ -819,6 +821,95 @@ function rcmi_tickets_append_scope_where($scope, $user_id, $is_manager, &$where,
 }
 
 /**
+ * Build the shared ticket-list WHERE clause for table alias `t`.
+ * Used by the list endpoint and the CSV export so both always filter
+ * identically. Returns [where_sql, prepared_args].
+ */
+function rcmi_tickets_build_list_where($params, $user_id, $is_manager) {
+    global $wpdb;
+    $where = ['1=1'];
+    $args = [];
+
+    // Archived filter: default excludes archived; archived=true shows only archived
+    $archived = isset($params['archived']) ? filter_var($params['archived'], FILTER_VALIDATE_BOOLEAN) : false;
+    $where[] = $archived ? 't.archived = 1' : 't.archived = 0';
+
+    // Scope/visibility
+    rcmi_tickets_append_scope_where($params['scope'] ?? 'all', $user_id, $is_manager, $where, $args);
+
+    // Search
+    if (!empty($params['search'])) {
+        $search = '%' . $wpdb->esc_like(sanitize_text_field($params['search'])) . '%';
+        $where[] = '(t.title LIKE %s OR t.description_text LIKE %s)';
+        $args[] = $search;
+        $args[] = $search;
+    }
+
+    // Status filter — 'Pending Approval' also matches stored 'Received'
+    // rows (the UI merges the internal pre-triage state into it).
+    if (!empty($params['status']) && is_array($params['status'])) {
+        $statuses = array_filter($params['status'], function ($s) {
+            return in_array($s, rcmi_tickets_valid_statuses(), true);
+        });
+        if (in_array('Pending Approval', $statuses, true)) {
+            $statuses[] = 'Received';
+        }
+        if ($statuses) {
+            $placeholders = implode(',', array_fill(0, count($statuses), '%s'));
+            $where[] = "t.status IN ($placeholders)";
+            $args = array_merge($args, $statuses);
+        }
+    }
+
+    // Tag filter
+    if (!empty($params['tag_ids']) && is_array($params['tag_ids'])) {
+        $tag_ids = array_filter(array_map('intval', $params['tag_ids']));
+        if ($tag_ids) {
+            $placeholders = implode(',', array_fill(0, count($tag_ids), '%d'));
+            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_tag_map WHERE tag_id IN ($placeholders))";
+            $args = array_merge($args, $tag_ids);
+        }
+    }
+
+    // Assignee filter
+    if (!empty($params['assignee_ids']) && is_array($params['assignee_ids'])) {
+        $assignee_ids = array_filter(array_map('intval', $params['assignee_ids']));
+        if ($assignee_ids) {
+            $placeholders = implode(',', array_fill(0, count($assignee_ids), '%d'));
+            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id IN ($placeholders))";
+            $args = array_merge($args, $assignee_ids);
+        }
+    }
+
+    // Requestor filter (ticket author)
+    if (!empty($params['author_id'])) {
+        $where[] = 't.author_id = %d';
+        $args[] = (int) $params['author_id'];
+    }
+
+    // Department filter — resolves the SSO-synced rcmi_department meta on
+    // the ticket's author.
+    if (!empty($params['department'])) {
+        $where[] = "t.author_id IN (SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'rcmi_department' AND meta_value = %s)";
+        $args[] = sanitize_text_field($params['department']);
+    }
+
+    // Date range
+    if (!empty($params['date_from'])) {
+        $where[] = 't.created_at >= %s';
+        $args[] = $params['date_from'] . ' 00:00:00';
+    }
+    if (!empty($params['date_to'])) {
+        $where[] = 't.created_at <= %s';
+        $args[] = $params['date_to'] . ' 23:59:59';
+    }
+
+    rcmi_tickets_append_field_filters($params, $where, $args);
+
+    return [implode(' AND ', $where), $args];
+}
+
+/**
  * GET /field-values — distinct stored values for a form field, with the
  * number of visible, non-archived tickets carrying each one. JSON-array
  * answers (checkbox groups, cascade paths) are exploded into elements so
@@ -991,82 +1082,12 @@ function rcmi_tickets_handle_list($request) {
     $user_id = get_current_user_id();
     $is_manager = rcmi_tickets_can($user_id, 'manage');
 
-    $where = ['1=1'];
-    $args = [];
-
-    // Archived filter: default excludes archived tickets; archived=true shows only archived
-    $archived = isset($params['archived']) ? filter_var($params['archived'], FILTER_VALIDATE_BOOLEAN) : false;
-    if ($archived) {
-        $where[] = 't.archived = 1';
-    } else {
-        $where[] = 't.archived = 0';
-    }
-
-    // Scope: non-managers can only see assigned, submitted, or approval-chain
-    rcmi_tickets_append_scope_where($params['scope'] ?? 'all', $user_id, $is_manager, $where, $args);
-
-    // Search
-    if (!empty($params['search'])) {
-        $search = '%' . $wpdb->esc_like(sanitize_text_field($params['search'])) . '%';
-        $where[] = '(t.title LIKE %s OR t.description_text LIKE %s)';
-        $args[] = $search;
-        $args[] = $search;
-    }
-
-    // Status filter — 'Pending Approval' also matches stored 'Received'
-    // rows (the UI merges the internal pre-triage state into it).
-    if (!empty($params['status']) && is_array($params['status'])) {
-        $statuses = array_filter($params['status'], function ($s) {
-            return in_array($s, rcmi_tickets_valid_statuses(), true);
-        });
-        if (in_array('Pending Approval', $statuses, true)) {
-            $statuses[] = 'Received';
-        }
-        if ($statuses) {
-            $placeholders = implode(',', array_fill(0, count($statuses), '%s'));
-            $where[] = "t.status IN ($placeholders)";
-            $args = array_merge($args, $statuses);
-        }
-    }
-
-    // Tag filter
-    if (!empty($params['tag_ids']) && is_array($params['tag_ids'])) {
-        $tag_ids = array_filter(array_map('intval', $params['tag_ids']));
-        if ($tag_ids) {
-            $placeholders = implode(',', array_fill(0, count($tag_ids), '%d'));
-            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_tag_map WHERE tag_id IN ($placeholders))";
-            $args = array_merge($args, $tag_ids);
-        }
-    }
-
-    // Assignee filter
-    if (!empty($params['assignee_ids']) && is_array($params['assignee_ids'])) {
-        $assignee_ids = array_filter(array_map('intval', $params['assignee_ids']));
-        if ($assignee_ids) {
-            $placeholders = implode(',', array_fill(0, count($assignee_ids), '%d'));
-            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id IN ($placeholders))";
-            $args = array_merge($args, $assignee_ids);
-        }
-    }
-
-    // Date range
-    if (!empty($params['date_from'])) {
-        $where[] = 't.created_at >= %s';
-        $args[] = $params['date_from'] . ' 00:00:00';
-    }
-    if (!empty($params['date_to'])) {
-        $where[] = 't.created_at <= %s';
-        $args[] = $params['date_to'] . ' 23:59:59';
-    }
-
-    rcmi_tickets_append_field_filters($params, $where, $args);
+    [$where_clause, $args] = rcmi_tickets_build_list_where($params, $user_id, $is_manager);
 
     // Sorting (whitelist columns to prevent SQL injection)
     $valid_sort = ['id', 'title', 'status', 'due_date', 'created_at', 'updated_at'];
     $sort = in_array($params['sort'] ?? 'created_at', $valid_sort, true) ? $params['sort'] : 'created_at';
     $order = strtolower($params['order'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
-
-    $where_clause = implode(' AND ', $where);
 
     // Pagination
     $page = max(1, (int) ($params['page'] ?? 1));
@@ -1113,93 +1134,12 @@ function rcmi_tickets_handle_csv_export($request) {
     $user_id = get_current_user_id();
     $is_manager = rcmi_tickets_can($user_id, 'manage');
 
-    // Build the same WHERE clause as the list handler
-    $where = ['1=1'];
-    $args = [];
-
-    // Archived filter: default excludes archived tickets; archived=true shows only archived
-    $archived = isset($params['archived']) ? filter_var($params['archived'], FILTER_VALIDATE_BOOLEAN) : false;
-    if ($archived) {
-        $where[] = 't.archived = 1';
-    } else {
-        $where[] = 't.archived = 0';
-    }
-
-    $scope = $params['scope'] ?? 'all';
-    if (!$is_manager || $scope !== 'all') {
-        if ($scope === 'assigned') {
-            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
-            $args[] = $user_id;
-        } elseif ($scope === 'submitted') {
-            $where[] = 't.author_id = %d';
-            $args[] = $user_id;
-        } else {
-            $vis = "(t.author_id = %d OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
-            $vis_args = [$user_id, $user_id];
-            $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_user_id = %d)";
-            $vis_args[] = $user_id;
-            $current_user = wp_get_current_user();
-            $user_roles = (array) $current_user->roles;
-            if ($user_roles) {
-                $role_placeholders = implode(',', array_fill(0, count($user_roles), '%s'));
-                $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_role IN ($role_placeholders))";
-                foreach ($user_roles as $role) {
-                    $vis_args[] = $role;
-                }
-            }
-            $vis .= ")";
-            $where[] = $vis;
-            $args = array_merge($args, $vis_args);
-        }
-    }
-
-    if (!empty($params['search'])) {
-        $search = '%' . $wpdb->esc_like(sanitize_text_field($params['search'])) . '%';
-        $where[] = '(t.title LIKE %s OR t.description_text LIKE %s)';
-        $args[] = $search;
-        $args[] = $search;
-    }
-    if (!empty($params['status']) && is_array($params['status'])) {
-        $statuses = array_filter($params['status'], function ($s) {
-            return in_array($s, rcmi_tickets_valid_statuses(), true);
-        });
-        if ($statuses) {
-            $placeholders = implode(',', array_fill(0, count($statuses), '%s'));
-            $where[] = "t.status IN ($placeholders)";
-            $args = array_merge($args, $statuses);
-        }
-    }
-    if (!empty($params['tag_ids']) && is_array($params['tag_ids'])) {
-        $tag_ids = array_filter(array_map('intval', $params['tag_ids']));
-        if ($tag_ids) {
-            $placeholders = implode(',', array_fill(0, count($tag_ids), '%d'));
-            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_tag_map WHERE tag_id IN ($placeholders))";
-            $args = array_merge($args, $tag_ids);
-        }
-    }
-    if (!empty($params['assignee_ids']) && is_array($params['assignee_ids'])) {
-        $assignee_ids = array_filter(array_map('intval', $params['assignee_ids']));
-        if ($assignee_ids) {
-            $placeholders = implode(',', array_fill(0, count($assignee_ids), '%d'));
-            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id IN ($placeholders))";
-            $args = array_merge($args, $assignee_ids);
-        }
-    }
-    if (!empty($params['date_from'])) {
-        $where[] = 't.created_at >= %s';
-        $args[] = $params['date_from'] . ' 00:00:00';
-    }
-    if (!empty($params['date_to'])) {
-        $where[] = 't.created_at <= %s';
-        $args[] = $params['date_to'] . ' 23:59:59';
-    }
-
-    rcmi_tickets_append_field_filters($params, $where, $args);
+    // Same WHERE clause as the list handler
+    [$where_clause, $args] = rcmi_tickets_build_list_where($params, $user_id, $is_manager);
 
     $valid_sort = ['id', 'title', 'status', 'due_date', 'created_at', 'updated_at'];
     $sort = in_array($params['sort'] ?? 'created_at', $valid_sort, true) ? ($params['sort'] ?? 'created_at') : 'created_at';
     $order = strtolower($params['order'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
-    $where_clause = implode(' AND ', $where);
 
     // Fetch ALL matching rows (no pagination for export)
     $rows = $wpdb->get_results($wpdb->prepare(
