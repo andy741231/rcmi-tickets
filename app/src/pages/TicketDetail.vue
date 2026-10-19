@@ -277,7 +277,8 @@
                                     <button type="button" @click="requestorProfileOpen = true"
                                         :aria-label="`View requestor profile (${ticket.author_name || 'Unknown'})`"
                                         class="rounded-full transition hover:ring-2 hover:ring-red-300 focus:outline-none focus:ring-2 focus:ring-red-400">
-                                        <span class="rcmi-avatar h-7 w-7 text-xs block">{{ initials(ticket.author_name) }}</span>
+                                        <img v-if="ticket.author_photo" :src="ticket.author_photo" :alt="ticket.author_name" class="h-7 w-7 rounded-full object-cover" />
+                                        <span v-else class="rcmi-avatar h-7 w-7 text-xs block">{{ initials(ticket.author_name) }}</span>
                                     </button>
                                     <span>{{ ticket.author_name || 'Unknown' }}</span>
                                 </dd>
@@ -393,7 +394,8 @@
             <!-- Requestor profile modal -->
             <Modal v-if="requestorProfileOpen" @close="requestorProfileOpen = false" title="Requestor">
                 <div class="flex items-center gap-3 border-b border-gray-100 pb-4">
-                    <span class="rcmi-avatar h-14 w-14 text-xl">{{ initials(ticket.author_name) }}</span>
+                    <img v-if="ticket.author_photo" :src="ticket.author_photo" :alt="ticket.author_name" class="h-14 w-14 rounded-full object-cover" />
+                    <span v-else class="rcmi-avatar h-14 w-14 text-xl">{{ initials(ticket.author_name) }}</span>
                     <div class="min-w-0">
                         <div class="truncate text-base font-semibold text-gray-900">{{ ticket.author_name || 'Unknown' }}</div>
                         <div v-if="ticket.author_job_title" class="truncate text-sm text-gray-600">{{ ticket.author_job_title }}</div>
@@ -412,14 +414,6 @@
                     <div v-if="ticket.author_employee_id" class="flex items-baseline gap-3">
                         <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Employee ID</dt>
                         <dd class="text-gray-700">{{ ticket.author_employee_id }}</dd>
-                    </div>
-                    <div v-if="ticket.author_company" class="flex items-baseline gap-3">
-                        <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Company</dt>
-                        <dd class="text-gray-700">{{ ticket.author_company }}</dd>
-                    </div>
-                    <div v-if="ticket.author_office" class="flex items-baseline gap-3">
-                        <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Office</dt>
-                        <dd class="text-gray-700">{{ ticket.author_office }}</dd>
                     </div>
                 </dl>
             </Modal>

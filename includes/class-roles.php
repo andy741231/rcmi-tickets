@@ -186,7 +186,7 @@ function rcmi_tickets_sso_sync_job_info($user) {
     }
 
     $response = wp_remote_get(
-        'https://graph.microsoft.com/v1.0/me?$select=jobTitle,department,companyName,employeeId,officeLocation,businessPhones',
+        'https://graph.microsoft.com/v1.0/me?$select=jobTitle,department,employeeId,businessPhones',
         [
             'headers' => ['Authorization' => 'Bearer ' . $access_token],
             'timeout' => 5,
@@ -223,5 +223,24 @@ function rcmi_tickets_sso_sync_job_info($user) {
         update_user_meta($user->ID, 'rcmi_phone', sanitize_text_field($phone));
     } else {
         delete_user_meta($user->ID, 'rcmi_phone');
+    }
+
+    // Profile photo: 96x96 JPEG, stored as a data URI for the ticket avatar.
+    $photo = wp_remote_get(
+        'https://graph.microsoft.com/v1.0/me/photos/96x96/$value',
+        [
+            'headers' => ['Authorization' => 'Bearer ' . $access_token],
+            'timeout' => 5,
+        ]
+    );
+    if (!is_wp_error($photo) && wp_remote_retrieve_response_code($photo) === 200) {
+        $bytes = wp_remote_retrieve_body($photo);
+        $mime  = wp_remote_retrieve_header($photo, 'content-type');
+        $mime  = is_string($mime) && $mime !== '' ? strtok($mime, ';') : 'image/jpeg';
+        if ($bytes !== '') {
+            update_user_meta($user->ID, 'rcmi_photo', 'data:' . $mime . ';base64,' . base64_encode($bytes));
+        }
+    } else {
+        delete_user_meta($user->ID, 'rcmi_photo');
     }
 }

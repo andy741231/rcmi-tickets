@@ -302,7 +302,7 @@ function rcmi_tickets_sync_tags($ticket_id, $tag_ids) {
 /**
  * Format a ticket row for API response (adds user display info, tags).
  */
-function rcmi_tickets_format_ticket($row) {
+function rcmi_tickets_format_ticket($row, $with_author_photo = false) {
     $author = get_userdata($row['author_id']);
     $updater = $row['updated_by'] ? get_userdata($row['updated_by']) : null;
     $author_name = $author ? $author->display_name : '';
@@ -370,8 +370,8 @@ function rcmi_tickets_format_ticket($row) {
         'author_department' => $author ? (string) get_user_meta($row['author_id'], 'rcmi_department', true) : '',
         'author_phone'      => $author ? (string) get_user_meta($row['author_id'], 'rcmi_phone', true) : '',
         'author_employee_id' => $author ? (string) get_user_meta($row['author_id'], 'rcmi_employee_id', true) : '',
-        'author_company'    => $author ? (string) get_user_meta($row['author_id'], 'rcmi_company_name', true) : '',
-        'author_office'     => $author ? (string) get_user_meta($row['author_id'], 'rcmi_office_location', true) : '',
+        // Photo is a base64 data URI — only sent on single-ticket responses.
+        'author_photo'      => ($with_author_photo && $author) ? (string) get_user_meta($row['author_id'], 'rcmi_photo', true) : '',
         'title'           => $row['title'],
         'description'     => $row['description'],
         'status'          => $row['status'],
@@ -1258,12 +1258,12 @@ function rcmi_tickets_handle_create($request) {
     $row = rcmi_tickets_load_ticket($ticket_id);
     do_action('rcmi_ticket_created', $ticket_id, get_current_user_id(), $row['assignee_ids']);
 
-    return new WP_REST_Response(rcmi_tickets_format_ticket($row), 201);
+    return new WP_REST_Response(rcmi_tickets_format_ticket($row, true), 201);
 }
 
 function rcmi_tickets_handle_get($request) {
     $row = rcmi_tickets_load_ticket($request['id']);
-    $formatted = rcmi_tickets_format_ticket($row);
+    $formatted = rcmi_tickets_format_ticket($row, true);
     $formatted['attachments'] = rcmi_tickets_get_ticket_attachments($row['id']);
     return new WP_REST_Response($formatted, 200);
 }
@@ -1357,7 +1357,7 @@ function rcmi_tickets_handle_update($request) {
     }
 
     $row = rcmi_tickets_load_ticket($request['id']);
-    return new WP_REST_Response(rcmi_tickets_format_ticket($row), 200);
+    return new WP_REST_Response(rcmi_tickets_format_ticket($row, true), 200);
 }
 
 function rcmi_tickets_delete_ticket_data($ticket_id) {
@@ -1528,7 +1528,7 @@ function rcmi_tickets_handle_status($request) {
     do_action('rcmi_ticket_status_changed', (int) $request['id'], $new_status, $old_status, $message);
 
     $row = rcmi_tickets_load_ticket($request['id']);
-    return new WP_REST_Response(rcmi_tickets_format_ticket($row), 200);
+    return new WP_REST_Response(rcmi_tickets_format_ticket($row, true), 200);
 }
 
 /**
@@ -1563,5 +1563,5 @@ function rcmi_tickets_handle_assignee_update($request) {
     }
 
     $row = rcmi_tickets_load_ticket($ticket_id);
-    return new WP_REST_Response(rcmi_tickets_format_ticket($row), 200);
+    return new WP_REST_Response(rcmi_tickets_format_ticket($row, true), 200);
 }
