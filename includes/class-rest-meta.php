@@ -294,6 +294,21 @@ function rcmi_tickets_handle_meta() {
         return ['value' => $r['department'], 'count' => (int) $r['ticket_count']];
     }, $department_rows);
 
+    // Per-status counts over the same visible + non-archived set, for the
+    // filter pills. 'Received' folds into 'Pending Approval' like the UI.
+    $filter_status_counts = [];
+    $status_count_rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT t.status, COUNT(*) AS cnt
+         FROM {$wpdb->prefix}rcmi_tickets t
+         WHERE {$opt_sql}
+         GROUP BY t.status",
+        $opt_args
+    ), ARRAY_A);
+    foreach ($status_count_rows as $r) {
+        $key = $r['status'] === 'Received' ? 'Pending Approval' : $r['status'];
+        $filter_status_counts[$key] = ($filter_status_counts[$key] ?? 0) + (int) $r['cnt'];
+    }
+
     return new WP_REST_Response([
         'statuses'  => rcmi_tickets_valid_statuses(),
         'current_user' => [
@@ -313,6 +328,7 @@ function rcmi_tickets_handle_meta() {
         'allowed_mime_types' => $allowed_mime,
         'pending_approval_count' => $pending_approval_count,
         'inbox_summary'    => $inbox_summary,
+        'status_counts'    => $filter_status_counts,
         'public_success'   => rcmi_tickets_get_success_message(),
         'allow_public_submit' => rcmi_tickets_public_submissions_enabled(),
     ], 200);

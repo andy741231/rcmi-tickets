@@ -25,8 +25,8 @@
             <!-- Filters toggle -->
             <button @click="showAdvanced = !showAdvanced"
                 :class="['inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold', showAdvanced || activeCount > 0 ? 'border-red-200 bg-red-50 text-red-800' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50']"
-                :aria-expanded="showAdvanced">
-                <Icon name="settings" />
+                :aria-expanded="showAdvanced" aria-controls="rcmi-filters-panel">
+                <Icon name="sliders" />
                 Filters
                 <span v-if="activeCount > 0" class="rcmi-queue-chip-count" style="background: var(--rcmi-red); color: #fff;">{{ activeCount }}</span>
             </button>
@@ -43,80 +43,90 @@
 
         <!-- Advanced filters panel -->
         <transition name="expand">
-            <div v-if="showAdvanced" class="mt-4 space-y-4 border-t border-gray-100 pt-4">
-                <!-- Status pills -->
+            <div v-if="showAdvanced" id="rcmi-filters-panel" class="mt-4 space-y-5 border-t border-gray-100 pt-4">
+                <!-- Status -->
                 <div>
-                    <span class="text-xs font-medium text-gray-500">Status</span>
-                    <div class="mt-1.5 flex flex-wrap gap-1.5">
+                    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
+                    <div class="flex flex-wrap gap-1.5">
                         <button v-for="s in visibleStatuses" :key="s" @click="toggleStatus(s)"
-                            :class="['rounded-full border px-3 py-1 text-xs font-semibold transition', local.status.includes(s) ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300']">
+                            :aria-pressed="local.status.includes(s)"
+                            :class="['inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition', local.status.includes(s) ? statusColor(s).on : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300']">
+                            <span class="h-2 w-2 rounded-full" :class="statusColor(s).dot" aria-hidden="true"></span>
                             {{ statusDisplayLabel(s) }}
+                            <span class="opacity-60">{{ statusCounts[s] ?? 0 }}</span>
                         </button>
                     </div>
                 </div>
 
-                <!-- Assignee + Requestor + Department + Tag row -->
-                <div class="flex flex-wrap gap-4">
-                    <label class="flex flex-col gap-1">
-                        <span class="text-xs font-medium text-gray-500">Assignee</span>
-                        <select v-model="local.assigneeId" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange">
-                            <option :value="null">Anyone</option>
-                            <option v-for="u in assignableUsers" :key="u.id" :value="u.id">{{ u.display_name }}</option>
-                        </select>
-                    </label>
-                    <label v-if="requestors.length" class="flex flex-col gap-1">
-                        <span class="text-xs font-medium text-gray-500">Requestor</span>
-                        <select v-model="local.requestorId" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange">
-                            <option :value="null">Any requestor</option>
-                            <option v-for="r in requestors" :key="r.id" :value="r.id">{{ r.name }} ({{ r.count }})</option>
-                        </select>
-                    </label>
-                    <label v-if="departments.length" class="flex flex-col gap-1">
-                        <span class="text-xs font-medium text-gray-500">Department</span>
-                        <select v-model="local.department" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange">
-                            <option value="">Any department</option>
-                            <option v-for="d in departments" :key="d.value" :value="d.value">{{ d.value }} ({{ d.count }})</option>
-                        </select>
-                    </label>
-                    <label class="flex flex-col gap-1">
-                        <span class="text-xs font-medium text-gray-500">Tag</span>
-                        <select v-model="local.tagId" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange">
-                            <option :value="null">Any tag</option>
-                            <option v-for="t in tags" :key="t.id" :value="t.id">{{ t.name }}</option>
-                        </select>
-                    </label>
-                </div>
-
-                <!-- Form field filter -->
-                <div v-if="filterableFields.length">
-                    <span class="text-xs font-medium text-gray-500">Form field</span>
-                    <div class="mt-1.5 flex flex-wrap items-center gap-2">
-                        <select v-model="local.fieldKey" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="onFieldKeyChange">
-                            <option value="">Any field…</option>
-                            <option v-for="f in filterableFields" :key="f.field_key" :value="f.field_key">{{ f.label }}</option>
-                        </select>
-                        <select v-if="local.fieldKey && !useValueSearch" v-model="local.fieldValue" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange" :disabled="fieldValuesLoading">
-                            <option value="">{{ fieldValuesLoading ? 'Loading values…' : 'Any value…' }}</option>
-                            <option v-for="o in fieldValueOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-                        </select>
-                        <span v-else-if="local.fieldKey" class="relative">
-                            <input v-model="local.fieldValue" type="text" list="rcmi-field-value-options"
-                                placeholder="Type to search values…" @change="emitChange" @input="debouncedEmit"
-                                class="w-64 rounded-md border border-gray-300 px-3 py-2 text-sm" />
-                            <datalist id="rcmi-field-value-options">
-                                <option v-for="o in fieldValueOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-                            </datalist>
-                        </span>
+                <!-- People -->
+                <div>
+                    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">People</p>
+                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <div>
+                            <label for="filter-assignee" class="mb-1 block text-xs font-medium text-gray-600">Assignee</label>
+                            <SearchSelect id="filter-assignee" v-model="local.assigneeId"
+                                :options="assigneeOptions" placeholder="Anyone" clear-label="Anyone"
+                                @change="emitChange" />
+                        </div>
+                        <div v-if="requestors.length">
+                            <label for="filter-requestor" class="mb-1 block text-xs font-medium text-gray-600">Requestor</label>
+                            <SearchSelect id="filter-requestor" v-model="local.requestorId"
+                                :options="requestorOptions" placeholder="Any requestor" clear-label="Any requestor"
+                                @change="emitChange" />
+                        </div>
+                        <div v-if="departments.length">
+                            <label for="filter-department" class="mb-1 block text-xs font-medium text-gray-600">Department</label>
+                            <SearchSelect id="filter-department" v-model="local.department"
+                                :options="departmentOptions" placeholder="Any department" clear-label="Any department"
+                                @change="emitChange" />
+                        </div>
                     </div>
                 </div>
 
-                <!-- Date range -->
+                <!-- Classification -->
+                <div v-if="tags.length || filterableFields.length">
+                    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Classification</p>
+                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <div v-if="tags.length">
+                            <label for="filter-tag" class="mb-1 block text-xs font-medium text-gray-600">Tag</label>
+                            <SearchSelect id="filter-tag" v-model="local.tagId"
+                                :options="tagOptions" placeholder="Any tag" clear-label="Any tag"
+                                @change="emitChange" />
+                        </div>
+                        <div v-if="filterableFields.length">
+                            <label for="filter-field-key" class="mb-1 block text-xs font-medium text-gray-600">Form field</label>
+                            <SearchSelect id="filter-field-key" v-model="local.fieldKey"
+                                :options="fieldKeyOptions" placeholder="Any field" clear-label="Any field"
+                                @change="onFieldKeyChange" />
+                        </div>
+                        <div v-if="filterableFields.length">
+                            <label for="filter-field-value" class="mb-1 block text-xs font-medium text-gray-600">Field value</label>
+                            <SearchSelect id="filter-field-value" v-model="local.fieldValue"
+                                :options="fieldValueOptions" allow-custom
+                                :placeholder="!local.fieldKey ? 'Pick a field first' : (fieldValuesLoading ? 'Loading values…' : 'Any value')"
+                                clear-label="Any value"
+                                :disabled="!local.fieldKey || fieldValuesLoading"
+                                @change="emitChange" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Created -->
                 <div>
-                    <span class="text-xs font-medium text-gray-500">Created date</span>
-                    <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Created</p>
+                    <div class="flex flex-wrap items-center gap-2">
                         <input v-model="local.dateFrom" type="date" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange" aria-label="From date" />
                         <span class="text-xs text-gray-400">to</span>
                         <input v-model="local.dateTo" type="date" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange" aria-label="To date" />
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="flex items-center justify-between border-t border-gray-100 pt-3">
+                    <p class="text-xs text-gray-500">{{ activeCount ? `${activeCount} filter${activeCount === 1 ? '' : 's'} active` : 'No filters applied' }}</p>
+                    <div class="flex items-center gap-3">
+                        <button @click="reset" class="text-xs font-semibold text-gray-500 hover:text-red-700">Clear all</button>
+                        <button @click="showAdvanced = false" class="rcmi-button-secondary px-3 py-1.5 text-xs">Done</button>
                     </div>
                 </div>
             </div>
@@ -127,10 +137,12 @@
 <script setup>
 import { reactive, computed, watch, ref } from 'vue';
 import Icon from './Icon.vue';
+import SearchSelect from './SearchSelect.vue';
 import { api } from '../api.js';
 
 const props = defineProps({
     statuses:        { type: Array, default: () => [] },
+    statusCounts:    { type: Object, default: () => ({}) },
     tags:            { type: Array, default: () => [] },
     assignableUsers: { type: Array, default: () => [] },
     requestors:      { type: Array, default: () => [] },
@@ -138,7 +150,7 @@ const props = defineProps({
     formFields:      { type: Array, default: () => [] },
     modelValue:      { type: Object, default: () => ({}) },
 });
-const emit = defineEmits(['update:modelValue']);
+const emit = defineEmits(['update:modelValue', 'clear-all']);
 
 const defaults = {
     search: '', scope: 'all', status: [],
@@ -148,12 +160,43 @@ const defaults = {
     fieldKey: '', fieldValue: '',
 };
 
-const local = reactive({ ...defaults, ...props.modelValue });
+// The parent model uses payload keys (assignee_ids, date_from, …) while the
+// UI uses shorter names — translate both ways so a replaced/restored model
+// repopulates the controls.
+function fromModel(v) {
+    const m = v || {};
+    const ff = m.field_filters && typeof m.field_filters === 'object' ? m.field_filters : {};
+    const fk = Object.keys(ff)[0] || '';
+    return {
+        ...defaults,
+        search: typeof m.search === 'string' ? m.search : '',
+        scope: m.scope || 'all',
+        status: Array.isArray(m.status) ? [...m.status] : [],
+        assigneeId: m.assignee_ids?.[0] ?? null,
+        tagId: m.tag_ids?.[0] ?? null,
+        requestorId: m.author_id ? Number(m.author_id) : null,
+        department: m.department || '',
+        dateFrom: m.date_from || '',
+        dateTo: m.date_to || '',
+        fieldKey: fk,
+        fieldValue: fk ? (ff[fk] ?? '') : '',
+    };
+}
+
+const local = reactive(fromModel(props.modelValue));
 const showAdvanced = ref(false);
+
+// Snapshot of the last payload we emitted — the watcher below skips an
+// echo of our own emit so transient UI-only state (a half-chosen field
+// filter: fieldKey set, no value yet) isn't wiped by the re-sync. External
+// replaces (restore, clear-all, queue-chip date/status changes) have a
+// different serialized form and still re-sync.
+let lastEmittedJson = '';
 
 // Re-sync when the parent replaces the model (e.g. "Clear all filters").
 watch(() => props.modelValue, (v) => {
-    Object.assign(local, { ...defaults, ...(v || {}) });
+    if (JSON.stringify(v) === lastEmittedJson) return;
+    Object.assign(local, fromModel(v));
 }, { deep: true });
 
 const activeCount = computed(() => {
@@ -175,6 +218,22 @@ const filterableFields = computed(() =>
     props.formFields.filter(f => ['dropdown', 'radio', 'checkbox', 'cascade'].includes(f.type))
 );
 
+const fieldKeyOptions = computed(() =>
+    filterableFields.value.map(f => ({ value: f.field_key, label: f.label }))
+);
+const assigneeOptions = computed(() =>
+    props.assignableUsers.map(u => ({ value: u.id, label: u.display_name }))
+);
+const requestorOptions = computed(() =>
+    props.requestors.map(r => ({ value: r.id, label: r.name, count: r.count }))
+);
+const departmentOptions = computed(() =>
+    props.departments.map(d => ({ value: d.value, label: d.value, count: d.count }))
+);
+const tagOptions = computed(() =>
+    props.tags.map(t => ({ value: t.id, label: t.name }))
+);
+
 // 'Received' is merged into 'Pending Approval' in the UI — it's an internal
 // pre-triage state (backend still stores it; the Pending Approval filter
 // matches both server-side).
@@ -185,6 +244,21 @@ const visibleStatuses = computed(() => props.statuses.filter(s => s !== 'Receive
 const statusDisplayLabels = { 'Approved': 'Assigned' };
 function statusDisplayLabel(s) {
     return statusDisplayLabels[s] || s;
+}
+
+// Pill colors mirror StatusBadge. Written out literally — Tailwind's
+// content scan only keeps class names it can see in full.
+const STATUS_COLORS = {
+    'Pending Approval':           { dot: 'bg-purple-500',  on: 'border-purple-300 bg-purple-50 text-purple-800' },
+    'Approved':                   { dot: 'bg-blue-500',    on: 'border-blue-300 bg-blue-50 text-blue-800' },
+    'In Progress':                { dot: 'bg-cyan-500',    on: 'border-cyan-300 bg-cyan-50 text-cyan-800' },
+    'Rejected':                   { dot: 'bg-red-500',     on: 'border-red-300 bg-red-50 text-red-800' },
+    'Rejected: Pending Revision': { dot: 'bg-orange-500',  on: 'border-orange-300 bg-orange-50 text-orange-800' },
+    'Completed':                  { dot: 'bg-emerald-500', on: 'border-emerald-300 bg-emerald-50 text-emerald-800' },
+};
+const STATUS_COLOR_FALLBACK = { dot: 'bg-gray-400', on: 'border-gray-300 bg-gray-50 text-gray-800' };
+function statusColor(s) {
+    return STATUS_COLORS[s] || STATUS_COLOR_FALLBACK;
 }
 
 // Value options for the selected field are driven by stored ticket data:
@@ -208,7 +282,7 @@ watch(() => local.fieldKey, async (key) => {
     } finally {
         fieldValuesLoading.value = false;
     }
-});
+}, { immediate: true });
 
 // Config-driven options (cascade trees flatten to full-path labels) used as
 // fallback entries for options that have never been stored on a ticket.
@@ -244,7 +318,7 @@ const fieldValueOptions = computed(() => {
     const out = [];
     const seen = new Set();
     for (const [value, count] of Object.entries(fieldValueCounts.value)) {
-        out.push({ value, label: `${value} (${count})` });
+        out.push({ value, label: value, count });
         seen.add(value);
     }
     for (const o of configFieldOptions.value) {
@@ -252,10 +326,6 @@ const fieldValueOptions = computed(() => {
     }
     return out;
 });
-
-// Long value lists (e.g. free-text "Other:" answers) get a type-to-search
-// input instead of a dropdown.
-const useValueSearch = computed(() => fieldValueOptions.value.length > 25);
 
 const activeFilterChips = computed(() => {
     const chips = [];
@@ -325,22 +395,29 @@ function debouncedEmit() {
 }
 
 function emitChange() {
-    const payload = { ...local };
-    payload.assignee_ids = payload.assigneeId ? [payload.assigneeId] : [];
-    payload.tag_ids = payload.tagId ? [payload.tagId] : [];
-    payload.author_id = payload.requestorId || '';
-    delete payload.assigneeId;
-    delete payload.tagId;
-    delete payload.requestorId;
-    payload.field_filters = (payload.fieldKey && payload.fieldValue)
-        ? { [payload.fieldKey]: payload.fieldValue }
-        : {};
+    const payload = {
+        search: local.search,
+        scope: local.scope,
+        status: [...local.status],
+        assignee_ids: local.assigneeId ? [local.assigneeId] : [],
+        tag_ids: local.tagId ? [local.tagId] : [],
+        author_id: local.requestorId || '',
+        department: local.department || '',
+        date_from: local.dateFrom,
+        date_to: local.dateTo,
+        field_filters: (local.fieldKey && local.fieldValue)
+            ? { [local.fieldKey]: local.fieldValue }
+            : {},
+    };
+    lastEmittedJson = JSON.stringify(payload);
     emit('update:modelValue', payload);
 }
 
 function reset() {
-    Object.assign(local, defaults);
+    Object.assign(local, fromModel({}));
     emitChange();
+    // Queue lives in the parent — let it reset that too.
+    emit('clear-all');
 }
 </script>
 
@@ -355,6 +432,6 @@ function reset() {
 }
 .expand-enter-to, .expand-leave-from {
     opacity: 1;
-    max-height: 500px;
+    max-height: 1200px;
 }
 </style>

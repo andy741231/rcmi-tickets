@@ -20,9 +20,11 @@
         </div>
 
         <!-- Filter bar -->
-        <FilterBar v-model="filters" :statuses="meta.statuses" :tags="meta.tags" :assignable-users="meta.assignable_users"
+        <FilterBar v-model="filters" :statuses="meta.statuses" :status-counts="meta.status_counts || {}"
+            :tags="meta.tags" :assignable-users="meta.assignable_users"
             :requestors="meta.requestors || []" :departments="meta.departments || []"
             :form-fields="meta.form_fields || []"
+            @clear-all="clearAllFilters"
             class="mb-5" />
 
         <!-- View toggle + sort -->
@@ -278,6 +280,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api.js';
 import FilterBar from '../components/FilterBar.vue';
 import StatusBadge from '../components/StatusBadge.vue';
@@ -287,6 +290,8 @@ import Modal from '../components/Modal.vue';
 import { useToast } from '../composables/useToast.js';
 
 const toast = useToast();
+const route = useRoute();
+const router = useRouter();
 const meta = reactive({ statuses: [], priorities: [], tags: [], assignable_users: [], inbox_summary: null, caps: {} });
 const tickets = ref([]);
 const loading = ref(true);
@@ -298,8 +303,122 @@ const page = ref(1);
 const perPage = ref(parseInt(localStorage.getItem('rcmi_tickets_per_page'), 10) || 9);
 const total = ref(0);
 const totalPages = ref(0);
-const filters = ref({ search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], author_id: '', department: '', date_from: '', date_to: '', field_filters: {} });
+function defaultFilters() {
+    return { search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], author_id: '', department: '', date_from: '', date_to: '', field_filters: {} };
+}
+const filters = ref(defaultFilters());
 const queue = ref('all');
+const mounted = ref(false);
+
+// Persist filters + queue to the route query (shareable) and localStorage.
+const FILTER_QUERY_KEYS = ['q', 'scope', 'status', 'assignee', 'tag', 'author', 'dept', 'from', 'to', 'queue'];
+const FILTERS_STORAGE_KEY = 'rcmi_tickets_filters';
+
+function filtersToQuery() {
+    const f = filters.value;
+    const q = {};
+    if (f.search) q.q = f.search;
+    if (f.scope && f.scope !== 'all') q.scope = f.scope;
+    if (f.status?.length) q.status = [...f.status];
+    if (f.assignee_ids?.length) q.assignee = String(f.assignee_ids[0]);
+    if (f.tag_ids?.length) q.tag = String(f.tag_ids[0]);
+    if (f.author_id) q.author = String(f.author_id);
+    if (f.department) q.dept = f.department;
+    if (f.date_from) q.from = f.date_from;
+    if (f.date_to) q.to = f.date_to;
+    if (queue.value !== 'all') q.queue = queue.value;
+    for (const [k, v] of Object.entries(f.field_filters || {})) {
+        if (v) q[`f.${k}`] = v;
+    }
+    return q;
+}
+
+function persistFilters() {
+    const query = filtersToQuery();
+    router.replace({ query }).catch(() => {});
+    try {
+        if (Object.keys(query).length === 0) {
+            localStorage.removeItem(FILTERS_STORAGE_KEY);
+        } else {
+            localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({ filters: filters.value, queue: queue.value }));
+        }
+    } catch { /* storage unavailable — URL still persists */ }
+}
+
+function queryToFilters(query) {
+    const has = FILTER_QUERY_KEYS.some(k => query[k] !== undefined)
+        || Object.keys(query).some(k => k.startsWith('f.'));
+    if (!has) return null;
+    const f = defaultFilters();
+    if (query.q) f.search = String(query.q);
+    if (query.scope === 'assigned' || query.scope === 'submitted') f.scope = query.scope;
+    const st = query.status === undefined ? [] : (Array.isArray(query.status) ? query.status : [query.status]);
+    f.status = st.filter(Boolean).map(String);
+    if (query.assignee) { const n = Number(query.assignee); if (n > 0) f.assignee_ids = [n]; }
+    if (query.tag) { const n = Number(query.tag); if (n > 0) f.tag_ids = [n]; }
+    if (query.author) f.author_id = String(query.author);
+    if (query.dept) f.department = String(query.dept);
+    if (query.from) f.date_from = String(query.from);
+    if (query.to) f.date_to = String(query.to);
+    for (const [k, v] of Object.entries(query)) {
+        if (k.startsWith('f.') && v) f.field_filters[k.slice(2)] = String(v);
+    }
+    const qv = ['pending_approval', 'due_soon', 'overdue'].includes(query.queue) ? query.queue : 'all';
+    return { filters: f, queue: qv };
+}
+
+function storageToFilters() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(FILTERS_STORAGE_KEY) || 'null');
+        if (!saved || typeof saved !== 'object') return null;
+        const f = defaultFilters();
+        const src = saved.filters && typeof saved.filters === 'object' ? saved.filters : {};
+        if (typeof src.search === 'string') f.search = src.search;
+        if (src.scope === 'assigned' || src.scope === 'submitted') f.scope = src.scope;
+        if (Array.isArray(src.status)) f.status = src.status.filter(s => typeof s === 'string');
+        if (Array.isArray(src.assignee_ids)) f.assignee_ids = src.assignee_ids.map(Number).filter(n => n > 0);
+        if (Array.isArray(src.tag_ids)) f.tag_ids = src.tag_ids.map(Number).filter(n => n > 0);
+        if (src.author_id) f.author_id = String(src.author_id);
+        if (typeof src.department === 'string') f.department = src.department;
+        if (typeof src.date_from === 'string') f.date_from = src.date_from;
+        if (typeof src.date_to === 'string') f.date_to = src.date_to;
+        if (src.field_filters && typeof src.field_filters === 'object') {
+            for (const [k, v] of Object.entries(src.field_filters)) {
+                if (v) f.field_filters[k] = String(v);
+            }
+        }
+        const qv = ['pending_approval', 'due_soon', 'overdue'].includes(saved.queue) ? saved.queue : 'all';
+        return { filters: f, queue: qv };
+    } catch {
+        return null;
+    }
+}
+
+// Route query wins over localStorage so shared links always apply.
+function restoreFilters() {
+    const restored = queryToFilters(route.query) || storageToFilters();
+    if (restored) {
+        filters.value = restored.filters;
+        queue.value = restored.queue;
+    }
+}
+
+// Drop values that no longer exist in meta (removed field keys, statuses
+// that went away, users/departments with no visible tickets).
+function pruneStaleFilters() {
+    const f = filters.value;
+    f.status = (f.status || []).filter(s => meta.statuses.includes(s));
+    if (f.assignee_ids?.length && !meta.assignable_users.some(u => u.id === f.assignee_ids[0])) f.assignee_ids = [];
+    if (f.tag_ids?.length && !(meta.tags || []).some(t => t.id === f.tag_ids[0])) f.tag_ids = [];
+    if (f.author_id && !(meta.requestors || []).some(r => String(r.id) === String(f.author_id))) f.author_id = '';
+    if (f.department && !(meta.departments || []).some(d => d.value === f.department)) f.department = '';
+    const filterable = new Set((meta.form_fields || [])
+        .filter(x => ['dropdown', 'radio', 'checkbox', 'cascade'].includes(x.type))
+        .map(x => x.field_key));
+    for (const k of Object.keys(f.field_filters || {})) {
+        if (!filterable.has(k) || !f.field_filters[k]) delete f.field_filters[k];
+    }
+}
 
 // Batch actions state
 const batchMode = ref(null); // null | 'delete' | 'heaven'
@@ -448,7 +567,7 @@ function applyQueueFilter() {
 
 function clearAllFilters() {
     queue.value = 'all';
-    filters.value = { search: '', scope: 'all', status: [], assignee_ids: [], tag_ids: [], author_id: '', department: '', date_from: '', date_to: '', field_filters: {} };
+    filters.value = defaultFilters();
 }
 
 function toggleOrder() {
@@ -630,17 +749,26 @@ function onPerPageChange() {
     loadTickets();
 }
 
-// Reload when filters change (debounced in FilterBar)
+// Reload when filters change (debounced in FilterBar). The `mounted` flag
+// keeps restore + the explicit initial load below from double-firing.
 watch(filters, () => {
+    persistFilters();
+    if (!mounted.value) return;
     page.value = 1;
     loadTickets();
 }, { deep: true });
+
+watch(queue, persistFilters);
 
 // Persist sort preference
 watch(sort, (v) => localStorage.setItem('rcmi_tickets_sort', v));
 
 onMounted(async () => {
+    restoreFilters();
     await loadMeta();
+    pruneStaleFilters();
+    persistFilters();
     await loadTickets();
+    mounted.value = true;
 });
 </script>
