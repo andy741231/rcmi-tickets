@@ -81,10 +81,18 @@
                             <option value="">Any field…</option>
                             <option v-for="f in filterableFields" :key="f.field_key" :value="f.field_key">{{ f.label }}</option>
                         </select>
-                        <select v-if="local.fieldKey" v-model="local.fieldValue" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange">
-                            <option value="">Any value…</option>
+                        <select v-if="local.fieldKey && !useValueSearch" v-model="local.fieldValue" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange" :disabled="fieldValuesLoading">
+                            <option value="">{{ fieldValuesLoading ? 'Loading values…' : 'Any value…' }}</option>
                             <option v-for="o in fieldValueOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
                         </select>
+                        <span v-else-if="local.fieldKey" class="relative">
+                            <input v-model="local.fieldValue" type="text" list="rcmi-field-value-options"
+                                placeholder="Type to search values…" @change="emitChange" @input="debouncedEmit"
+                                class="w-64 rounded-md border border-gray-300 px-3 py-2 text-sm" />
+                            <datalist id="rcmi-field-value-options">
+                                <option v-for="o in fieldValueOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                            </datalist>
+                        </span>
                     </div>
                 </div>
 
@@ -105,6 +113,7 @@
 <script setup>
 import { reactive, computed, watch, ref } from 'vue';
 import Icon from './Icon.vue';
+import { api } from '../api.js';
 
 const props = defineProps({
     statuses:        { type: Array, default: () => [] },
@@ -159,10 +168,32 @@ function statusDisplayLabel(s) {
     return statusDisplayLabels[s] || s;
 }
 
-// Value options for the selected field. Cascade trees are flattened into
-// full-path labels ("A › B › C"); the filter value is the node label itself,
-// which the backend matches against any segment of the stored path.
-const fieldValueOptions = computed(() => {
+// Value options for the selected field are driven by stored ticket data:
+// GET /field-values returns distinct answer values + per-value ticket
+// counts for tickets the user can see. Config options never stored are
+// appended (count-free) so a brand-new field is still filterable.
+const fieldValueCounts = ref({});
+const fieldValuesLoading = ref(false);
+
+watch(() => local.fieldKey, async (key) => {
+    fieldValueCounts.value = {};
+    if (!key) return;
+    fieldValuesLoading.value = true;
+    try {
+        const res = await api('/field-values', { params: new URLSearchParams({ field_key: key }) });
+        const map = {};
+        (res.values || []).forEach(v => { map[v.value] = v.count; });
+        fieldValueCounts.value = map;
+    } catch {
+        fieldValueCounts.value = {};
+    } finally {
+        fieldValuesLoading.value = false;
+    }
+});
+
+// Config-driven options (cascade trees flatten to full-path labels) used as
+// fallback entries for options that have never been stored on a ticket.
+const configFieldOptions = computed(() => {
     const f = props.formFields.find(x => x.field_key === local.fieldKey);
     if (!f) return [];
     if (f.type === 'cascade' && Array.isArray(f.config?.cascade_tree)) {
@@ -189,6 +220,23 @@ const fieldValueOptions = computed(() => {
     }
     return [...opts].map(v => ({ value: v, label: v }));
 });
+
+const fieldValueOptions = computed(() => {
+    const out = [];
+    const seen = new Set();
+    for (const [value, count] of Object.entries(fieldValueCounts.value)) {
+        out.push({ value, label: `${value} (${count})` });
+        seen.add(value);
+    }
+    for (const o of configFieldOptions.value) {
+        if (!seen.has(o.value)) out.push(o);
+    }
+    return out;
+});
+
+// Long value lists (e.g. free-text "Other:" answers) get a type-to-search
+// input instead of a dropdown.
+const useValueSearch = computed(() => fieldValueOptions.value.length > 25);
 
 const activeFilterChips = computed(() => {
     const chips = [];

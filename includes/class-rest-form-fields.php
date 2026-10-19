@@ -271,6 +271,7 @@ function rcmi_tickets_format_form_field($row) {
         'sort_order' => (int) $row['sort_order'],
         'config'     => is_array($config) ? $config : new stdClass(),
         'reserved'   => ($row['type'] === 'date' && strcasecmp($row['label'], 'Due Date') === 0),
+        'answer_count' => isset($row['answer_count']) ? (int) $row['answer_count'] : 0,
         'created_at' => $row['created_at'],
         'updated_at' => $row['updated_at'],
     ];
@@ -279,7 +280,10 @@ function rcmi_tickets_format_form_field($row) {
 function rcmi_tickets_get_all_form_fields() {
     global $wpdb;
     $rows = $wpdb->get_results(
-        "SELECT * FROM {$wpdb->prefix}rcmi_form_fields ORDER BY sort_order ASC, id ASC"
+        "SELECT f.*,
+                (SELECT COUNT(*) FROM {$wpdb->prefix}rcmi_form_answers fa WHERE fa.field_id = f.id) AS answer_count
+         FROM {$wpdb->prefix}rcmi_form_fields f
+         ORDER BY sort_order ASC, id ASC"
     , ARRAY_A);
     return array_map('rcmi_tickets_format_form_field', $rows);
 }

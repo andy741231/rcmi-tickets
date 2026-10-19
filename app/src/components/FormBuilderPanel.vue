@@ -283,6 +283,24 @@
                 </div>
             </main>
         </div>
+
+        <!-- Warn before deleting a field that has stored ticket answers -->
+        <Modal v-if="pendingDeleteField" @close="pendingDeleteField = null" title="Delete field" titleClass="rcmi-modal-title-sans">
+            <p class="text-sm text-gray-700">
+                <strong class="text-gray-900">{{ pendingDeleteField.label }}</strong> has
+                <strong class="text-red-700">{{ pendingDeleteField.answer_count }}</strong>
+                stored answer{{ pendingDeleteField.answer_count === 1 ? '' : 's' }} on existing tickets.
+                Deleting the field permanently deletes those answers — this cannot be undone.
+            </p>
+            <template #footer>
+                <button @click="performDeleteField(pendingDeleteField.id)"
+                    class="rcmi-button-primary px-4 py-2 text-sm">
+                    Yes, delete field and answers
+                </button>
+                <button @click="pendingDeleteField = null"
+                    class="rcmi-button-secondary px-4 py-2 text-sm">Cancel</button>
+            </template>
+        </Modal>
     </div>
 </template>
 
@@ -293,6 +311,7 @@ import Icon from './Icon.vue';
 import CascadeTreeEditor from './CascadeTreeEditor.vue';
 import CascadeField from './CascadeField.vue';
 import { useToast } from '../composables/useToast.js';
+import Modal from './Modal.vue';
 
 const props = defineProps({
     initialFields: { type: Array, default: () => [] },
@@ -710,7 +729,21 @@ function saveField(f) {
 // toast expires, so undoing in time never touches submitted answers.
 const DELETE_UNDO_MS = 8000;
 
+// Fields with stored answers get a hard confirmation first — deleting a
+// field permanently deletes its answers on every ticket.
+const pendingDeleteField = ref(null);
+
 function deleteField(id) {
+    const field = fields.value.find(x => x.id === id);
+    if (field && field.answer_count > 0) {
+        pendingDeleteField.value = field;
+        return;
+    }
+    performDeleteField(id);
+}
+
+function performDeleteField(id) {
+    pendingDeleteField.value = null;
     const idx = fields.value.findIndex(x => x.id === id);
     if (idx < 0) return;
     const field = fields.value[idx];

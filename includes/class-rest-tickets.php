@@ -114,6 +114,21 @@ function rcmi_tickets_register_ticket_routes() {
         ],
     ]);
 
+    // Distinct stored values for a form field (drives the list filter)
+    register_rest_route($namespace, '/field-values', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'rcmi_tickets_handle_field_values',
+            'permission_callback' => 'rcmi_tickets_perm_list',
+            'args'                => [
+                'field_key' => [
+                    'required'          => true,
+                    'sanitize_callback' => 'sanitize_key',
+                ],
+            ],
+        ],
+    ]);
+
     register_rest_route($namespace, '/tickets/export', [
         [
             'methods'             => 'GET',
@@ -756,6 +771,106 @@ function rcmi_tickets_get_ticket_attachments($ticket_id) {
 }
 
 /**
+ * Append the ticket-visibility scope to a WHERE clause for alias `t`.
+ * Non-managers (or managers who pick a narrower scope) only see tickets
+ * they submitted, are assigned to, or sit in the approval chain of.
+ *
+ * @param string $scope      'all' | 'assigned' | 'submitted'
+ * @param int    $user_id    Current user ID
+ * @param bool   $is_manager Whether the user has manage caps
+ * @param array  $where      WHERE fragments (by ref)
+ * @param array  $args       Prepared-statement args (by ref)
+ */
+function rcmi_tickets_append_scope_where($scope, $user_id, $is_manager, &$where, &$args) {
+    global $wpdb;
+    if ($is_manager && $scope === 'all') {
+        return;
+    }
+    if ($scope === 'assigned') {
+        $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
+        $args[] = $user_id;
+    } elseif ($scope === 'submitted') {
+        $where[] = 't.author_id = %d';
+        $args[] = $user_id;
+    } else {
+        // Non-manager default: assigned OR submitted OR in approval chain
+        $vis = "(t.author_id = %d OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
+        $vis_args = [$user_id, $user_id];
+
+        // Approval chain: specific user match
+        $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_user_id = %d)";
+        $vis_args[] = $user_id;
+
+        // Approval chain: role-based match
+        $current_user = wp_get_current_user();
+        $user_roles = (array) $current_user->roles;
+        if ($user_roles) {
+            $role_placeholders = implode(',', array_fill(0, count($user_roles), '%s'));
+            $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_role IN ($role_placeholders))";
+            foreach ($user_roles as $role) {
+                $vis_args[] = $role;
+            }
+        }
+
+        $vis .= ")";
+        $where[] = $vis;
+        $args = array_merge($args, $vis_args);
+    }
+}
+
+/**
+ * GET /field-values — distinct stored values for a form field, with the
+ * number of visible, non-archived tickets carrying each one. JSON-array
+ * answers (checkbox groups, cascade paths) are exploded into elements so
+ * every selectable value can be filtered. Only live fields are supported —
+ * deleting a field also deletes its answers.
+ */
+function rcmi_tickets_handle_field_values($request) {
+    global $wpdb;
+    $key = sanitize_key((string) $request->get_param('field_key'));
+
+    $field = $wpdb->get_row($wpdb->prepare(
+        "SELECT id, field_key, label, type FROM {$wpdb->prefix}rcmi_form_fields WHERE field_key = %s",
+        $key
+    ), ARRAY_A);
+    if (!$field) {
+        return new WP_Error('rcmi_tickets_field_not_found', 'Unknown field.', ['status' => 404]);
+    }
+
+    $user_id = get_current_user_id();
+    $is_manager = rcmi_tickets_can($user_id, 'manage');
+    $where = ['t.archived = 0'];
+    $args = [];
+    rcmi_tickets_append_scope_where('all', $user_id, $is_manager, $where, $args);
+
+    $sql = "SELECT fa.value
+            FROM {$wpdb->prefix}rcmi_form_answers fa
+            INNER JOIN {$wpdb->prefix}rcmi_tickets t ON t.id = fa.ticket_id
+            WHERE fa.field_id = %d AND " . implode(' AND ', $where);
+    $rows = $wpdb->get_col($wpdb->prepare($sql, array_merge([(int) $field['id']], $args)));
+
+    $counts = [];
+    foreach ($rows as $v) {
+        $decoded = json_decode((string) $v, true);
+        $items = is_array($decoded) ? $decoded : [$v];
+        foreach ($items as $item) {
+            $item = trim((string) $item);
+            if ($item === '') {
+                continue;
+            }
+            $counts[$item] = ($counts[$item] ?? 0) + 1;
+        }
+    }
+    arsort($counts);
+
+    $values = [];
+    foreach (array_slice($counts, 0, 500, true) as $value => $count) {
+        $values[] = ['value' => $value, 'count' => $count];
+    }
+    return new WP_REST_Response(['field_key' => $key, 'values' => $values], 200);
+}
+
+/**
  * Append dynamic form-field filters to a ticket list WHERE clause.
  * Expects $params['field_filters'] as a map of field_key => value.
  * A value matches when the stored answer equals it exactly, or when it
@@ -888,39 +1003,7 @@ function rcmi_tickets_handle_list($request) {
     }
 
     // Scope: non-managers can only see assigned, submitted, or approval-chain
-    $scope = $params['scope'] ?? 'all';
-    if (!$is_manager || $scope !== 'all') {
-        if ($scope === 'assigned') {
-            $where[] = "t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
-            $args[] = $user_id;
-        } elseif ($scope === 'submitted') {
-            $where[] = 't.author_id = %d';
-            $args[] = $user_id;
-        } else {
-            // Non-manager default: assigned OR submitted OR in approval chain
-            $vis = "(t.author_id = %d OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_assignees WHERE user_id = %d)";
-            $vis_args = [$user_id, $user_id];
-
-            // Approval chain: specific user match
-            $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_user_id = %d)";
-            $vis_args[] = $user_id;
-
-            // Approval chain: role-based match
-            $current_user = wp_get_current_user();
-            $user_roles = (array) $current_user->roles;
-            if ($user_roles) {
-                $role_placeholders = implode(',', array_fill(0, count($user_roles), '%s'));
-                $vis .= " OR t.id IN (SELECT ticket_id FROM {$wpdb->prefix}rcmi_ticket_approvals WHERE approver_role IN ($role_placeholders))";
-                foreach ($user_roles as $role) {
-                    $vis_args[] = $role;
-                }
-            }
-
-            $vis .= ")";
-            $where[] = $vis;
-            $args = array_merge($args, $vis_args);
-        }
-    }
+    rcmi_tickets_append_scope_where($params['scope'] ?? 'all', $user_id, $is_manager, $where, $args);
 
     // Search
     if (!empty($params['search'])) {
