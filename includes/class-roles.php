@@ -120,6 +120,24 @@ add_action('admin_init', function () {
 });
 
 /**
+ * Hide the WP admin bar for pure ticket users. They're redirected out of
+ * wp-admin, so every toolbar item (Profile, Dashboard) bounces back to
+ * the app — the bar offers nothing but a second, dead-ended logout. The
+ * app's own user menu covers sign-out. Users with content/admin
+ * capabilities keep the bar untouched.
+ */
+add_filter('show_admin_bar', function ($show) {
+    if (current_user_can('manage_options') || current_user_can('edit_posts')) {
+        return $show;
+    }
+    $user = wp_get_current_user();
+    if ($user->ID && array_intersect(['rcmi_ticket_user', 'rcmi_ticket_manager'], (array) $user->roles)) {
+        return false;
+    }
+    return $show;
+});
+
+/**
  * URL of the page hosting the [rcmi_tickets] shortcode. Works with any
  * permalink structure (including plain permalinks). Cached in a transient,
  * invalidated when a page is saved.
