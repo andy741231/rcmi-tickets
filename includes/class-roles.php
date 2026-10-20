@@ -165,6 +165,10 @@ add_filter('openid-connect-generic-settings', function ($settings) {
     if (!preg_match('/\bUser\.Read\b/i', $scope)) {
         $settings->scope = trim($scope . ' User.Read');
     }
+    // The default 5s IDP timeout is too tight — the token/userinfo calls
+    // to Microsoft occasionally exceed it from the UH network, surfacing
+    // as a cURL error 28 login failure. Raise the floor to 15s.
+    $settings->http_request_timeout = max(15, (int) ($settings->http_request_timeout ?? 5));
     return $settings;
 });
 
