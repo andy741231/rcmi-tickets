@@ -186,7 +186,7 @@ function rcmi_tickets_sso_sync_job_info($user) {
     }
 
     $response = wp_remote_get(
-        'https://graph.microsoft.com/v1.0/me?$select=jobTitle,department,employeeId,businessPhones',
+        'https://graph.microsoft.com/v1.0/me?$select=jobTitle,department,employeeId,businessPhones,givenName,surname,displayName',
         [
             'headers' => ['Authorization' => 'Bearer ' . $access_token],
             'timeout' => 5,
@@ -225,6 +225,27 @@ function rcmi_tickets_sso_sync_job_info($user) {
         delete_user_meta($user->ID, 'rcmi_phone');
     }
 
+    // Mirror Entra names into the native WP profile fields. Unlike the
+    // rcmi_* metas above, these only ever fill in — an empty Graph value
+    // must not wipe a previously synced name. user_email is never touched.
+    if (!empty($me['givenName']) && is_string($me['givenName'])) {
+        update_user_meta($user->ID, 'first_name', sanitize_text_field($me['givenName']));
+    }
+    if (!empty($me['surname']) && is_string($me['surname'])) {
+        update_user_meta($user->ID, 'last_name', sanitize_text_field($me['surname']));
+    }
+    if (!empty($me['displayName']) && is_string($me['displayName'])) {
+        $updated = wp_update_user([
+            'ID'           => $user->ID,
+            'display_name' => sanitize_text_field($me['displayName']),
+        ]);
+        if (!is_wp_error($updated)) {
+            $user->display_name = sanitize_text_field($me['displayName']);
+        }
+    }
+
+    update_user_meta($user->ID, 'rcmi_profile_synced', current_time('mysql'));
+
     // Profile photo: 96x96 JPEG, stored as a data URI for the ticket avatar.
     $photo = wp_remote_get(
         'https://graph.microsoft.com/v1.0/me/photos/96x96/$value',
@@ -243,4 +264,108 @@ function rcmi_tickets_sso_sync_job_info($user) {
     } else {
         delete_user_meta($user->ID, 'rcmi_photo');
     }
+}
+
+/**
+ * Render the read-only "Microsoft Entra (SSO)" panel on the wp-admin
+ * profile screens (profile.php and user-edit.php). The panel only exists
+ * for accounts that carry Entra data — local accounts have no rcmi_*
+ * meta, so nothing is rendered for them.
+ */
+add_action('show_user_profile', 'rcmi_tickets_entra_profile_section');
+add_action('edit_user_profile', 'rcmi_tickets_entra_profile_section');
+
+function rcmi_tickets_entra_profile_section($user) {
+    if (!$user instanceof WP_User || !$user->ID) {
+        return;
+    }
+
+    $fields = [
+        __('Job title', 'rcmi-tickets')      => get_user_meta($user->ID, 'rcmi_job_title', true),
+        __('Department', 'rcmi-tickets')     => get_user_meta($user->ID, 'rcmi_department', true),
+        __('Business phone', 'rcmi-tickets') => get_user_meta($user->ID, 'rcmi_phone', true),
+        __('Employee ID', 'rcmi-tickets')    => get_user_meta($user->ID, 'rcmi_employee_id', true),
+    ];
+    $fields = array_filter($fields, function ($value) {
+        return is_string($value) && $value !== '';
+    });
+    if (!$fields) {
+        return;
+    }
+
+    $synced    = get_user_meta($user->ID, 'rcmi_profile_synced', true);
+    $synced_ts = is_string($synced) && $synced !== '' ? strtotime($synced) : false;
+    ?>
+    <h2><?php esc_html_e('Microsoft Entra (SSO)', 'rcmi-tickets'); ?></h2>
+    <p class="description"><?php esc_html_e('These values are synced from Microsoft Entra each time you sign in with SSO — edit them in Entra and they will update here at your next login.', 'rcmi-tickets'); ?></p>
+    <table class="form-table" role="presentation">
+        <?php foreach ($fields as $label => $value) : ?>
+        <tr>
+            <th><?php echo esc_html($label); ?></th>
+            <td><p class="description"><?php echo esc_html($value); ?></p></td>
+        </tr>
+        <?php endforeach; ?>
+        <?php if ($synced_ts !== false) : ?>
+        <tr>
+            <th><?php esc_html_e('Synced at', 'rcmi-tickets'); ?></th>
+            <td><p class="description"><?php echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $synced_ts)); ?></p></td>
+        </tr>
+        <?php endif; ?>
+    </table>
+    <?php
+}
+
+/**
+ * Use the Entra profile photo (synced at SSO login into rcmi_photo) as
+ * the WordPress avatar, so it shows in user-edit's Profile Picture row,
+ * the admin bar, and comments. Users without a synced photo fall through
+ * to the normal Gravatar/default flow.
+ */
+add_filter('get_avatar', 'rcmi_tickets_entra_avatar', 10, 6);
+
+function rcmi_tickets_entra_avatar($avatar, $id_or_email, $size, $default, $alt, $args) {
+    // Resolve $id_or_email to a user ID the same way core's get_avatar() does.
+    $user_id = 0;
+    if (is_numeric($id_or_email)) {
+        $user_id = (int) $id_or_email;
+    } elseif (is_string($id_or_email)) {
+        $u = get_user_by('email', $id_or_email);
+        if ($u) {
+            $user_id = (int) $u->ID;
+        }
+    } elseif ($id_or_email instanceof WP_User) {
+        $user_id = (int) $id_or_email->ID;
+    } elseif ($id_or_email instanceof WP_Comment) {
+        if (!empty($id_or_email->user_id)) {
+            $user_id = (int) $id_or_email->user_id;
+        } elseif (!empty($id_or_email->comment_author_email)) {
+            $u = get_user_by('email', $id_or_email->comment_author_email);
+            if ($u) {
+                $user_id = (int) $u->ID;
+            }
+        }
+    } elseif ($id_or_email instanceof WP_Post) {
+        $user_id = (int) $id_or_email->post_author;
+    }
+    if (!$user_id) {
+        return $avatar;
+    }
+
+    $photo = get_user_meta($user_id, 'rcmi_photo', true);
+    if (!is_string($photo) || $photo === '') {
+        return $avatar;
+    }
+
+    $avatar_user = get_user_by('id', $user_id);
+    $alt_text    = $avatar_user ? $avatar_user->display_name : $alt;
+    $size        = (int) $size;
+
+    return sprintf(
+        '<img src="%s" class="avatar avatar-%d photo" width="%d" height="%d" alt="%s" />',
+        esc_attr($photo),
+        $size,
+        $size,
+        $size,
+        esc_attr($alt_text)
+    );
 }
