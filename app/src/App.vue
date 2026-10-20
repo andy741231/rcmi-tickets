@@ -57,7 +57,7 @@
                             @click="userMenuOpen = !userMenuOpen" @keydown.escape="closeUserMenu">
                             <img v-if="currentUser.photo" :src="currentUser.photo" :alt="currentUserName"
                                 class="h-7 w-7 rounded-full object-cover" />
-                            <span v-else class="rcmi-avatar block h-7 w-7 text-xs">{{ initials(currentUserName) }}</span>
+                            <span v-else class="rcmi-avatar h-7 w-7 text-xs">{{ initials(currentUserName) }}</span>
                             <span class="hidden max-w-40 truncate sm:inline-block">{{ currentUserName }}</span>
                             <Icon name="chevron-down" class="rcmi-nav-caret" :class="{ 'rcmi-nav-caret-open': userMenuOpen }" />
                         </button>
@@ -65,7 +65,7 @@
                             <div class="rcmi-nav-menu-identity" role="presentation">
                                 <img v-if="currentUser.photo" :src="currentUser.photo" alt=""
                                     class="h-9 w-9 rounded-full object-cover" />
-                                <span v-else class="rcmi-avatar block h-9 w-9 text-sm">{{ initials(currentUserName) }}</span>
+                                <span v-else class="rcmi-avatar h-9 w-9 text-sm">{{ initials(currentUserName) }}</span>
                                 <div class="min-w-0">
                                     <p class="truncate text-sm font-semibold text-gray-800">{{ currentUserName }}</p>
                                     <p class="truncate text-xs text-gray-500">{{ currentUser.user_email }}</p>

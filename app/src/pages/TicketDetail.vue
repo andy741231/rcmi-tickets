@@ -278,7 +278,7 @@
                                         :aria-label="`View requestor profile (${ticket.author_name || 'Unknown'})`"
                                         class="rounded-full transition hover:ring-2 hover:ring-red-300 focus:outline-none focus:ring-2 focus:ring-red-400">
                                         <img v-if="ticket.author_photo" :src="ticket.author_photo" :alt="ticket.author_name" class="h-7 w-7 rounded-full object-cover" />
-                                        <span v-else class="rcmi-avatar h-7 w-7 text-xs block">{{ initials(ticket.author_name) }}</span>
+                                        <span v-else class="rcmi-avatar h-7 w-7 text-xs">{{ initials(ticket.author_name) }}</span>
                                     </button>
                                     <span>{{ ticket.author_name || 'Unknown' }}</span>
                                 </dd>
