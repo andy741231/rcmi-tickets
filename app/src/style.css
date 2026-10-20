@@ -362,6 +362,40 @@
         color: var(--rcmi-red);
     }
 
+    /* User chip trigger — pill-shaped, bordered so it reads as a distinct
+       control rather than another nav link. */
+    .rcmi-nav-user {
+        gap: 0.5rem;
+        padding: 0.25rem 0.75rem 0.25rem 0.25rem;
+        border: 1px solid var(--rcmi-border);
+        border-radius: 9999px;
+    }
+
+    .rcmi-nav-user-open {
+        background: var(--rcmi-bg);
+        color: var(--rcmi-ink);
+    }
+
+    /* Non-interactive identity block at the top of the user menu. */
+    .rcmi-nav-menu-identity {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        padding: 0.625rem 0.75rem;
+        color: var(--rcmi-muted);
+    }
+
+    .rcmi-nav-menu-divider {
+        height: 1px;
+        margin: 0.25rem 0;
+        background: var(--rcmi-border);
+    }
+
+    .rcmi-nav-menu-item:disabled {
+        opacity: 0.6;
+        cursor: default;
+    }
+
     .rcmi-nav-menu {
         position: absolute;
         top: calc(100% + 4px);

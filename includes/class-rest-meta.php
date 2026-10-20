@@ -309,14 +309,21 @@ function rcmi_tickets_handle_meta() {
         $filter_status_counts[$key] = ($filter_status_counts[$key] ?? 0) + (int) $r['cnt'];
     }
 
+    // Current user, including the Entra-synced photo (a data: URI) when present.
+    $current_user = [
+        'id'           => (int) $user_id,
+        'display_name' => $user ? $user->display_name : '',
+        'user_login'   => $user ? $user->user_login : '',
+        'user_email'   => $user ? $user->user_email : '',
+    ];
+    $current_user_photo = get_user_meta($user_id, 'rcmi_photo', true);
+    if (is_string($current_user_photo) && $current_user_photo !== '') {
+        $current_user['photo'] = $current_user_photo;
+    }
+
     return new WP_REST_Response([
         'statuses'  => rcmi_tickets_valid_statuses(),
-        'current_user' => [
-            'id'           => (int) $user_id,
-            'display_name' => $user ? $user->display_name : '',
-            'user_login'   => $user ? $user->user_login : '',
-            'user_email'   => $user ? $user->user_email : '',
-        ],
+        'current_user' => $current_user,
         'caps'             => $caps,
         'tags'             => $tags,
         'assignable_users' => $assignable_users,

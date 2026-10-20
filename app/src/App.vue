@@ -51,12 +51,34 @@
                     <router-link to="/create" class="rcmi-button-primary inline-flex items-center gap-1.5 px-4 py-2 text-sm shadow-sm">
                         <Icon name="plus" /> New Ticket
                     </router-link>
-                    <button type="button" @click="handleLogout"
-                        class="rcmi-button-secondary inline-flex items-center gap-1.5 px-4 py-2 text-sm"
-                        :disabled="loggingOut">
-                        <Icon name="arrow-right" />
-                        {{ loggingOut ? 'Signing out…' : 'Sign out' }}
-                    </button>
+                    <div ref="userMenuRoot" class="relative">
+                        <button type="button" class="rcmi-nav-link rcmi-nav-user" :class="{ 'rcmi-nav-user-open': userMenuOpen }"
+                            aria-haspopup="true" :aria-expanded="userMenuOpen" :aria-label="'Account: ' + currentUserName"
+                            @click="userMenuOpen = !userMenuOpen" @keydown.escape="closeUserMenu">
+                            <img v-if="currentUser.photo" :src="currentUser.photo" :alt="currentUserName"
+                                class="h-7 w-7 rounded-full object-cover" />
+                            <span v-else class="rcmi-avatar block h-7 w-7 text-xs">{{ initials(currentUserName) }}</span>
+                            <span class="hidden max-w-40 truncate sm:inline-block">{{ currentUserName }}</span>
+                            <Icon name="chevron-down" class="rcmi-nav-caret" :class="{ 'rcmi-nav-caret-open': userMenuOpen }" />
+                        </button>
+                        <div v-if="userMenuOpen" class="rcmi-nav-menu min-w-56" role="menu" aria-label="Account" @keydown.escape="closeUserMenu(true)">
+                            <div class="rcmi-nav-menu-identity" role="presentation">
+                                <img v-if="currentUser.photo" :src="currentUser.photo" alt=""
+                                    class="h-9 w-9 rounded-full object-cover" />
+                                <span v-else class="rcmi-avatar block h-9 w-9 text-sm">{{ initials(currentUserName) }}</span>
+                                <div class="min-w-0">
+                                    <p class="truncate text-sm font-semibold text-gray-800">{{ currentUserName }}</p>
+                                    <p class="truncate text-xs text-gray-500">{{ currentUser.user_email }}</p>
+                                </div>
+                            </div>
+                            <div class="rcmi-nav-menu-divider" role="separator"></div>
+                            <button type="button" role="menuitem" class="rcmi-nav-menu-item w-full text-left"
+                                :disabled="loggingOut" @click="handleLogout">
+                                <Icon name="arrow-right" />
+                                {{ loggingOut ? 'Signing out…' : 'Sign out' }}
+                            </button>
+                        </div>
+                    </div>
                 </nav>
             </header>
             <main id="ticket-content">
@@ -93,11 +115,28 @@ function closeSettings(refocus = false) {
     if (refocus) settingsRoot.value?.querySelector('button')?.focus();
 }
 
-function onDocumentClick(e) {
-    if (settingsRoot.value && !settingsRoot.value.contains(e.target)) settingsOpen.value = false;
+const userMenuOpen = ref(false);
+const userMenuRoot = ref(null);
+const currentUser = computed(() => meta.current_user || {});
+const currentUserName = computed(() => currentUser.value.display_name || currentUser.value.user_login || 'Account');
+
+function closeUserMenu(refocus = false) {
+    userMenuOpen.value = false;
+    if (refocus) userMenuRoot.value?.querySelector('button')?.focus();
 }
 
-watch(() => route.path, () => { settingsOpen.value = false; });
+// Same initials fallback as the requestor avatar in TicketDetail.vue.
+function initials(name) {
+    if (!name) return '?';
+    return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function onDocumentClick(e) {
+    if (settingsRoot.value && !settingsRoot.value.contains(e.target)) settingsOpen.value = false;
+    if (userMenuRoot.value && !userMenuRoot.value.contains(e.target)) userMenuOpen.value = false;
+}
+
+watch(() => route.path, () => { settingsOpen.value = false; userMenuOpen.value = false; });
 
 async function loadMeta() {
     if (isPublic.value) return; // public mode doesn't need full meta
