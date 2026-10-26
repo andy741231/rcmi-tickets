@@ -22,6 +22,12 @@
                         <template v-else-if="f.type === 'longtext'">
                             <span class="whitespace-pre-wrap">{{ answers[f.field_key] }}</span>
                         </template>
+                        <template v-else-if="f.type === 'rating'">
+                            <span class="inline-flex items-center gap-0.5" :aria-label="`${answers[f.field_key]} of ${ratingMax(f)} stars`">
+                                <Icon v-for="n in ratingMax(f)" :key="n" name="star"
+                                    class="h-4 w-4" :class="n <= Number(answers[f.field_key]) ? 'text-amber-400' : 'text-gray-200'" />
+                            </span>
+                        </template>
                         <template v-else>{{ answers[f.field_key] }}</template>
                     </span>
                 </div>
@@ -62,7 +68,7 @@
                 <input v-else-if="f.type === 'number'" :id="'field-' + f.field_key"
                     v-model.number="answers[f.field_key]" type="number"
                     :placeholder="f.config?.placeholder || ''"
-                    :min="f.config?.min" :max="f.config?.max" :step="f.config?.step"
+                    :min="f.config?.min" :max="f.config?.max" :step="f.config?.integer_only ? 1 : f.config?.step"
                     :required="f.required" class="rcmi-input" />
 
                 <!-- date -->
@@ -123,6 +129,44 @@
                         <span class="font-medium text-gray-700">{{ opt }}</span>
                     </label>
                 </div>
+
+                <!-- rating (stars) -->
+                <div v-else-if="f.type === 'rating'" class="mt-1 flex items-center gap-3">
+                    <div class="inline-flex items-center gap-0.5" role="radiogroup" :aria-label="f.label">
+                        <button v-for="n in ratingMax(f)" :key="n" type="button" role="radio"
+                            :aria-checked="Number(answers[f.field_key]) === n"
+                            :aria-label="`${n} of ${ratingMax(f)} stars`"
+                            @click="setRating(f, n)"
+                            @keydown="onRatingKey(f, n, $event)"
+                            class="rounded p-0.5 transition focus:outline-none focus:ring-2 focus:ring-red-400">
+                            <Icon name="star" class="h-7 w-7"
+                                :class="n <= Number(answers[f.field_key] || 0) ? 'text-amber-400' : 'text-gray-300 hover:text-amber-300'" />
+                        </button>
+                    </div>
+                    <span v-if="ratingEndLabels(f)[0] || ratingEndLabels(f)[1]" class="text-xs text-gray-500">
+                        {{ ratingEndLabels(f)[0] }}{{ ratingEndLabels(f)[0] && ratingEndLabels(f)[1] ? ' · ' : '' }}{{ ratingEndLabels(f)[1] }}
+                    </span>
+                </div>
+
+                <!-- scale (min–max button row) -->
+                <div v-else-if="f.type === 'scale'" class="mt-1">
+                    <div class="flex items-center gap-2">
+                        <span v-if="scaleLabels(f).low" class="w-16 shrink-0 text-right text-xs text-gray-500">{{ scaleLabels(f).low }}</span>
+                        <div class="flex flex-wrap gap-1" role="radiogroup" :aria-label="f.label">
+                            <button v-for="n in scaleRange(f)" :key="n" type="button" role="radio"
+                                :aria-checked="answers[f.field_key] !== '' && answers[f.field_key] != null && Number(answers[f.field_key]) === n"
+                                :aria-label="`${n} of ${scaleMax(f)}`"
+                                @click="answers[f.field_key] = n"
+                                class="flex h-9 w-9 items-center justify-center rounded-md border text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-red-400"
+                                :class="answers[f.field_key] !== '' && answers[f.field_key] != null && Number(answers[f.field_key]) === n
+                                    ? 'border-red-700 bg-red-700 text-white'
+                                    : 'border-gray-300 bg-white text-gray-700 hover:border-red-300 hover:bg-red-50'">
+                                {{ n }}
+                            </button>
+                        </div>
+                        <span v-if="scaleLabels(f).high" class="w-16 shrink-0 text-xs text-gray-500">{{ scaleLabels(f).high }}</span>
+                    </div>
+                </div>
             </div>
         </template>
     </div>
@@ -131,11 +175,16 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import CascadeField from './CascadeField.vue';
+import Icon from './Icon.vue';
+import { isFieldVisible as checkFieldVisible } from '../lib/fieldLogic.js';
 
 const props = defineProps({
     fields: { type: Array, default: () => [] },
     modelValue: { type: Object, default: () => ({}) }, // answers map: field_key => value
     readonly: { type: Boolean, default: false },
+    // External answers merged in for condition evaluation (e.g. the
+    // ticket's own answers keyed "ticket:<field_key>" on the survey form).
+    context: { type: Object, default: () => ({}) },
 });
 const emit = defineEmits(['update:modelValue']);
 
@@ -189,24 +238,63 @@ function toggleCheckbox(key, opt) {
     }
 }
 
-// Logic evaluation: should this field be shown?
+// Logic evaluation: should this field be shown? Context answers (e.g.
+// "ticket:<key>" values supplied by the parent) merge under the form's
+// own answers so survey rules can read the ticket's fields.
+const evalAnswers = computed(() => ({ ...(props.context || {}), ...(answers.value || {}) }));
+
 function isFieldVisible(field) {
-    const config = field.config || {};
-    const logic = config.logic;
-    if (!logic || !logic.field_key) return true;
+    return checkFieldVisible(field.config || {}, evalAnswers.value);
+}
 
-    const depVal = answers.value[logic.field_key];
-    const target = logic.value;
-    let conditionMet = false;
+// ── rating / scale helpers (survey fields) ──────────────────────────
+function ratingMax(f) {
+    const m = parseInt(f.config?.max, 10);
+    return Number.isFinite(m) ? Math.min(10, Math.max(3, m)) : 5;
+}
 
-    switch (logic.op) {
-        case 'equals':       conditionMet = String(depVal) === String(target); break;
-        case 'not_equals':   conditionMet = String(depVal) !== String(target); break;
-        case 'contains':     conditionMet = Array.isArray(depVal) ? depVal.includes(target) : String(depVal).includes(target); break;
-        case 'not_contains': conditionMet = Array.isArray(depVal) ? !depVal.includes(target) : !String(depVal).includes(target); break;
-    }
+function ratingEndLabels(f) {
+    return [f.config?.low_label || '', f.config?.high_label || ''];
+}
 
-    return logic.action === 'show' ? conditionMet : !conditionMet;
+function setRating(f, n) {
+    // Clicking the current rating again clears it.
+    answers.value[f.field_key] = Number(answers.value[f.field_key]) === n ? '' : n;
+}
+
+function onRatingKey(f, n, e) {
+    const max = ratingMax(f);
+    let next = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = Math.min(max, n + 1);
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = Math.max(1, n - 1);
+    else if (e.key === 'Home') next = 1;
+    else if (e.key === 'End') next = max;
+    if (next === null) return;
+    e.preventDefault();
+    answers.value[f.field_key] = next;
+    const group = e.target.closest('[role="radiogroup"]');
+    group?.querySelectorAll('[role="radio"]')?.[next - 1]?.focus();
+}
+
+function scaleBounds(f) {
+    const min = Number.isFinite(parseInt(f.config?.min, 10)) ? parseInt(f.config?.min, 10) : 0;
+    const max = Number.isFinite(parseInt(f.config?.max, 10)) ? parseInt(f.config?.max, 10) : 10;
+    return { min: Math.min(min, max), max: Math.max(min, max) };
+}
+
+function scaleMax(f) {
+    return scaleBounds(f).max;
+}
+
+function scaleRange(f) {
+    const { min, max } = scaleBounds(f);
+    const out = [];
+    for (let i = min; i <= max; i++) out.push(i);
+    return out;
+}
+
+function scaleLabels(f) {
+    return { low: f.config?.low_label || '', high: f.config?.high_label || '' };
 }
 
 // Dropdown options (handles cascading)

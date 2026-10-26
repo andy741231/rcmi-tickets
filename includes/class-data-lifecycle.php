@@ -19,7 +19,12 @@ function rcmi_tickets_data_manifest() {
             'rcmi_ticket_tags',
             'rcmi_ticket_status_log',
             'rcmi_ticket_assignees',
+            'rcmi_ticket_links',
             'rcmi_form_fields',
+            'rcmi_survey_answers',
+            'rcmi_survey_emails',
+            'rcmi_survey_responses',
+            'rcmi_survey_fields',
             'rcmi_tickets',
         ],
         'options' => [
@@ -28,6 +33,8 @@ function rcmi_tickets_data_manifest() {
             'rcmi_tickets_public_success',
             'rcmi_tickets_allow_public_submit',
             'rcmi_tickets_view_token_secret',
+            'rcmi_tickets_survey_settings',
+            'rcmi_tickets_mail',
         ],
         'transients' => [
             'rcmi_tickets_github_commit',

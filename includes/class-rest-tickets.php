@@ -163,6 +163,18 @@ function rcmi_tickets_register_ticket_routes() {
         ],
     ]);
 
+    register_rest_route($namespace, '/tickets/(?P<id>\d+)/links', [
+        [
+            'methods'             => 'PUT',
+            'callback'            => 'rcmi_tickets_handle_links_update',
+            'permission_callback' => 'rcmi_tickets_perm_assignee_update',
+            'args'                => [
+                'id'         => ['required' => true, 'validate_callback' => 'rcmi_tickets_validate_int'],
+                'ticket_ids' => ['type' => 'array', 'items' => ['type' => 'integer']],
+            ],
+        ],
+    ]);
+
     register_rest_route($namespace, '/tickets/(?P<id>\d+)/archive', [
         [
             'methods'             => 'POST',
@@ -275,6 +287,54 @@ function rcmi_tickets_get_ticket_tag_ids($ticket_id) {
 }
 
 /**
+ * Linked tickets for a ticket (symmetric — stored as ordered pairs).
+ * Returns id/title/status for each ticket linked either direction.
+ */
+function rcmi_tickets_get_linked_tickets($ticket_id) {
+    global $wpdb;
+    $links = $wpdb->prefix . 'rcmi_ticket_links';
+    $tickets = $wpdb->prefix . 'rcmi_tickets';
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT t.id, t.title, t.status FROM {$links} l
+         JOIN {$tickets} t ON t.id = IF(l.ticket_id = %d, l.linked_ticket_id, l.ticket_id)
+         WHERE l.ticket_id = %d OR l.linked_ticket_id = %d
+         ORDER BY t.id",
+        (int) $ticket_id, (int) $ticket_id, (int) $ticket_id
+    ), ARRAY_A);
+    return array_map(function ($r) {
+        return ['id' => (int) $r['id'], 'title' => $r['title'], 'status' => $r['status']];
+    }, $rows ?: []);
+}
+
+/**
+ * Replace the link set for a ticket. Pairs are stored ordered
+ * (smaller id in ticket_id) so each relationship exists once and
+ * shows on both tickets.
+ */
+function rcmi_tickets_sync_links($ticket_id, $ticket_ids) {
+    global $wpdb;
+    $table = $wpdb->prefix . 'rcmi_ticket_links';
+    $ticket_id = (int) $ticket_id;
+    $wpdb->delete($table, ['ticket_id' => $ticket_id], ['%d']);
+    $wpdb->delete($table, ['linked_ticket_id' => $ticket_id], ['%d']);
+
+    $ticket_ids = array_filter(array_unique(array_map('intval', (array) $ticket_ids)), function ($id) use ($ticket_id) {
+        return $id > 0 && $id !== $ticket_id;
+    });
+    $existing = $ticket_ids ? array_map('intval', $wpdb->get_col(
+        "SELECT id FROM {$wpdb->prefix}rcmi_tickets WHERE id IN (" . implode(',', array_map('intval', $ticket_ids)) . ")"
+    )) : [];
+    foreach ($existing as $other) {
+        $wpdb->insert($table, [
+            'ticket_id'        => min($ticket_id, $other),
+            'linked_ticket_id' => max($ticket_id, $other),
+            'created_by'       => get_current_user_id(),
+            'created_at'       => current_time('mysql'),
+        ], ['%d', '%d', '%d', '%s']);
+    }
+}
+
+/**
  * Sync assignees for a ticket (replace).
  */
 function rcmi_tickets_sync_assignees($ticket_id, $assignee_ids) {
@@ -353,6 +413,12 @@ function rcmi_tickets_format_ticket($row, $with_author_photo = false) {
                 'id'           => (int) $uid,
                 'display_name' => $u->display_name,
                 'user_email'   => $u->user_email,
+                'job_title'    => (string) get_user_meta($uid, 'rcmi_job_title', true),
+                'department'   => (string) get_user_meta($uid, 'rcmi_department', true),
+                'phone'        => (string) get_user_meta($uid, 'rcmi_phone', true),
+                'employee_id'  => (string) get_user_meta($uid, 'rcmi_employee_id', true),
+                // Same data-URI gating as author_photo — single-ticket responses only.
+                'photo'        => $with_author_photo ? (string) get_user_meta($uid, 'rcmi_photo', true) : '',
             ];
         }
     }
@@ -398,6 +464,8 @@ function rcmi_tickets_format_ticket($row, $with_author_photo = false) {
         'updated_by_name' => $updater ? $updater->display_name : null,
         'assignee_ids'    => $row['assignee_ids'],
         'assignees'       => $assignees,
+        // Detail responses only — keeps list payloads light.
+        'linked_tickets'  => $with_author_photo ? rcmi_tickets_get_linked_tickets($row['id']) : [],
         'tag_ids'         => $row['tag_ids'],
         'tags'            => $tags,
         'form_answers'    => $form_answers,
@@ -1588,6 +1656,26 @@ function rcmi_tickets_handle_assignee_update($request) {
     if ($added || $removed) {
         do_action('rcmi_ticket_assignees_changed', $ticket_id, $added, $removed);
     }
+
+    $row = rcmi_tickets_load_ticket($ticket_id);
+    return new WP_REST_Response(rcmi_tickets_format_ticket($row, true), 200);
+}
+
+/**
+ * Replace the ticket's linked tickets (managers + current step approver,
+ * same gate as assignee updates). Returns the updated ticket.
+ */
+function rcmi_tickets_handle_links_update($request) {
+    global $wpdb;
+    $ticket_id = (int) $request['id'];
+    $ticket_ids = isset($request['ticket_ids']) ? array_map('intval', (array) $request['ticket_ids']) : [];
+
+    rcmi_tickets_sync_links($ticket_id, $ticket_ids);
+
+    $wpdb->update($wpdb->prefix . 'rcmi_tickets', [
+        'updated_by'  => get_current_user_id(),
+        'updated_at'  => current_time('mysql'),
+    ], ['id' => $ticket_id], ['%d', '%s'], ['%d']);
 
     $row = rcmi_tickets_load_ticket($ticket_id);
     return new WP_REST_Response(rcmi_tickets_format_ticket($row, true), 200);

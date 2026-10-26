@@ -48,9 +48,12 @@ function rcmi_tickets_allowed_config_keys($type) {
         'checkbox'  => array_merge($common, ['options']),
         'radio'     => array_merge($common, ['options']),
         'date'      => array_merge($common, ['min_days', 'include_weekend']),
-        'number'    => array_merge($common, ['placeholder', 'min', 'max', 'step']),
+        'number'    => array_merge($common, ['placeholder', 'min', 'max', 'step', 'integer_only']),
         'section'   => [],
         'cascade'   => array_merge($common, ['cascade_tree', 'cascade_style', 'cascade_other', 'cascade_level_labels']),
+        // Survey-only types (rcmi_survey_fields)
+        'rating'    => array_merge($common, ['max', 'low_label', 'high_label']),
+        'scale'     => array_merge($common, ['min', 'max', 'low_label', 'high_label']),
     ];
     return $map[$type] ?? $common;
 }
@@ -123,21 +126,163 @@ function rcmi_tickets_validate_field_config($config, $type) {
                 break;
             case 'include_weekend':
             case 'allow_other':
+            case 'integer_only':
                 $clean[$k] = !empty($v);
                 break;
+            case 'low_label':
+            case 'high_label':
+                $clean[$k] = sanitize_text_field((string) $v);
+                break;
             case 'logic':
-                if (is_array($v) && isset($v['field_key'], $v['op'], $v['value'], $v['action'])) {
-                    $clean['logic'] = [
-                        'field_key' => sanitize_text_field((string) $v['field_key']),
-                        'op'        => in_array($v['op'], ['equals', 'not_equals', 'contains', 'not_contains'], true) ? $v['op'] : 'equals',
-                        'value'     => sanitize_text_field((string) $v['value']),
-                        'action'    => in_array($v['action'], ['show', 'hide'], true) ? $v['action'] : 'show',
-                    ];
+                $normalized = rcmi_tickets_normalize_field_logic($v);
+                if ($normalized) {
+                    $clean['logic'] = $normalized;
                 }
                 break;
         }
     }
     return $clean ?: null;
+}
+
+/**
+ * Normalize a conditional-logic config to the v2 shape:
+ *   { action: 'show'|'hide', match: 'all'|'any', rules: [{field_key, op, value}] }
+ *
+ * Accepts both v2 input and the legacy single-rule shape
+ * { field_key, op, value, action } — legacy converts to v2 with match 'all'.
+ * Rules are capped at 10. Returns null when nothing usable was provided.
+ *
+ * @param mixed $logic
+ * @return array|null
+ */
+function rcmi_tickets_normalize_field_logic($logic) {
+    if (!is_array($logic)) {
+        return null;
+    }
+    $valid_ops = ['equals', 'not_equals', 'contains', 'not_contains'];
+
+    $sanitize_rule = function ($rule) use ($valid_ops) {
+        if (!is_array($rule) || empty($rule['field_key'])) {
+            return null;
+        }
+        return [
+            'field_key' => sanitize_text_field((string) $rule['field_key']),
+            'op'        => in_array($rule['op'] ?? '', $valid_ops, true) ? $rule['op'] : 'equals',
+            'value'     => sanitize_text_field((string) ($rule['value'] ?? '')),
+        ];
+    };
+
+    // v2 shape
+    if (isset($logic['rules']) && is_array($logic['rules'])) {
+        $rules = [];
+        foreach ($logic['rules'] as $rule) {
+            $r = $sanitize_rule($rule);
+            if ($r) {
+                $rules[] = $r;
+            }
+            if (count($rules) >= 10) {
+                break;
+            }
+        }
+        if (!$rules) {
+            return null;
+        }
+        return [
+            'action' => in_array($logic['action'] ?? '', ['show', 'hide'], true) ? $logic['action'] : 'show',
+            'match'  => in_array($logic['match'] ?? '', ['all', 'any'], true) ? $logic['match'] : 'all',
+            'rules'  => $rules,
+        ];
+    }
+
+    // Legacy single-rule shape → v2 with match 'all'
+    if (isset($logic['field_key'], $logic['op'], $logic['value'])) {
+        $rule = $sanitize_rule($logic);
+        if (!$rule) {
+            return null;
+        }
+        return [
+            'action' => in_array($logic['action'] ?? '', ['show', 'hide'], true) ? $logic['action'] : 'show',
+            'match'  => 'all',
+            'rules'  => [$rule],
+        ];
+    }
+
+    return null;
+}
+
+/**
+ * Server-side visibility evaluator for conditional fields. Mirrors
+ * DynamicForm.vue's isFieldVisible semantics, for both the legacy
+ * single-rule logic shape and the v2 {action, match, rules} shape.
+ *
+ * Answers is a map of field_key => value; survey fields may also key off
+ * ticket answers via "ticket:<field_key>".
+ *
+ * @param array $config  Field config (may contain 'logic').
+ * @param array $answers Answer map.
+ * @return bool
+ */
+function rcmi_tickets_field_is_visible($config, $answers) {
+    $logic = is_array($config) ? ($config['logic'] ?? null) : null;
+    if (!is_array($logic)) {
+        return true;
+    }
+
+    // Normalize legacy shape into a rules list.
+    if (isset($logic['rules']) && is_array($logic['rules'])) {
+        $rules = $logic['rules'];
+        $match = ($logic['match'] ?? 'all') === 'any' ? 'any' : 'all';
+        $action = ($logic['action'] ?? 'show') === 'hide' ? 'hide' : 'show';
+    } elseif (isset($logic['field_key'])) {
+        $rules = [$logic];
+        $match = 'all';
+        $action = ($logic['action'] ?? 'show') === 'hide' ? 'hide' : 'show';
+    } else {
+        return true;
+    }
+
+    if (!$rules) {
+        return true;
+    }
+
+    $test = function ($rule) use ($answers) {
+        if (!is_array($rule) || empty($rule['field_key'])) {
+            return false;
+        }
+        $dep_val = $answers[$rule['field_key']] ?? null;
+        $target = (string) ($rule['value'] ?? '');
+        switch ($rule['op'] ?? 'equals') {
+            case 'equals':
+                return (string) $dep_val === $target;
+            case 'not_equals':
+                return (string) $dep_val !== $target;
+            case 'contains':
+                return is_array($dep_val) ? in_array($target, $dep_val, true) : strpos((string) $dep_val, $target) !== false;
+            case 'not_contains':
+                return is_array($dep_val) ? !in_array($target, $dep_val, true) : strpos((string) $dep_val, $target) === false;
+        }
+        return false;
+    };
+
+    if ($match === 'any') {
+        $met = false;
+        foreach ($rules as $rule) {
+            if ($test($rule)) {
+                $met = true;
+                break;
+            }
+        }
+    } else {
+        $met = true;
+        foreach ($rules as $rule) {
+            if (!$test($rule)) {
+                $met = false;
+                break;
+            }
+        }
+    }
+
+    return $action === 'show' ? $met : !$met;
 }
 
 /**

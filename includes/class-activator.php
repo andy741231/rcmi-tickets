@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
  * re-run on the next admin request to bring tables up to date.
  */
 if (!defined('RCMI_TICKETS_DB_VERSION')) {
-    define('RCMI_TICKETS_DB_VERSION', '13');
+    define('RCMI_TICKETS_DB_VERSION', '15');
 }
 
 /**
@@ -223,6 +223,70 @@ function rcmi_tickets_schema_statements() {
             KEY ticket_id (ticket_id),
             KEY changed_at (changed_at)
         ) {$charset_collate};",
+
+        // ── Schema v14: customer-satisfaction survey ────────────────────
+
+        'survey_fields' => "CREATE TABLE {$prefix}rcmi_survey_fields (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            field_key VARCHAR(100) NOT NULL,
+            label VARCHAR(255) NOT NULL,
+            type VARCHAR(20) NOT NULL,
+            required TINYINT(1) NOT NULL DEFAULT 0,
+            sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+            config LONGTEXT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY field_key (field_key),
+            KEY sort_order (sort_order)
+        ) {$charset_collate};",
+
+        'survey_responses' => "CREATE TABLE {$prefix}rcmi_survey_responses (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            ticket_id BIGINT UNSIGNED NOT NULL,
+            respondent_user_id BIGINT UNSIGNED NULL,
+            respondent_email VARCHAR(255) NULL,
+            submitted_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY ticket_id (ticket_id)
+        ) {$charset_collate};",
+
+        'survey_answers' => "CREATE TABLE {$prefix}rcmi_survey_answers (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            response_id BIGINT UNSIGNED NOT NULL,
+            field_id BIGINT UNSIGNED NOT NULL,
+            field_key VARCHAR(100) NOT NULL,
+            label VARCHAR(255) NOT NULL,
+            type VARCHAR(20) NOT NULL,
+            value LONGTEXT NULL,
+            PRIMARY KEY  (id),
+            KEY response_id (response_id)
+        ) {$charset_collate};",
+
+        'survey_emails' => "CREATE TABLE {$prefix}rcmi_survey_emails (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            ticket_id BIGINT UNSIGNED NOT NULL,
+            kind VARCHAR(20) NOT NULL,
+            recipient VARCHAR(255) NOT NULL,
+            sent_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            sent_at DATETIME NOT NULL,
+            success TINYINT(1) NOT NULL DEFAULT 0,
+            PRIMARY KEY  (id),
+            KEY ticket_id (ticket_id)
+        ) {$charset_collate};",
+
+        // ── Schema v15: linked tickets ──────────────────────────────────
+        // Symmetric pairs — ticket_id always holds the smaller id so a
+        // link between A and B can only be stored once.
+
+        'ticket_links' => "CREATE TABLE {$prefix}rcmi_ticket_links (
+            ticket_id BIGINT UNSIGNED NOT NULL,
+            linked_ticket_id BIGINT UNSIGNED NOT NULL,
+            created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY  (ticket_id, linked_ticket_id),
+            KEY linked_ticket_id (linked_ticket_id)
+        ) {$charset_collate};",
     ];
 }
 
@@ -308,6 +372,12 @@ function rcmi_tickets_run_schema_migrations() {
     $has_archived = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_tickets LIKE 'archived'");
     if (!$has_archived) {
         $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_tickets ADD COLUMN archived TINYINT(1) NOT NULL DEFAULT 0 AFTER status");
+    }
+
+    // v14: per-chain opt-out for the satisfaction survey (on by default)
+    $has_survey_enabled = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_approval_chains LIKE 'survey_enabled'");
+    if (!$has_survey_enabled) {
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_approval_chains ADD COLUMN survey_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER is_active");
     }
 }
 

@@ -7,7 +7,9 @@ import ApprovalCenter from './pages/ApprovalCenter.vue';
 import ApprovalChainList from './pages/ApprovalChainList.vue';
 import ApprovalChainEditor from './pages/ApprovalChainEditor.vue';
 import FormBuilderPage from './pages/FormBuilderPage.vue';
-import MessagesPage from './pages/MessagesPage.vue';
+import SurveyBuilderPage from './pages/SurveyBuilderPage.vue';
+import SurveyResponses from './pages/SurveyResponses.vue';
+import SurveyPage from './pages/SurveyPage.vue';
 import TagRulesPage from './pages/TagRulesPage.vue';
 import TicketHeaven from './pages/TicketHeaven.vue';
 import LoginPage from './pages/LoginPage.vue';
@@ -26,7 +28,12 @@ export const routes = [
     { path: '/approval-edit', name: 'approval-chain-list', component: ApprovalChainList },
     { path: '/approval-edit/:id', name: 'approval-chain-editor', component: ApprovalChainEditor, props: true },
     { path: '/form-builder', name: 'form-builder', component: FormBuilderPage },
-    { path: '/messages', name: 'messages', component: MessagesPage },
+    { path: '/survey-builder', name: 'survey-builder', component: SurveyBuilderPage },
+    { path: '/survey-responses', name: 'survey-responses', component: SurveyResponses },
+    { path: '/survey/:id', name: 'survey', component: SurveyPage, props: true },
+    // Messages & Notifications lives in the form builder's Settings tab;
+    // redirect keeps old links working.
+    { path: '/messages', redirect: { path: '/form-builder', query: { tab: 'settings' } } },
     { path: '/tag-rules', name: 'tag-rules', component: TagRulesPage },
     { path: '/ticket-heaven', name: 'ticket-heaven', component: TicketHeaven },
     { path: '/login', name: 'login', component: LoginPage },
@@ -43,12 +50,13 @@ export function publicGuard(router) {
         });
         return;
     }
-    // In public mode, /create, /login, /revision, and /ticket/:id/view are
-    // allowed. Any other internal route (e.g. /ticket/:id from an approval
-    // email) redirects to /login with a redirect param so the user can
-    // sign in and land on the page they originally requested.
+    // In public mode, /create, /login, /revision, /ticket/:id/view, and the
+    // tokenized /survey/:id link are allowed. Any other internal route
+    // (e.g. /ticket/:id from an approval email) redirects to /login with a
+    // redirect param so the user can sign in and land on the page they
+    // originally requested.
     router.beforeEach((to) => {
-        if (['ticket-create', 'ticket-revision', 'ticket-public-view', 'login'].includes(to.name)) {
+        if (['ticket-create', 'ticket-revision', 'ticket-public-view', 'survey', 'login'].includes(to.name)) {
             return;
         }
         // Preserve the full path (including query/hash) for post-login redirect

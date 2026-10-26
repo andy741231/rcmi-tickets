@@ -419,8 +419,14 @@ function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status,
 
     // For Completed status, fetch the chain's custom completion message
     $completion_message = '';
+    $survey_url = '';
     if ($new_status === 'Completed') {
         $completion_message = rcmi_tickets_get_chain_completion_message($ticket_id);
+        // Satisfaction survey: appended when the ticket is eligible
+        // (survey enabled, has questions, chain allows it, inside window).
+        if (function_exists('rcmi_tickets_survey_is_eligible') && rcmi_tickets_survey_is_eligible($ticket_id)) {
+            $survey_url = rcmi_tickets_survey_url($ticket_id);
+        }
     }
 
     $title = rcmi_tickets_email_esc($ticket['title']);
@@ -446,57 +452,146 @@ function rcmi_tickets_email_status_changed($ticket_id, $new_status, $old_status,
     // Ticket details
     $details = rcmi_tickets_email_ticket_details($ticket);
 
-    // Completion message from the chain (if any)
-    $completion_html = '';
-    $completion_plain = '';
-    if ($completion_message !== '') {
-        $allowed_html = [
-            'p' => [], 'br' => [], 'strong' => [], 'em' => [], 'b' => [], 'i' => [],
-            'a' => ['href' => true, 'title' => true],
-            'ul' => [], 'ol' => [], 'li' => [],
-        ];
-        $safe_html = wp_kses($completion_message, $allowed_html);
-        $completion_plain = "\n" . wp_strip_all_tags($completion_message) . "\n";
-        $completion_html = '<div style="margin-top:1rem;padding:1rem;background:#f0fdf4;border-left:4px solid #00B388;border-radius:.375rem;">'
-            . '<div style="font-size:14px;color:#166534;">' . $safe_html . '</div>'
-            . '</div>';
-    }
-
     $intro_html = $intro ? '<p>' . rcmi_tickets_email_esc($intro) . '</p>' : '';
     $intro_plain = $intro ? $intro . "\n\n" : '';
+
+    // Completion callout: the chain's completion message merged with the
+    // satisfaction-survey button (Completed + eligible only) into a single
+    // green box at the foot of the email. The survey pitch copy lives in
+    // the completion message (rcmi_tickets_default_completion_message),
+    // so here the survey contributes only the button. No box at all when
+    // both are empty.
+    $completion_html = '';
+    $completion_plain = '';
+    $survey_plain = '';
+    if ($completion_message !== '' || $survey_url !== '') {
+        $callout_inner = '';
+        if ($completion_message !== '') {
+            $allowed_html = [
+                'p' => [], 'br' => [], 'strong' => [], 'em' => [], 'b' => [], 'i' => [],
+                'a' => ['href' => true, 'title' => true],
+                'ul' => [], 'ol' => [], 'li' => [],
+            ];
+            $callout_inner .= '<div style="font-size:14px;color:#166534;">' . wp_kses($completion_message, $allowed_html) . '</div>';
+            $completion_plain = "\n" . wp_strip_all_tags($completion_message) . "\n";
+        }
+        if ($survey_url !== '') {
+            $callout_inner .= '<p style="margin:.75rem 0 0;"><a href="' . esc_url($survey_url) . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('Rate your experience', 'rcmi-tickets') . '</a></p>';
+            $survey_plain = 'Rate your experience: ' . wp_strip_all_tags($survey_url) . "\n";
+        }
+        $completion_html = '<div style="margin-top:1.25rem;padding:1rem;background:#f0fdf4;border-left:4px solid #00B388;border-radius:.375rem;">'
+            . $callout_inner
+            . '</div>';
+    }
 
     $html = '<!doctype html><html><body>'
         . '<h2>' . rcmi_tickets_email_esc($headline) . '</h2>'
         . $intro_html
         . '<p><strong>' . __('Ticket:', 'rcmi-tickets') . '</strong> #' . (int) $ticket_id . ' — ' . $title . '</p>'
         . $message_html
-        . $completion_html
         . '<p style="margin-top:1rem;"><a href="' . $url . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('View ticket', 'rcmi-tickets') . '</a></p>'
         . '<h3 style="margin-top:1.5rem;font-size:15px;color:#333;">' . __('Ticket details', 'rcmi-tickets') . '</h3>'
         . '<table style="border-collapse:collapse;margin-top:.5rem;">' . $details['html'] . '</table>'
+        . $completion_html
         . '</body></html>';
 
     $plain = sprintf(
-        "%s\n\n%sTicket: #%d — %s%s%s\nView ticket: %s\n\nTicket details:\n%s",
+        "%s\n\n%sTicket: #%d — %s%s\nView ticket: %s\n\nTicket details:\n%s%s%s",
         $headline,
         $intro_plain,
         $ticket_id,
         $ticket['title'],
         $message_plain,
-        $completion_plain,
         wp_strip_all_tags($url),
-        $details['plain']
+        $details['plain'],
+        $completion_plain,
+        $survey_plain
     );
 
-    rcmi_tickets_send_email($recipients, $subject, $html, $plain);
+    $sent = rcmi_tickets_send_email($recipients, $subject, $html, $plain);
+
+    // Log each initial survey email so managers can audit what went out.
+    if ($survey_url !== '' && function_exists('rcmi_tickets_log_survey_email')) {
+        foreach ($recipients as $recipient) {
+            rcmi_tickets_log_survey_email($ticket_id, 'initial', $recipient, 0, $sent ? 1 : 0);
+        }
+    }
+}
+
+/**
+ * Send the standalone satisfaction-survey email — used for manual resends
+ * and scheduled reminders (the initial invite rides inside the Completed
+ * status email instead). Logs one rcmi_survey_emails row per recipient.
+ *
+ * @param int    $ticket_id
+ * @param string $kind     'reminder' | 'manual'
+ * @param int    $sent_by  User who triggered it (0 = system/cron).
+ * @return int Number of recipients emailed (0 on failure/no recipient).
+ */
+function rcmi_tickets_send_survey_email($ticket_id, $kind = 'manual', $sent_by = 0) {
+    $ticket = rcmi_tickets_load_ticket($ticket_id);
+    if (!$ticket) {
+        return 0;
+    }
+    $recipients = rcmi_tickets_survey_recipients($ticket);
+    if (!$recipients) {
+        return 0;
+    }
+    $survey_url = rcmi_tickets_survey_url($ticket_id);
+    $title = rcmi_tickets_email_esc($ticket['title']);
+    $url_esc = esc_url($survey_url);
+
+    if ($kind === 'reminder') {
+        $subject = sprintf(__('Reminder: how did we do on ticket #%d?', 'rcmi-tickets'), $ticket_id);
+        $lead = __('Just a friendly reminder — we\'d still love your feedback on how we handled your request.', 'rcmi-tickets');
+    } else {
+        $subject = sprintf(__('How did we do on ticket #%d?', 'rcmi-tickets'), $ticket_id);
+        $lead = __('We\'d love your feedback on how we handled your request.', 'rcmi-tickets');
+    }
+
+    $html = '<!doctype html><html><body>'
+        . '<h2>' . __('How did we do?', 'rcmi-tickets') . '</h2>'
+        . '<p>' . rcmi_tickets_email_esc($lead) . '</p>'
+        . '<p><strong>' . __('Ticket:', 'rcmi-tickets') . '</strong> #' . (int) $ticket_id . ' — ' . $title . '</p>'
+        . '<p style="margin-top:1rem;"><a href="' . $url_esc . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('Rate your experience', 'rcmi-tickets') . '</a></p>'
+        . '<p style="margin-top:1rem;font-size:12px;color:#666;">' . __('It takes about 30 seconds.', 'rcmi-tickets') . '</p>'
+        . '</body></html>';
+
+    $plain = sprintf(
+        "How did we do?\n\n%s\nTicket: #%d — %s\n\nRate your experience: %s\n",
+        wp_strip_all_tags($lead),
+        $ticket_id,
+        $ticket['title'],
+        wp_strip_all_tags($survey_url)
+    );
+
+    $sent = rcmi_tickets_send_email($recipients, $subject, $html, $plain);
+    foreach ($recipients as $recipient) {
+        rcmi_tickets_log_survey_email($ticket_id, $kind, $recipient, $sent_by, $sent ? 1 : 0);
+    }
+
+    return $sent ? count($recipients) : 0;
+}
+
+/**
+ * Default completion message for the Completed status email — used when
+ * the ticket's approval chain doesn't define its own. The satisfaction
+ * survey pitch lives here (editable per chain in the chain editor) so the
+ * email template itself stays copy-free.
+ * Uses only tags allowed by rcmi_tickets_sanitize_completion_message().
+ */
+function rcmi_tickets_default_completion_message() {
+    return '<p>Thank you for collaborating with our team on your request!</p><p>How did we do? Take a 30-second survey about your experience with this request — we value your feedback.</p>';
 }
 
 /**
  * Get the completion message from the approval chain that processed
  * a given ticket. Looks up the chain via the ticket_approvals table.
+ * Falls back to rcmi_tickets_default_completion_message() when the ticket
+ * has no chain or the chain's message is empty.
  *
  * @param int $ticket_id
- * @return string Completion message (empty string if no chain or no message)
+ * @return string Completion message (chain's custom message, else the default)
  */
 function rcmi_tickets_get_chain_completion_message($ticket_id) {
     global $wpdb;
@@ -505,13 +600,13 @@ function rcmi_tickets_get_chain_completion_message($ticket_id) {
         (int) $ticket_id
     ));
     if (!$chain_id) {
-        return '';
+        return rcmi_tickets_default_completion_message();
     }
     $message = $wpdb->get_var($wpdb->prepare(
         "SELECT completion_message FROM {$wpdb->prefix}rcmi_approval_chains WHERE id = %d",
         (int) $chain_id
     ));
-    return $message ?: '';
+    return $message ?: rcmi_tickets_default_completion_message();
 }
 
 /**

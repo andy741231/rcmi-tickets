@@ -1,25 +1,12 @@
 <template>
-    <div class="rcmi-formbuilder-page">
-        <header class="rcmi-formbuilder-page-header">
-            <div>
-                <nav class="rcmi-breadcrumb mb-3" aria-label="Breadcrumb">
-                    <router-link to="/form-builder">Form Builder</router-link>
-                    <span class="rcmi-breadcrumb-sep">/</span>
-                    <span class="font-semibold text-gray-700">Messages</span>
-                </nav>
-                <h1 class="text-2xl font-bold text-gray-900">Messages &amp; Notifications</h1>
-                <p class="mt-1 text-sm text-gray-600">Control what submitters see on-screen and which emails go out.</p>
-            </div>
-            <router-link to="/form-builder" class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3 py-2 text-sm">
-                <Icon name="chevron-left" /> Back to form builder
-            </router-link>
-        </header>
+    <!-- Rendered inside the form builder's Settings tab — no standalone page. -->
+    <div>
 
         <div v-if="loading" class="rcmi-card p-8 text-center text-sm text-gray-600">Loading settings…</div>
         <div v-else-if="error" class="rcmi-card p-8 text-center text-sm text-red-700">{{ error }}</div>
 
         <template v-else>
-            <div class="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <div class="grid gap-5 xl:grid-cols-2">
                 <!-- Public submissions settings -->
                 <div class="rcmi-card p-5">
                     <p class="rcmi-section-label mb-2">Public Submissions</p>

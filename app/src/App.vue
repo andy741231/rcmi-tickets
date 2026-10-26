@@ -37,14 +37,20 @@
                             <Icon name="chevron-down" class="rcmi-nav-caret" :class="{ 'rcmi-nav-caret-open': settingsOpen }" />
                         </button>
                         <div v-if="settingsOpen" class="rcmi-nav-menu" role="menu" aria-label="Settings" @keydown.escape="closeSettings(true)">
+                            <router-link to="/form-builder" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
+                                <Icon name="edit" /> Edit form
+                            </router-link>
                             <router-link to="/approval-edit" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
                                 <Icon name="flow" /> Chains
                             </router-link>
+                            <router-link to="/survey-builder" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
+                                <Icon name="star-outline" /> Edit survey
+                            </router-link>
+                            <router-link to="/survey-responses" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
+                                <Icon name="list" /> Survey responses
+                            </router-link>
                             <router-link to="/tag-rules" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
                                 <Icon name="tag" /> Tag Rules
-                            </router-link>
-                            <router-link to="/messages" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
-                                <Icon name="inbox" /> Messages
                             </router-link>
                         </div>
                     </div>
@@ -105,7 +111,7 @@ const meta = reactive({ caps: {} });
 const pendingCount = ref(0);
 const loggingOut = ref(false);
 
-const SETTINGS_PATHS = ['/approval-edit', '/tag-rules', '/messages'];
+const SETTINGS_PATHS = ['/form-builder', '/approval-edit', '/tag-rules', '/survey-builder', '/survey-responses'];
 const settingsOpen = ref(false);
 const settingsRoot = ref(null);
 const settingsActive = computed(() => SETTINGS_PATHS.some((p) => route.path.startsWith(p)));

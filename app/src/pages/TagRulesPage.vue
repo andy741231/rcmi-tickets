@@ -14,7 +14,7 @@
         <!-- Add rule form -->
         <div class="rcmi-card mb-6 p-5">
             <h3 class="rcmi-section-label mb-4">Add Rule</h3>
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                     <label class="rcmi-field-label">Field</label>
                     <select v-model="newRule.field_key" class="rcmi-input">
@@ -77,7 +77,7 @@
                 </div>
                 <!-- Inline edit -->
                 <div v-else class="space-y-3">
-                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
                             <label class="rcmi-field-label">Field</label>
                             <select v-model="editRule.field_key" class="rcmi-input">

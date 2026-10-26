@@ -500,6 +500,67 @@
         align-items: start;
     }
 
+    /* Underline tab bar — sits between the page header and the workspace
+       on builders that split content across tabs (survey builder). */
+    .rcmi-builder-tabs {
+        display: flex;
+        gap: 1.5rem;
+        margin-bottom: 1.25rem;
+        border-bottom: 1px solid var(--rcmi-border);
+    }
+
+    .rcmi-builder-tab {
+        margin-bottom: -1px;
+        padding: 0.5rem 0.125rem 0.625rem;
+        border-bottom: 2px solid transparent;
+        color: var(--rcmi-muted);
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .rcmi-builder-tab:hover {
+        color: var(--rcmi-ink);
+    }
+
+    .rcmi-builder-tab-active,
+    .rcmi-builder-tab-active:hover {
+        border-bottom-color: var(--rcmi-red);
+        color: var(--rcmi-red-dark);
+    }
+
+    /* Rich text rendered from the survey intro/thank-you editors
+       (mirrors .rcmi-rte-content typography for the respondent view). */
+    .rcmi-rich-text p {
+        margin: 0 0 0.5rem 0;
+    }
+
+    .rcmi-rich-text p:last-child {
+        margin-bottom: 0;
+    }
+
+    .rcmi-rich-text ul,
+    .rcmi-rich-text ol {
+        margin: 0 0 0.5rem 0;
+        padding-left: 1.5rem;
+    }
+
+    .rcmi-rich-text ul {
+        list-style: disc;
+    }
+
+    .rcmi-rich-text ol {
+        list-style: decimal;
+    }
+
+    .rcmi-rich-text li {
+        margin-bottom: 0.125rem;
+    }
+
+    .rcmi-rich-text a {
+        color: var(--rcmi-red);
+        text-decoration: underline;
+    }
+
     .rcmi-formbuilder-sidebar {
         display: grid;
         gap: 1rem;
@@ -539,7 +600,9 @@
 
     .rcmi-formbuilder-canvas {
         min-width: 0;
-        overflow: hidden;
+        /* clip (not hidden) so sticky children still track the viewport —
+           overflow:hidden would make the canvas the scroll container. */
+        overflow: clip;
         border: 1px solid var(--rcmi-border);
         border-radius: var(--rcmi-radius-lg);
         background: var(--rcmi-surface);

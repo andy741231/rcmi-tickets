@@ -150,6 +150,11 @@ function rcmi_tickets_handle_meta() {
             'display_name' => $u->display_name,
             'user_login'   => $u->user_login,
             'user_email'   => $u->user_email,
+            'job_title'    => (string) get_user_meta($uid, 'rcmi_job_title', true),
+            'department'   => (string) get_user_meta($uid, 'rcmi_department', true),
+            'phone'        => (string) get_user_meta($uid, 'rcmi_phone', true),
+            'employee_id'  => (string) get_user_meta($uid, 'rcmi_employee_id', true),
+            'photo'        => (string) get_user_meta($uid, 'rcmi_photo', true),
         ];
     }
 
@@ -338,6 +343,9 @@ function rcmi_tickets_handle_meta() {
         'status_counts'    => $filter_status_counts,
         'public_success'   => rcmi_tickets_get_success_message(),
         'allow_public_submit' => rcmi_tickets_public_submissions_enabled(),
+        // Default chain completion message — the chain editor prefills this
+        // so managers can see and customize what Completed emails say.
+        'completion_message_default' => rcmi_tickets_default_completion_message(),
     ], 200);
 }
 

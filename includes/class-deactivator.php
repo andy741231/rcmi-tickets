@@ -19,4 +19,5 @@ if (!defined('ABSPATH')) {
  */
 function rcmi_tickets_deactivate_schema() {
     delete_option('rcmi_tickets_db_version');
+    wp_clear_scheduled_hook('rcmi_tickets_survey_reminders');
 }

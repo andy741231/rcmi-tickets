@@ -255,16 +255,88 @@
                         <ApprovalTimeline :steps="ticket.approval_history" :chain="ticket.approval_chain" :status-history="ticket.status_history || []" :assignees="ticket.assignees || []" :start-at="ticket.created_at" />
                     </section>
 
+                    <!-- Customer feedback — managers/admins only -->
+                    <section v-if="showManagerSurveyCard" class="rcmi-card p-5">
+                        <div class="mb-4 flex items-center justify-between gap-2">
+                            <h3 class="rcmi-section-label">Customer feedback</h3>
+                            <button v-if="!surveySubmitted" @click="resendSurvey"
+                                :disabled="!canResendSurvey"
+                                class="rcmi-button-secondary inline-flex items-center gap-1 px-2.5 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                                :title="surveyEligible ? 'Send the survey email again' : 'Survey is not eligible for this ticket'">
+                                <Icon name="mail" /> {{ surveySending ? 'Sending…' : 'Resend survey' }}
+                            </button>
+                        </div>
+
+                        <!-- Submitted answers -->
+                        <template v-if="surveySubmitted">
+                            <p class="mb-3 text-xs text-gray-500">
+                                Submitted {{ formatDateTime(surveyInfo.response.submitted_at) }}<span v-if="surveyInfo.response.respondent_email"> by {{ surveyInfo.response.respondent_email }}</span>
+                            </p>
+                            <dl class="space-y-3">
+                                <div v-for="a in surveyAnswers" :key="a.field_key">
+                                    <dt class="text-xs font-semibold text-gray-500">{{ a.label }}</dt>
+                                    <dd v-if="a.type === 'rating'" class="mt-0.5">
+                                        <span class="inline-flex items-center gap-0.5" :aria-label="`${a.value} of ${surveyRatingMax(a.field_key)} stars`">
+                                            <Icon v-for="n in surveyRatingMax(a.field_key)" :key="n" name="star"
+                                                class="h-4 w-4" :class="n <= Number(a.value) ? 'text-amber-400' : 'text-gray-200'" />
+                                            <span class="ml-1 text-xs text-gray-500">{{ a.value }}/{{ surveyRatingMax(a.field_key) }}</span>
+                                        </span>
+                                    </dd>
+                                    <dd v-else class="mt-0.5 whitespace-pre-wrap text-sm text-gray-700">{{ surveyAnswerText(a) }}</dd>
+                                </div>
+                            </dl>
+                        </template>
+                        <p v-else class="text-sm text-gray-500">
+                            {{ surveyEligible ? 'No response yet — the survey invite has been sent.' : 'No response yet.' }}
+                        </p>
+                        <p v-if="!surveySubmitted && !surveyEligible && surveyInfo.eligibility?.reasons?.length"
+                            class="mt-1 text-xs text-gray-400">
+                            Survey not eligible: {{ surveyInfo.eligibility.reasons.join(', ') }}
+                        </p>
+
+                        <!-- Email log -->
+                        <div v-if="surveyEmails.length" class="mt-4 border-t border-gray-100 pt-3">
+                            <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Survey emails</h4>
+                            <ul class="space-y-1.5 text-xs text-gray-600">
+                                <li v-for="e in surveyEmails" :key="e.id" class="flex items-start gap-1.5">
+                                    <Icon :name="e.success ? 'check-circle' : 'x-circle'"
+                                        class="mt-0.5 h-3.5 w-3.5 flex-shrink-0" :class="e.success ? 'text-emerald-600' : 'text-red-600'" />
+                                    <span class="min-w-0">
+                                        <span class="font-medium text-gray-700">{{ surveyEmailKindLabel(e.kind) }}</span>
+                                        → <span class="break-all">{{ e.recipient }}</span>
+                                        <span class="text-gray-400"> · {{ formatDateTime(e.sent_at) }}<template v-if="e.sent_by_name"> · by {{ e.sent_by_name }}</template></span>
+                                    </span>
+                                </li>
+                            </ul>
+                        </div>
+                    </section>
+
+                    <!-- Requester survey link — requester only, Completed tickets -->
+                    <section v-else-if="showRequesterSurvey" class="rcmi-card p-5">
+                        <h3 class="rcmi-section-label mb-3">Your feedback</h3>
+                        <router-link :to="`/survey/${ticket.id}`"
+                            class="rcmi-button-primary inline-flex items-center gap-1.5 px-3.5 py-2 text-sm">
+                            <Icon name="star" /> {{ requesterSurveyState === 'submitted' ? 'View your feedback' : 'Rate this ticket' }}
+                        </router-link>
+                    </section>
+
                     <!-- Details card -->
                     <section class="rcmi-card p-5">
-                        <h3 class="rcmi-section-label mb-4">Details</h3>
+                        <div class="mb-4 flex items-center justify-between">
+                            <h3 class="rcmi-section-label">Details</h3>
+                            <button v-if="canEditAssignees && !detailsEditing" type="button" @click.stop="toggleDetailsEditing"
+                                aria-label="Edit details"
+                                class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs">
+                                <Icon name="edit" class="h-3.5 w-3.5" />Edit
+                            </button>
+                        </div>
                         <dl class="space-y-4">
                             <div>
                                 <dt class="text-xs font-semibold text-gray-500">Due Date</dt>
-                                <!-- Inline editor for managers -->
-                                <dd v-if="isManager" class="mt-1">
-                                    <input type="date" :value="ticket.due_date || ''" @change="saveDueDate($event)"
-                                        :disabled="dueDateSaving"
+                                <!-- Inline editor for managers (staged until Save) -->
+                                <dd v-if="isManager && detailsEditing" class="mt-1">
+                                    <input type="date" v-model="draftDueDate"
+                                        :disabled="detailsSaving"
                                         class="rcmi-input max-w-[10rem] px-2 py-1 text-sm" aria-label="Due date" />
                                 </dd>
                                 <dd v-else class="mt-1 text-sm" :class="ticket.due_date ? 'text-gray-700' : 'text-gray-400'">
@@ -280,7 +352,11 @@
                                         <img v-if="ticket.author_photo" :src="ticket.author_photo" :alt="ticket.author_name" class="h-7 w-7 rounded-full object-cover" />
                                         <span v-else class="rcmi-avatar h-7 w-7 text-xs">{{ initials(ticket.author_name) }}</span>
                                     </button>
-                                    <span>{{ ticket.author_name || 'Unknown' }}</span>
+                                    <router-link :to="{ name: 'ticket-list', query: { author: ticket.author_id } }"
+                                        class="rounded transition hover:text-red-700 hover:underline focus:outline-none focus:ring-2 focus:ring-red-400"
+                                        :aria-label="`Tickets submitted by ${ticket.author_name || 'Unknown'}`">
+                                        {{ ticket.author_name || 'Unknown' }}
+                                    </router-link>
                                 </dd>
                                 <dd v-if="ticket.author_email" class="mt-1 pl-9 text-xs text-gray-500">
                                     <a :href="`mailto:${ticket.author_email}`" class="hover:text-red-700 hover:underline">{{ ticket.author_email }}</a>
@@ -290,20 +366,21 @@
                                 </dd>
                             </div>
                             <div class="relative" ref="assigneeDropdownRef">
-                                <dt class="text-xs font-semibold text-gray-500 mb-1">
-                                    Assignee{{ ticket.assignees && ticket.assignees.length > 1 ? 's' : '' }}
+                                <dt class="mb-1 text-xs font-semibold text-gray-500">
+                                    Assignee{{ shownAssignees.length > 1 ? 's' : '' }}
                                 </dt>
 
-                                <!-- Interactive Dropdown trigger when editable -->
-                                <div v-if="canEditAssignees" class="space-y-1.5">
+                                <!-- Interactive Dropdown trigger — only while editing -->
+                                <div v-if="canEditAssignees && detailsEditing" class="space-y-1.5">
                                     <button type="button" @click="toggleAssigneePicker"
                                         :aria-expanded="assigneePickerOpen" aria-haspopup="listbox"
                                         class="group flex w-full items-center justify-between rounded-md border border-gray-200 bg-white p-2 text-left text-sm transition hover:border-red-300 hover:bg-gray-50/70 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100">
                                         <div class="min-w-0 flex-1">
-                                            <template v-if="ticket.assignees && ticket.assignees.length > 0">
+                                            <template v-if="draftAssignees.length > 0">
                                                 <div class="flex flex-col gap-1.5">
-                                                    <div v-for="a in ticket.assignees" :key="a.id" class="flex items-center gap-2">
-                                                        <span class="rcmi-avatar h-6 w-6 text-xs flex-shrink-0">{{ initials(a.display_name) }}</span>
+                                                    <div v-for="a in draftAssignees" :key="a.id" class="flex items-center gap-2">
+                                                        <img v-if="a.photo" :src="a.photo" :alt="a.display_name" class="h-6 w-6 flex-shrink-0 rounded-full object-cover" />
+                                                        <span v-else class="rcmi-avatar h-6 w-6 text-xs flex-shrink-0">{{ initials(a.display_name) }}</span>
                                                         <span class="truncate font-medium text-gray-800">{{ a.display_name }}</span>
                                                     </div>
                                                 </div>
@@ -333,13 +410,15 @@
                                         </div>
                                         <div v-if="filteredAssigneeUsers.length" class="max-h-52 overflow-y-auto space-y-0.5" role="listbox" aria-label="Assignable users" aria-multiselectable="true">
                                             <button v-for="u in filteredAssigneeUsers" :key="u.id" type="button"
-                                                @click="toggleAndSaveAssignee(u.id)" role="option" :aria-selected="isTicketAssignee(u.id)"
-                                                class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-red-50">
+                                                @click="toggleAssigneeDraft(u.id)" :disabled="detailsSaving"
+                                                role="option" :aria-selected="isDraftAssignee(u.id)"
+                                                class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-red-50 disabled:opacity-50">
                                                 <span class="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border transition"
-                                                    :class="isTicketAssignee(u.id) ? 'border-red-600 bg-red-600 text-white' : 'border-gray-300 bg-white'">
-                                                    <Icon v-if="isTicketAssignee(u.id)" name="check" class="h-3 w-3" />
+                                                    :class="isDraftAssignee(u.id) ? 'border-red-600 bg-red-600 text-white' : 'border-gray-300 bg-white'">
+                                                    <Icon v-if="isDraftAssignee(u.id)" name="check" class="h-3 w-3" />
                                                 </span>
-                                                <span class="rcmi-avatar h-5 w-5 text-[10px] flex-shrink-0">{{ initials(u.display_name) }}</span>
+                                                <img v-if="u.photo" :src="u.photo" :alt="u.display_name" class="h-5 w-5 flex-shrink-0 rounded-full object-cover" />
+                                                <span v-else class="rcmi-avatar h-5 w-5 text-[10px] flex-shrink-0">{{ initials(u.display_name) }}</span>
                                                 <span class="min-w-0 flex-1 truncate">
                                                     <span class="block truncate font-medium text-gray-800">{{ u.display_name }}</span>
                                                     <span v-if="u.user_email" class="block truncate text-[11px] text-gray-400">{{ u.user_email }}</span>
@@ -350,16 +429,30 @@
                                     </div>
                                 </div>
 
-                                <!-- Read-only view when user lacks edit permission -->
+                                <!-- Read-only view (no permission, or not editing) -->
                                 <template v-else>
-                                    <template v-if="ticket.assignees && ticket.assignees.length > 0">
-                                        <dd v-for="a in ticket.assignees" :key="a.id" class="mt-1 flex items-center gap-2 text-sm text-gray-700">
-                                            <span class="rcmi-avatar h-7 w-7 text-xs">{{ initials(a.display_name) }}</span>
-                                            <span>{{ a.display_name }}</span>
-                                        </dd>
-                                        <dd v-for="a in ticket.assignees" :key="'email-' + a.id" class="mt-1 pl-9 text-xs text-gray-500">
-                                            <a :href="`mailto:${a.user_email}`" class="hover:text-red-700 hover:underline">{{ a.user_email }}</a>
-                                        </dd>
+                                    <template v-if="shownAssignees.length > 0">
+                                        <div v-for="a in shownAssignees" :key="a.id">
+                                            <dd class="mt-1 flex items-center gap-2 text-sm text-gray-700">
+                                                <button type="button" @click="profileAssignee = a"
+                                                    :aria-label="`View assignee profile (${a.display_name})`"
+                                                    class="flex-shrink-0 rounded-full transition hover:ring-2 hover:ring-red-300 focus:outline-none focus:ring-2 focus:ring-red-400">
+                                                    <img v-if="a.photo" :src="a.photo" :alt="a.display_name" class="h-7 w-7 rounded-full object-cover" />
+                                                    <span v-else class="rcmi-avatar h-7 w-7 text-xs">{{ initials(a.display_name) }}</span>
+                                                </button>
+                                                <router-link :to="{ name: 'ticket-list', query: { assignee: a.id } }"
+                                                    class="rounded transition hover:text-red-700 hover:underline focus:outline-none focus:ring-2 focus:ring-red-400"
+                                                    :aria-label="`Tickets assigned to ${a.display_name}`">
+                                                    {{ a.display_name }}
+                                                </router-link>
+                                            </dd>
+                                            <dd v-if="a.user_email" class="mt-1 pl-9 text-xs text-gray-500">
+                                                <a :href="`mailto:${a.user_email}`" class="hover:text-red-700 hover:underline">{{ a.user_email }}</a>
+                                            </dd>
+                                            <dd v-if="a.job_title || a.department" class="mt-0.5 pl-9 text-xs text-gray-500">
+                                                {{ [a.job_title, a.department].filter(Boolean).join(' · ') }}
+                                            </dd>
+                                        </div>
                                     </template>
                                     <dd v-else class="mt-1 text-sm text-gray-400">Unassigned</dd>
                                 </template>
@@ -377,6 +470,39 @@
                                 <dd class="mt-1 text-sm text-gray-700">{{ formatDateTime(ticket.updated_at) }}</dd>
                             </div>
                         </dl>
+
+                        <!-- Edit-mode actions — the only way out of editing.
+                             Save is enabled once due date or assignees differ
+                             from the saved ticket; saving fires the
+                             server-side notification emails. -->
+                        <div v-if="detailsEditing" class="mt-4 flex items-center gap-2 border-t border-gray-100 pt-3">
+                            <button @click="saveDetails" :disabled="detailsSaving || !detailsDirty"
+                                class="rcmi-button-primary inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs disabled:opacity-50">
+                                <Icon name="save" /> {{ detailsSaving ? 'Saving…' : 'Save changes' }}
+                            </button>
+                            <button @click="syncDetailsDraft" :disabled="detailsSaving"
+                                class="rcmi-button-ghost px-3 py-1.5 text-xs disabled:opacity-50">Cancel</button>
+                            <span v-if="detailsDirty" class="ml-auto text-[11px] font-medium text-amber-600">Unsaved changes</span>
+                        </div>
+                    </section>
+
+                    <!-- Linked tickets -->
+                    <section v-if="linkedTickets.length > 0 || canEditAssignees" class="rcmi-card p-5">
+                        <h3 class="rcmi-section-label mb-4">Linked Tickets</h3>
+                        <ul v-if="linkedTickets.length" class="space-y-1.5">
+                            <li v-for="lt in linkedTickets" :key="lt.id"
+                                class="flex items-center gap-2 rounded-md border border-gray-100 px-3 py-2 text-sm transition hover:border-red-200 hover:bg-gray-50">
+                                <router-link :to="`/ticket/${lt.id}`"
+                                    class="min-w-0 flex-1 truncate font-medium text-gray-800 hover:text-red-700 hover:underline">
+                                    #{{ lt.id }} — {{ lt.title }}
+                                </router-link>
+                            </li>
+                        </ul>
+                        <p v-else class="text-sm text-gray-400">No linked tickets yet.</p>
+                        <button v-if="canEditAssignees" type="button" @click="openLinkPicker"
+                            class="rcmi-button-secondary mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs">
+                            <Icon name="link" class="h-3.5 w-3.5" /> {{ linkedTickets.length ? 'Manage links' : 'Link a ticket' }}
+                        </button>
                     </section>
 
                     <!-- Tags card -->
@@ -418,6 +544,78 @@
                 </dl>
             </Modal>
 
+            <!-- Assignee profile modal -->
+            <Modal v-if="profileAssignee" @close="profileAssignee = null" title="Assignee" titleClass="rcmi-modal-title-sans">
+                <div class="flex items-center gap-3 border-b border-gray-100 pb-4">
+                    <img v-if="profileAssignee.photo" :src="profileAssignee.photo" :alt="profileAssignee.display_name" class="h-14 w-14 rounded-full object-cover" />
+                    <span v-else class="rcmi-avatar h-14 w-14 text-xl">{{ initials(profileAssignee.display_name) }}</span>
+                    <div class="min-w-0">
+                        <div class="truncate text-base font-semibold text-gray-900">{{ profileAssignee.display_name }}</div>
+                        <div v-if="profileAssignee.job_title" class="truncate text-sm text-gray-600">{{ profileAssignee.job_title }}</div>
+                        <div v-if="profileAssignee.department" class="truncate text-xs text-gray-500">{{ profileAssignee.department }}</div>
+                    </div>
+                </div>
+                <dl class="mt-4 space-y-3 text-sm">
+                    <div v-if="profileAssignee.user_email" class="flex items-baseline gap-3">
+                        <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Email</dt>
+                        <dd><a :href="`mailto:${profileAssignee.user_email}`" class="text-red-700 hover:underline">{{ profileAssignee.user_email }}</a></dd>
+                    </div>
+                    <div v-if="profileAssignee.phone" class="flex items-baseline gap-3">
+                        <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Phone</dt>
+                        <dd class="text-gray-700">{{ profileAssignee.phone }}</dd>
+                    </div>
+                    <div v-if="profileAssignee.employee_id" class="flex items-baseline gap-3">
+                        <dt class="w-28 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">Employee ID</dt>
+                        <dd class="text-gray-700">{{ profileAssignee.employee_id }}</dd>
+                    </div>
+                </dl>
+            </Modal>
+
+            <!-- Link tickets modal -->
+            <Modal v-if="linkPickerOpen" @close="linkPickerOpen = false" title="Link tickets" :wide="true" titleClass="rcmi-modal-title-sans">
+                <!-- Status filter -->
+                <div class="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Filter by status">
+                    <button type="button" @click="linkStatus = ''; loadLinkOptions()"
+                        class="rounded-full border px-2.5 py-1 text-xs font-semibold transition"
+                        :class="linkStatus === '' ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'">
+                        All
+                    </button>
+                    <button v-for="s in meta.statuses" :key="s" type="button" @click="linkStatus = s; loadLinkOptions()"
+                        class="rounded-full border px-2.5 py-1 text-xs font-semibold transition"
+                        :class="linkStatus === s ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'">
+                        {{ s }}
+                    </button>
+                </div>
+                <!-- Search -->
+                <div class="relative mb-3">
+                    <Icon name="search" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input v-model="linkSearch" @input="queueLinkSearch" type="search"
+                        placeholder="Search tickets by title or #…" aria-label="Search tickets"
+                        class="rcmi-input w-full py-2 pl-8 text-sm" />
+                </div>
+                <!-- Results -->
+                <div class="max-h-72 overflow-y-auto rounded-lg border border-gray-100">
+                    <p v-if="linkLoading" class="py-8 text-center text-xs text-gray-400">Loading…</p>
+                    <p v-else-if="!linkResults.length" class="py-8 text-center text-xs text-gray-400">No tickets match</p>
+                    <label v-else v-for="t in linkResults" :key="t.id"
+                        class="flex cursor-pointer items-center gap-2.5 border-b border-gray-50 px-3 py-2.5 text-sm transition last:border-0 hover:bg-red-50/50">
+                        <input type="checkbox" :checked="linkSelection.has(t.id)" @change="toggleLinkSelection(t.id)"
+                            class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500" />
+                        <span class="flex-shrink-0 text-xs text-gray-400">#{{ t.id }}</span>
+                        <span class="min-w-0 flex-1 truncate font-medium text-gray-800">{{ t.title }}</span>
+                        <StatusBadge :status="t.status" class="flex-shrink-0" />
+                    </label>
+                </div>
+                <template #footer>
+                    <button @click="saveLinks" :disabled="linksSaving"
+                        class="rcmi-button-primary px-4 py-2 text-sm disabled:opacity-50">
+                        {{ linksSaving ? 'Saving…' : 'Save links' }}
+                    </button>
+                    <button @click="linkPickerOpen = false" :disabled="linksSaving"
+                        class="rcmi-button-secondary px-4 py-2 text-sm disabled:opacity-50">Cancel</button>
+                </template>
+            </Modal>
+
             <!-- Delete confirmation modal -->
             <Modal v-if="confirmDelete" @close="confirmDelete = false" title="Delete ticket">
                 <p class="text-sm text-gray-700">
@@ -438,7 +636,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
 import StatusBadge from '../components/StatusBadge.vue';
@@ -526,13 +724,102 @@ const isCompletedTicket = computed(() => ticket.value && ticket.value.status ===
 const isArchivedTicket = computed(() => ticket.value && ticket.value.archived === true);
 const archiving = ref(false);
 
+// ── Satisfaction survey ────────────────────────────────────
+// Managers get the full feedback card (answers, email log, resend).
+// The requester gets a "Rate this ticket" / "View your feedback" link.
+// Assignees and everyone else see nothing.
+const surveyInfo = ref(null);      // manager: {eligibility, survey_url, response, emails}
+const surveyFields = ref([]);
+const requesterSurvey = ref(null); // requester: {state, response, …}
+const surveySending = ref(false);
+const surveyLoaded = ref(false);
+
+const showManagerSurveyCard = computed(() =>
+    isManager.value && surveyLoaded.value && surveyInfo.value
+    && (isCompletedTicket.value || surveyInfo.value.response || (surveyInfo.value.emails || []).length));
+
+const requesterSurveyState = computed(() => requesterSurvey.value?.state || '');
+const showRequesterSurvey = computed(() =>
+    !isManager.value && isRequestor.value && isCompletedTicket.value
+    && ['open', 'submitted'].includes(requesterSurveyState.value));
+
+const surveyAnswers = computed(() => surveyInfo.value?.response?.answers || []);
+const surveyEmails = computed(() => surveyInfo.value?.emails || []);
+const surveyEligible = computed(() => surveyInfo.value?.eligibility?.eligible === true);
+const surveySubmitted = computed(() => Boolean(surveyInfo.value?.response));
+const canResendSurvey = computed(() => surveyEligible.value && !surveySubmitted.value && !surveySending.value);
+
+function surveyAnswerField(key) {
+    return (surveyFields.value || []).find(f => f.field_key === key);
+}
+
+function surveyRatingMax(key) {
+    const m = parseInt(surveyAnswerField(key)?.config?.max, 10);
+    return Number.isFinite(m) ? Math.min(10, Math.max(3, m)) : 5;
+}
+
+function surveyAnswerText(a) {
+    if (Array.isArray(a.value)) {
+        return a.type === 'cascade' ? a.value.join(' › ') : a.value.join(', ');
+    }
+    return String(a.value ?? '');
+}
+
+const SURVEY_EMAIL_KIND_LABELS = { initial: 'Initial invite', reminder: 'Reminder', manual: 'Manual resend' };
+function surveyEmailKindLabel(kind) {
+    return SURVEY_EMAIL_KIND_LABELS[kind] || kind;
+}
+
+async function loadSurvey() {
+    if (!ticket.value || !meta.current_user?.id) return;
+    if (isManager.value) {
+        try {
+            const [info, fields] = await Promise.all([
+                api(`/tickets/${ticket.value.id}/survey`),
+                api('/survey-fields'),
+            ]);
+            surveyInfo.value = info;
+            surveyFields.value = fields || [];
+        } catch {
+            // Non-critical — the card just stays hidden.
+        } finally {
+            surveyLoaded.value = true;
+        }
+    } else if (isRequestor.value && isCompletedTicket.value) {
+        try {
+            requesterSurvey.value = await api(`/survey/${ticket.value.id}`);
+        } catch {
+            // No access (e.g. survey disabled) — hide the card.
+        } finally {
+            surveyLoaded.value = true;
+        }
+    } else {
+        surveyLoaded.value = true;
+    }
+}
+
+async function resendSurvey() {
+    if (!canResendSurvey.value) return;
+    surveySending.value = true;
+    try {
+        const res = await api(`/tickets/${ticket.value.id}/survey/resend`, { method: 'POST' });
+        if (res?.emails) surveyInfo.value = { ...surveyInfo.value, emails: res.emails };
+        toast.success('Survey email sent');
+    } catch (e) {
+        toast.error(e.message || 'Failed to send survey email');
+    } finally {
+        surveySending.value = false;
+    }
+}
+
 // Assignee editing: managers + current step approver
 const canEditAssignees = computed(() => {
     if (!ticket.value) return false;
     return isManager.value || ticket.value.can_approve_current_step === true;
 });
+const detailsEditing = ref(false);
+const profileAssignee = ref(null);
 const assigneePickerOpen = ref(false);
-const assigneeSaving = ref(false);
 const assigneeSearch = ref('');
 const assigneeSearchInput = ref(null);
 const assigneeDropdownRef = ref(null);
@@ -543,11 +830,6 @@ const filteredAssigneeUsers = computed(() => {
     return assignableUsers.value.filter(u => [u.display_name, u.user_login, u.user_email]
         .some(value => String(value || '').toLowerCase().includes(query)));
 });
-
-function isTicketAssignee(userId) {
-    if (!ticket.value || !ticket.value.assignee_ids) return false;
-    return ticket.value.assignee_ids.includes(Number(userId));
-}
 
 async function toggleAssigneePicker() {
     assigneePickerOpen.value = !assigneePickerOpen.value;
@@ -560,48 +842,159 @@ async function toggleAssigneePicker() {
     }
 }
 
-async function toggleAndSaveAssignee(userId) {
-    if (assigneeSaving.value) return;
-    const numericId = Number(userId);
-    const currentIds = (ticket.value.assignee_ids || []).map(id => Number(id));
-    const nextIds = currentIds.includes(numericId)
-        ? currentIds.filter(id => id !== numericId)
-        : [...currentIds, numericId];
+function toggleDetailsEditing() {
+    // Only reachable when not editing (the button hides in edit mode);
+    // Save/Cancel are the exit paths. The assignee popover stays closed
+    // until the user clicks the dropdown itself.
+    detailsEditing.value = true;
+}
 
-    assigneeSaving.value = true;
+// ── Linked tickets ────────────────────────────────────────
+// Section lists ticket.linked_tickets (symmetric pairs). The picker reuses
+// the /tickets list endpoint (search + status[] + pagination); Save replaces
+// the whole set via PUT /tickets/:id/links. Same gate as assignee editing.
+const linkedTickets = computed(() => ticket.value?.linked_tickets || []);
+const linkPickerOpen = ref(false);
+const linkResults = ref([]);
+const linkLoading = ref(false);
+const linkSearch = ref('');
+const linkStatus = ref('');
+const linkSelection = ref(new Set());
+const linksSaving = ref(false);
+let linkSearchTimer = null;
+
+function openLinkPicker() {
+    linkSelection.value = new Set(linkedTickets.value.map(t => t.id));
+    linkSearch.value = '';
+    linkStatus.value = '';
+    linkPickerOpen.value = true;
+    loadLinkOptions();
+}
+
+async function loadLinkOptions() {
+    linkLoading.value = true;
     try {
-        const updated = await api(`/tickets/${ticket.value.id}/assignees`, {
-            method: 'POST',
-            body: { assignee_ids: nextIds },
-        });
-        ticket.value = updated;
-        toast.success(nextIds.length ? 'Assignees updated' : 'Assignees cleared');
+        const params = new URLSearchParams();
+        params.set('per_page', '25');
+        params.set('sort', 'updated_at');
+        params.set('order', 'desc');
+        if (linkSearch.value.trim()) params.set('search', linkSearch.value.trim());
+        if (linkStatus.value) params.append('status[]', linkStatus.value);
+        const data = await api('/tickets', { params });
+        linkResults.value = (data.items || []).filter(t => t.id !== ticket.value.id);
     } catch (e) {
-        toast.error(e.message || 'Failed to update assignees');
+        toast.error(e.message || 'Failed to load tickets');
     } finally {
-        assigneeSaving.value = false;
+        linkLoading.value = false;
     }
 }
 
-// Due date: managers only. Empty value clears it.
-const dueDateSaving = ref(false);
+function queueLinkSearch() {
+    clearTimeout(linkSearchTimer);
+    linkSearchTimer = setTimeout(loadLinkOptions, 250);
+}
 
-async function saveDueDate(event) {
-    if (!ticket.value) return;
-    dueDateSaving.value = true;
-    const next = event.target.value || '';
+function toggleLinkSelection(id) {
+    const next = new Set(linkSelection.value);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    linkSelection.value = next;
+}
+
+async function saveLinks() {
+    if (!ticket.value || linksSaving.value) return;
+    linksSaving.value = true;
     try {
-        const updated = await api(`/tickets/${ticket.value.id}`, {
+        ticket.value = await api(`/tickets/${ticket.value.id}/links`, {
             method: 'PUT',
-            body: { due_date: next },
+            body: { ticket_ids: [...linkSelection.value] },
         });
-        ticket.value = updated;
-        toast.success(next ? 'Due date updated' : 'Due date cleared');
+        linkPickerOpen.value = false;
+        toast.success('Linked tickets updated');
     } catch (e) {
-        toast.error(e.message || 'Failed to update due date');
-        event.target.value = ticket.value.due_date || '';
+        toast.error(e.message || 'Failed to update links');
     } finally {
-        dueDateSaving.value = false;
+        linksSaving.value = false;
+    }
+}
+
+// Links are added/removed only through the Manage links modal — the
+// section rows are read-only links.
+
+// Details card: due date and assignees are staged locally and only saved
+// (and emailed) when the user clicks "Save changes". Each changed piece
+// hits its own endpoint so the server fires exactly one notification per
+// change type (rcmi_ticket_due_date_changed / rcmi_ticket_assignees_changed).
+const draftDueDate = ref('');
+const draftAssigneeIds = ref([]);
+const detailsSaving = ref(false);
+
+function syncDetailsDraft() {
+    draftDueDate.value = ticket.value?.due_date || '';
+    draftAssigneeIds.value = (ticket.value?.assignee_ids || []).map(id => Number(id));
+    detailsEditing.value = false;
+    assigneePickerOpen.value = false;
+}
+watch(ticket, syncDetailsDraft);
+
+const sameIdSet = (a, b) => {
+    const bb = (b || []).map(id => Number(id));
+    return a.length === bb.length && a.every(id => bb.includes(Number(id)));
+};
+
+const detailsDirty = computed(() => {
+    if (!ticket.value) return false;
+    if (isManager.value && draftDueDate.value !== (ticket.value.due_date || '')) return true;
+    if (canEditAssignees.value && !sameIdSet(draftAssigneeIds.value, ticket.value.assignee_ids)) return true;
+    return false;
+});
+
+const draftAssignees = computed(() => {
+    const known = [...(ticket.value?.assignees || []), ...assignableUsers.value];
+    return draftAssigneeIds.value
+        .map(id => known.find(u => Number(u.id) === id))
+        .filter(Boolean);
+});
+
+const shownAssignees = computed(() =>
+    canEditAssignees.value ? draftAssignees.value : (ticket.value?.assignees || []));
+
+function isDraftAssignee(userId) {
+    return draftAssigneeIds.value.includes(Number(userId));
+}
+
+function toggleAssigneeDraft(userId) {
+    if (detailsSaving.value) return;
+    const id = Number(userId);
+    draftAssigneeIds.value = isDraftAssignee(id)
+        ? draftAssigneeIds.value.filter(x => x !== id)
+        : [...draftAssigneeIds.value, id];
+}
+
+async function saveDetails() {
+    if (!ticket.value || !detailsDirty.value || detailsSaving.value) return;
+    detailsSaving.value = true;
+    const nextDue = draftDueDate.value;
+    const nextIds = [...draftAssigneeIds.value];
+    const dueChanged = isManager.value && nextDue !== (ticket.value.due_date || '');
+    const assigneesChanged = canEditAssignees.value && !sameIdSet(nextIds, ticket.value.assignee_ids);
+    try {
+        if (dueChanged) {
+            ticket.value = await api(`/tickets/${ticket.value.id}`, {
+                method: 'PUT',
+                body: { due_date: nextDue },
+            });
+        }
+        if (assigneesChanged) {
+            ticket.value = await api(`/tickets/${ticket.value.id}/assignees`, {
+                method: 'POST',
+                body: { assignee_ids: nextIds },
+            });
+        }
+        toast.success('Details saved');
+    } catch (e) {
+        toast.error(e.message || 'Failed to save details');
+    } finally {
+        detailsSaving.value = false;
     }
 }
 
@@ -637,6 +1030,7 @@ async function changeStatus(newStatus) {
         toast.success(`Status changed to ${newStatus}`);
         if (newStatus === 'Completed') {
             confetti.fireworks();
+            loadSurvey();
         }
     } catch (e) {
         console.error('Failed to change status:', e);
@@ -804,12 +1198,23 @@ async function loadMeta() {
 async function loadTicket() {
     try {
         ticket.value = await api(`/tickets/${props.id}`);
+        await loadSurvey();
     } catch (e) {
         loadError.value = e.status === 404 ? 'Ticket not found.' : 'Failed to load ticket.';
     } finally {
         loading.value = false;
     }
 }
+
+// In-place navigation between tickets (e.g. clicking a linked ticket)
+// reuses this component — reload when the route id changes.
+watch(() => props.id, (id, old) => {
+    if (!id || id === old) return;
+    loading.value = true;
+    loadError.value = '';
+    linkPickerOpen.value = false;
+    loadTicket();
+});
 
 onMounted(async () => {
     document.addEventListener('click', handleOutsideClick);

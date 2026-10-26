@@ -92,6 +92,7 @@ function rcmi_tickets_approval_chain_write_args($is_update = false) {
         'completion_message'     => ['type' => 'string', 'sanitize_callback' => 'rcmi_tickets_sanitize_completion_message'],
         'completion_assignee_id' => ['type' => 'integer', 'validate_callback' => function ($v) { return !(int) $v || (bool) get_userdata((int) $v); }],
         'is_active'              => ['type' => 'boolean', 'default' => true],
+        'survey_enabled'         => ['type' => 'boolean', 'default' => true],
         'steps'               => ['type' => 'array', 'required' => !$is_update],
     ];
 }
@@ -171,6 +172,8 @@ function rcmi_tickets_format_approval_chain($row) {
         'completion_message'     => $row['completion_message'] ?? '',
         'completion_assignee_id' => $row['completion_assignee_id'] !== null ? (int) $row['completion_assignee_id'] : null,
         'is_active'              => (bool) $row['is_active'],
+        // Default on — chains created before v14 have no stored value.
+        'survey_enabled'         => !isset($row['survey_enabled']) || (bool) $row['survey_enabled'],
         'steps'               => $formatted_steps,
         'created_at'          => $row['created_at'],
         'updated_at'          => $row['updated_at'],
@@ -273,6 +276,7 @@ function rcmi_tickets_handle_approval_chain_create($request) {
     $completion_message = $request['completion_message'] ?? '';
     $completion_assignee_id = !empty($request['completion_assignee_id']) ? (int) $request['completion_assignee_id'] : null;
     $is_active = !empty($request['is_active']);
+    $survey_enabled = array_key_exists('survey_enabled', $request->get_params()) ? !empty($request['survey_enabled']) : true;
 
     $wpdb->insert($wpdb->prefix . 'rcmi_approval_chains', [
         'name'                   => $name,
@@ -283,9 +287,10 @@ function rcmi_tickets_handle_approval_chain_create($request) {
         'completion_message'     => $completion_message ?: null,
         'completion_assignee_id' => $completion_assignee_id,
         'is_active'              => $is_active ? 1 : 0,
+        'survey_enabled'         => $survey_enabled ? 1 : 0,
         'created_at'             => $now,
         'updated_at'             => $now,
-    ], ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s']);
+    ], ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%s']);
 
     $id = (int) $wpdb->insert_id;
     if (!$id) {
@@ -345,6 +350,10 @@ function rcmi_tickets_handle_approval_chain_update($request) {
     }
     if (isset($request['is_active'])) {
         $data['is_active'] = !empty($request['is_active']) ? 1 : 0;
+        $format[] = '%d';
+    }
+    if (isset($request['survey_enabled'])) {
+        $data['survey_enabled'] = !empty($request['survey_enabled']) ? 1 : 0;
         $format[] = '%d';
     }
 

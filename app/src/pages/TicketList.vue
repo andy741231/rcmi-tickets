@@ -87,7 +87,7 @@
         <!-- Loading state -->
         <div v-if="loading" aria-live="polite" aria-busy="true">
             <!-- Card skeleton -->
-            <div v-if="view === 'card'" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div v-if="view === 'card'" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div v-for="n in 6" :key="n" class="rcmi-card p-5">
                     <div class="mb-4 flex items-center justify-between">
                         <div class="h-4 w-16 animate-pulse rounded bg-gray-100"></div>
@@ -759,6 +759,19 @@ watch(filters, () => {
 }, { deep: true });
 
 watch(queue, persistFilters);
+
+// Re-apply filters when a filtered link is opened while the list is already
+// mounted (e.g. requestor/assignee links on the ticket detail page). The
+// deep-compare guard stops the loop with persistFilters → router.replace.
+watch(() => route.query, () => {
+    const restored = queryToFilters(route.query);
+    if (!restored) return;
+    const same = JSON.stringify(restored.filters) === JSON.stringify(filters.value)
+        && restored.queue === queue.value;
+    if (same) return;
+    filters.value = restored.filters;
+    queue.value = restored.queue;
+});
 
 // Persist sort preference
 watch(sort, (v) => localStorage.setItem('rcmi_tickets_sort', v));

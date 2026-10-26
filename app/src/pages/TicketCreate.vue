@@ -11,10 +11,6 @@
                 <h2 class="text-xl font-bold text-gray-900">{{ isPublic ? 'Submit a Request' : 'Create New Ticket' }}</h2>
                 <p class="mt-1 text-sm text-gray-600">{{ isPublic ? 'Fill in the form below and we\'ll get back to you by email.' : 'Fill in the details below. Files upload after you submit.' }}</p>
             </div>
-            <router-link v-if="!isPublic && meta.caps.manage" to="/form-builder"
-                class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3.5 py-2 text-sm">
-                <Icon name="settings" /> Edit Form
-            </router-link>
         </div>
 
         <!-- Loading state until meta resolves (avoids flashing the form
@@ -53,7 +49,7 @@
             <!-- Main form -->
             <form @submit.prevent="submit" class="rcmi-card space-y-6 p-6 sm:p-8">
                 <!-- Public: name + email fields -->
-                <div v-if="isPublic" class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <div v-if="isPublic" class="grid gap-5 sm:grid-cols-2">
                     <div>
                         <label for="submitter-name" class="rcmi-field-label">Your Name <span class="text-red-700">*</span></label>
                         <input id="submitter-name" v-model="publicForm.submitter_name" type="text" required

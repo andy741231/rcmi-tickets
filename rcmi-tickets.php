@@ -35,6 +35,7 @@ $rcmi_tickets_includes = [
     'includes/class-rest-form-fields.php',
     'includes/class-rest-approval-chains.php',
     'includes/class-rest-approvals.php',
+    'includes/class-rest-survey.php',
     'includes/class-emails.php',
     'includes/class-updater.php',
     'includes/class-settings.php',

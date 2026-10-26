@@ -4,18 +4,18 @@
         <div class="flex flex-wrap items-center gap-2">
             <!-- Search -->
             <label class="relative min-w-[200px] flex-1">
-                <span class="sr-only">Search tickets</span>
+                <span class="sr-only">{{ isSurvey ? 'Search survey responses' : 'Search tickets' }}</span>
                 <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400" aria-hidden="true">
                     <Icon name="search" />
                 </span>
-                <input v-model="local.search" type="search" placeholder="Search by ticket ID or title…"
+                <input v-model="local.search" type="search" :placeholder="isSurvey ? 'Search by ticket ID, title, or requestor…' : 'Search by ticket ID or title…'"
                     class="w-full rounded-md border border-gray-300 py-2 pl-10 pr-3 text-sm focus:border-red-700 focus:ring-1 focus:ring-red-700"
                     @input="debouncedEmit" />
             </label>
 
             <!-- Scope dropdown -->
-            <label class="sr-only" for="ticket-scope">Ticket scope</label>
-            <select id="ticket-scope" v-model="local.scope" @change="emitChange"
+            <label v-if="!isSurvey" class="sr-only" for="ticket-scope">Ticket scope</label>
+            <select v-if="!isSurvey" id="ticket-scope" v-model="local.scope" @change="emitChange"
                 class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
                 <option value="all">All tickets</option>
                 <option value="assigned">Assigned to me</option>
@@ -45,7 +45,7 @@
         <transition name="expand">
             <div v-if="showAdvanced" id="rcmi-filters-panel" class="mt-4 space-y-5 border-t border-gray-100 pt-4">
                 <!-- Status -->
-                <div>
+                <div v-if="!isSurvey">
                     <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
                     <div class="flex flex-wrap gap-1.5">
                         <button v-for="s in visibleStatuses" :key="s" @click="toggleStatus(s)"
@@ -62,7 +62,7 @@
                 <div>
                     <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">People</p>
                     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        <div>
+                        <div v-if="!isSurvey">
                             <label for="filter-assignee" class="mb-1 block text-xs font-medium text-gray-600">Assignee</label>
                             <SearchSelect id="filter-assignee" v-model="local.assigneeId"
                                 :options="assigneeOptions" placeholder="Anyone" clear-label="Anyone"
@@ -84,27 +84,27 @@
                 </div>
 
                 <!-- Classification -->
-                <div v-if="tags.length || filterableFields.length">
+                <div v-if="(tags.length && !isSurvey) || filterableFields.length">
                     <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Classification</p>
                     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        <div v-if="tags.length">
+                        <div v-if="tags.length && !isSurvey">
                             <label for="filter-tag" class="mb-1 block text-xs font-medium text-gray-600">Tag</label>
                             <SearchSelect id="filter-tag" v-model="local.tagId"
                                 :options="tagOptions" placeholder="Any tag" clear-label="Any tag"
                                 @change="emitChange" />
                         </div>
                         <div v-if="filterableFields.length">
-                            <label for="filter-field-key" class="mb-1 block text-xs font-medium text-gray-600">Form field</label>
+                            <label for="filter-field-key" class="mb-1 block text-xs font-medium text-gray-600">{{ isSurvey ? 'Survey question' : 'Form field' }}</label>
                             <SearchSelect id="filter-field-key" v-model="local.fieldKey"
-                                :options="fieldKeyOptions" placeholder="Any field" clear-label="Any field"
+                                :options="fieldKeyOptions" :placeholder="isSurvey ? 'Any question' : 'Any field'" :clear-label="isSurvey ? 'Any question' : 'Any field'"
                                 @change="onFieldKeyChange" />
                         </div>
                         <div v-if="filterableFields.length">
-                            <label for="filter-field-value" class="mb-1 block text-xs font-medium text-gray-600">Field value</label>
+                            <label for="filter-field-value" class="mb-1 block text-xs font-medium text-gray-600">{{ isSurvey ? 'Answer' : 'Field value' }}</label>
                             <SearchSelect id="filter-field-value" v-model="local.fieldValue"
                                 :options="fieldValueOptions" allow-custom
-                                :placeholder="!local.fieldKey ? 'Pick a field first' : (fieldValuesLoading ? 'Loading values…' : 'Any value')"
-                                clear-label="Any value"
+                                :placeholder="!local.fieldKey ? (isSurvey ? 'Pick a question first' : 'Pick a field first') : (fieldValuesLoading ? 'Loading values…' : (isSurvey ? 'Any answer' : 'Any value'))"
+                                :clear-label="isSurvey ? 'Any answer' : 'Any value'"
                                 :disabled="!local.fieldKey || fieldValuesLoading"
                                 @change="emitChange" />
                         </div>
@@ -113,7 +113,7 @@
 
                 <!-- Created -->
                 <div>
-                    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Created</p>
+                    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{{ isSurvey ? 'Submitted' : 'Created' }}</p>
                     <div class="flex flex-wrap items-center gap-2">
                         <input v-model="local.dateFrom" type="date" class="rounded-md border border-gray-300 px-3 py-2 text-sm" @change="emitChange" aria-label="From date" />
                         <span class="text-xs text-gray-400">to</span>
@@ -141,6 +141,14 @@ import SearchSelect from './SearchSelect.vue';
 import { api } from '../api.js';
 
 const props = defineProps({
+    // 'tickets' (default) shows every control; 'survey' hides scope,
+    // status, assignee and tag — keeping search, requestor, department,
+    // question-value and the submitted-date range.
+    mode:              { type: String, default: 'tickets' },
+    // Endpoint that returns {values:[{value,count}]} for the selected
+    // field/question key — /field-values for tickets, /survey-field-values
+    // for survey answers.
+    fieldValuesEndpoint: { type: String, default: '/field-values' },
     statuses:        { type: Array, default: () => [] },
     statusCounts:    { type: Object, default: () => ({}) },
     tags:            { type: Array, default: () => [] },
@@ -151,6 +159,8 @@ const props = defineProps({
     modelValue:      { type: Object, default: () => ({}) },
 });
 const emit = defineEmits(['update:modelValue', 'clear-all']);
+
+const isSurvey = computed(() => props.mode === 'survey');
 
 const defaults = {
     search: '', scope: 'all', status: [],
@@ -202,20 +212,25 @@ watch(() => props.modelValue, (v) => {
 const activeCount = computed(() => {
     let count = 0;
     if (local.search) count++;
-    if (local.scope !== 'all') count++;
-    if (local.status.length) count++;
-    if (local.assigneeId) count++;
+    if (!isSurvey.value && local.scope !== 'all') count++;
+    if (!isSurvey.value && local.status.length) count++;
+    if (!isSurvey.value && local.assigneeId) count++;
     if (local.requestorId) count++;
     if (local.department) count++;
-    if (local.tagId) count++;
+    if (!isSurvey.value && local.tagId) count++;
     if (local.dateFrom) count++;
     if (local.dateTo) count++;
     if (local.fieldKey && local.fieldValue) count++;
     return count;
 });
 
+// Survey questions add the enumerable survey-only types (rating/scale)
+// plus number/date — every stored answer is exact-match filterable via
+// field_filters[key]=value. Free-text types stay unfilterable.
+const FILTERABLE_TYPES = ['dropdown', 'radio', 'checkbox', 'cascade'];
+const FILTERABLE_TYPES_SURVEY = [...FILTERABLE_TYPES, 'rating', 'scale', 'number', 'date'];
 const filterableFields = computed(() =>
-    props.formFields.filter(f => ['dropdown', 'radio', 'checkbox', 'cascade'].includes(f.type))
+    props.formFields.filter(f => (isSurvey.value ? FILTERABLE_TYPES_SURVEY : FILTERABLE_TYPES).includes(f.type))
 );
 
 const fieldKeyOptions = computed(() =>
@@ -273,7 +288,7 @@ watch(() => local.fieldKey, async (key) => {
     if (!key) return;
     fieldValuesLoading.value = true;
     try {
-        const res = await api('/field-values', { params: new URLSearchParams({ field_key: key }) });
+        const res = await api(props.fieldValuesEndpoint, { params: new URLSearchParams({ field_key: key }) });
         const map = {};
         (res.values || []).forEach(v => { map[v.value] = v.count; });
         fieldValueCounts.value = map;
@@ -330,9 +345,9 @@ const fieldValueOptions = computed(() => {
 const activeFilterChips = computed(() => {
     const chips = [];
     if (local.search) chips.push({ key: 'search', label: `Search: "${local.search}"` });
-    if (local.scope !== 'all') chips.push({ key: 'scope', label: { all: 'All', assigned: 'Assigned to me', submitted: 'Submitted by me' }[local.scope] || local.scope });
-    local.status.forEach(s => chips.push({ key: `status:${s}`, label: `Status: ${statusDisplayLabel(s)}` }));
-    if (local.assigneeId) {
+    if (!isSurvey.value && local.scope !== 'all') chips.push({ key: 'scope', label: { all: 'All', assigned: 'Assigned to me', submitted: 'Submitted by me' }[local.scope] || local.scope });
+    if (!isSurvey.value) local.status.forEach(s => chips.push({ key: `status:${s}`, label: `Status: ${statusDisplayLabel(s)}` }));
+    if (!isSurvey.value && local.assigneeId) {
         const u = props.assignableUsers.find(u => u.id === local.assigneeId);
         chips.push({ key: 'assigneeId', label: `Assignee: ${u?.display_name || local.assigneeId}` });
     }
@@ -343,7 +358,7 @@ const activeFilterChips = computed(() => {
     if (local.department) {
         chips.push({ key: 'department', label: `Department: ${local.department}` });
     }
-    if (local.tagId) {
+    if (!isSurvey.value && local.tagId) {
         const t = props.tags.find(t => t.id === local.tagId);
         chips.push({ key: 'tagId', label: `Tag: ${t?.name || local.tagId}` });
     }

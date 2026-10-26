@@ -53,7 +53,7 @@
         <!-- Editor -->
         <div v-else-if="chain" class="rcmi-card space-y-5 p-6">
             <!-- Chain metadata -->
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="grid gap-4 sm:grid-cols-2">
                 <div>
                     <label class="rcmi-field-label">Name</label>
                     <input v-model="chain.name" class="rcmi-input" placeholder="e.g. Marketing requests" />
@@ -76,7 +76,7 @@
             <!-- Trigger -->
             <div class="rounded-md border border-gray-200 p-4">
                 <h4 class="rcmi-section-label mb-3">Trigger (when does this chain apply?)</h4>
-                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div class="grid gap-4 sm:grid-cols-2">
                     <div>
                         <label class="rcmi-field-label">Field</label>
                         <select v-model="chain.trigger_field_key" class="rcmi-input">
@@ -121,7 +121,7 @@
                             <input v-model="step.name" class="rcmi-input flex-1" :placeholder="'Step ' + (idx + 1) + ' name'" />
                             <button @click="removeStep(idx)" class="rcmi-button-ghost px-2 py-1 text-xs text-red-700"><Icon name="trash" /></button>
                         </div>
-                        <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div class="mt-2 grid gap-3 sm:grid-cols-2">
                             <div>
                                 <label class="rcmi-field-label">Approver type</label>
                                 <select v-model="step.approver_type" class="rcmi-input">
@@ -152,6 +152,15 @@
                 <input type="checkbox" v-model="chain.is_active" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
                 Active
             </label>
+
+            <!-- Survey opt-out -->
+            <div>
+                <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" v-model="chain.survey_enabled" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                    Send satisfaction survey
+                </label>
+                <p class="mt-1 pl-6 text-xs text-gray-500">Uncheck to exclude tickets in this chain from the requestor satisfaction survey.</p>
+            </div>
 
             <!-- Default assignee -->
             <div class="rounded-md border border-gray-200 p-4">
@@ -204,6 +213,10 @@ const toast = useToast();
 const chain = ref(null);
 const formFields = ref([]);
 const assignableUsers = ref([]);
+// Prefilled into new chains so managers can see/edit the default text.
+// Matches rcmi_tickets_default_completion_message() in class-emails.php.
+const DEFAULT_COMPLETION_MESSAGE = '<p>Thank you for collaborating with our team on your request!</p><p>How did we do? Take a 30-second survey about your experience with this request — we value your feedback.</p>';
+const completionMessageDefault = ref(DEFAULT_COMPLETION_MESSAGE);
 const loading = ref(true);
 const loadError = ref('');
 const saving = ref(false);
@@ -294,6 +307,7 @@ async function loadMeta() {
         const data = await api('/meta');
         formFields.value = data.form_fields || [];
         assignableUsers.value = data.assignable_users || [];
+        completionMessageDefault.value = data.completion_message_default || DEFAULT_COMPLETION_MESSAGE;
     } catch (e) {
         toast.error('Failed to load form fields');
     }
@@ -312,8 +326,9 @@ async function load() {
             trigger_value: '',
             on_reject: 'restart',
             completion_assignee_id: null,
-            completion_message: '',
+            completion_message: completionMessageDefault.value,
             is_active: true,
+            survey_enabled: true,
             steps: [
                 { name: 'Step 1', approver_type: 'user', approver_user_id: null, approver_role: '' },
             ],
@@ -373,6 +388,7 @@ async function saveChain() {
             completion_assignee_id: chain.value.completion_assignee_id || 0,
             completion_message: chain.value.completion_message || '',
             is_active: chain.value.is_active,
+            survey_enabled: chain.value.survey_enabled !== false,
             steps: chain.value.steps.map((s, i) => ({
                 name: s.name || ('Step ' + (i + 1)),
                 approver_type: s.approver_type,

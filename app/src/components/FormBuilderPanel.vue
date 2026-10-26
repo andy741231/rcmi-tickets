@@ -3,33 +3,26 @@
         <header class="rcmi-formbuilder-page-header">
             <div>
                 <nav class="rcmi-breadcrumb mb-3" aria-label="Breadcrumb">
-                    <router-link to="/create">Create Ticket</router-link>
-                    <span class="rcmi-breadcrumb-sep">/</span>
-                    <span class="font-semibold text-gray-700">Form Builder</span>
+                    <template v-for="(crumb, i) in breadcrumbs" :key="i">
+                        <router-link v-if="crumb.to" :to="crumb.to">{{ crumb.label }}</router-link>
+                        <span v-else class="font-semibold text-gray-700">{{ crumb.label }}</span>
+                        <span v-if="i < breadcrumbs.length - 1" class="rcmi-breadcrumb-sep">/</span>
+                    </template>
                 </nav>
-                <h1 class="text-2xl font-bold text-gray-900">Ticket Form Builder</h1>
-                <p class="mt-1 text-sm text-gray-600">Design the fields people complete when submitting a ticket.</p>
+                <h1 class="text-2xl font-bold text-gray-900">{{ title }}</h1>
+                <p class="mt-1 text-sm text-gray-600">{{ subtitle }}</p>
             </div>
-            <router-link to="/create" class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3 py-2 text-sm">
-                <Icon name="chevron-left" /> Back to ticket form
+            <router-link :to="backTo" class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3 py-2 text-sm">
+                <Icon name="chevron-left" /> {{ backLabel }}
             </router-link>
         </header>
-        <div class="rcmi-formbuilder-workspace">
+        <slot name="tabs" />
+        <!-- A conditional `workspace` slot lets pages swap in another view
+             (e.g. settings/preview) while keeping this builder mounted —
+             v-show preserves field state, editingId and undo history. -->
+        <div v-show="!$slots.workspace" class="rcmi-formbuilder-workspace">
             <aside class="rcmi-formbuilder-sidebar">
-                <!-- Public submissions status — editing lives on the Messages page -->
-                <div class="rcmi-card p-4">
-                    <p class="rcmi-section-label mb-2">Public Submissions</p>
-                    <p class="text-xs text-gray-500">Let people without a UH account submit tickets anonymously.</p>
-                    <p class="mt-3">
-                        <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
-                            :class="allowPublic ? 'bg-teal-100 text-teal-800' : 'bg-gray-100 text-gray-600'">
-                            {{ allowPublic ? 'Enabled' : 'Disabled' }}
-                        </span>
-                    </p>
-                    <router-link to="/messages" class="rcmi-button-secondary mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs">
-                        <Icon name="inbox" /> Manage messages &amp; settings
-                    </router-link>
-                </div>
+                <slot name="sidebar" />
                 <div class="rcmi-card p-4">
                     <p class="rcmi-section-label mb-3">Add field</p>
                     <div class="grid grid-cols-2 gap-2">
@@ -75,8 +68,9 @@
                         </button>
                     </div>
                 </div>
-                <!-- Field list -->
-                <div class="flex-1 overflow-y-auto px-5 py-4">
+                <!-- Field list (no overflow-y here — it never scrolls, and a
+                     scrollable ancestor would break the sticky Save bar) -->
+                <div class="flex-1 px-5 py-4">
                         <p v-if="fields.length === 0" class="text-center text-sm text-gray-500 py-8">
                             No custom fields yet. Add one from the palette above.
                         </p>
@@ -117,10 +111,11 @@
                                     <span class="min-w-0 flex-1 truncate text-sm font-semibold text-gray-800">{{ f.label || '(untitled)' }}</span>
                                     <span v-if="f.reserved" class="rcmi-formbuilder-reserved-chip" title="Reserved field — value syncs to ticket Due Date">Reserved</span>
                                     <span class="text-xs text-gray-400">{{ f.type }}</span>
-                                    <span v-if="f.config.logic && f.config.logic.field_key" class="rcmi-formbuilder-condition-chip" :title="conditionSummary(f)">
+                                    <span v-if="conditionSummary(f)" class="rcmi-formbuilder-condition-chip" :title="conditionSummary(f)">
                                         {{ conditionSummary(f) }}
                                     </span>
                                     <button @click="toggleEdit(f.id)" class="rcmi-button-ghost px-2 py-1 text-xs">{{ editingId === f.id ? 'Done' : 'Edit' }}</button>
+                                    <button v-if="!f.reserved" @click="duplicateField(f)" class="rcmi-button-ghost inline-flex items-center gap-1 px-2 py-1 text-xs" title="Duplicate field"><Icon name="copy" /> Duplicate</button>
                                     <button v-if="!f.reserved" @click="deleteField(f.id)" class="rcmi-button-ghost px-2 py-1 text-xs text-red-700 hover:text-red-800"><Icon name="trash" /></button>
                                 </div>
 
@@ -218,18 +213,26 @@
                                                         <option value="show">Show this field when</option>
                                                         <option value="hide">Hide this field when</option>
                                                     </select>
-                                                </div>
-                                                <div>
-                                                    <label class="rcmi-field-label">Depends on</label>
-                                                    <select v-model="f.config.logic.field_key" class="rcmi-input">
-                                                        <option value="">None</option>
-                                                        <option v-for="df in otherFields(f)" :key="df.field_key" :value="df.field_key">{{ df.label }}</option>
+                                                    <select v-model="f.config.logic.match" class="rcmi-input w-28">
+                                                        <option value="all">all</option>
+                                                        <option value="any">any</option>
                                                     </select>
+                                                    <span class="text-xs text-gray-500">of these rules match:</span>
                                                 </div>
-                                                <div v-if="f.config.logic.field_key" class="grid grid-cols-2 gap-2">
+                                                <div v-for="(rule, ri) in f.config.logic.rules" :key="ri"
+                                                    class="grid grid-cols-[1fr_auto_1fr_auto] items-end gap-2">
                                                     <div>
+                                                        <label class="rcmi-field-label">Field</label>
+                                                        <select v-model="rule.field_key" class="rcmi-input">
+                                                            <option value="">Choose…</option>
+                                                            <optgroup v-for="group in conditionSourceGroups(f)" :key="group.label" :label="group.label">
+                                                                <option v-for="df in group.fields" :key="df.field_key" :value="df.field_key">{{ df.label }}</option>
+                                                            </optgroup>
+                                                        </select>
+                                                    </div>
+                                                    <div class="w-32">
                                                         <label class="rcmi-field-label">Operator</label>
-                                                        <select v-model="f.config.logic.op" class="rcmi-input">
+                                                        <select v-model="rule.op" class="rcmi-input">
                                                             <option value="equals">equals</option>
                                                             <option value="not_equals">not equals</option>
                                                             <option value="contains">contains</option>
@@ -238,9 +241,18 @@
                                                     </div>
                                                     <div>
                                                         <label class="rcmi-field-label">Value</label>
-                                                        <input v-model="f.config.logic.value" class="rcmi-input" placeholder="Value to match" />
+                                                        <input v-model="rule.value" class="rcmi-input" placeholder="Value to match" />
                                                     </div>
+                                                    <button type="button" @click="removeRule(f, ri)"
+                                                        class="rcmi-button-ghost mb-1 px-2 py-1 text-xs text-red-700"
+                                                        :disabled="f.config.logic.rules.length <= 1"
+                                                        aria-label="Remove rule"><Icon name="x" /></button>
                                                 </div>
+                                                <button type="button" @click="addRule(f)"
+                                                    :disabled="f.config.logic.rules.length >= 10"
+                                                    class="rcmi-button-secondary inline-flex items-center gap-1 px-2.5 py-1.5 text-xs disabled:opacity-50">
+                                                    <Icon name="plus" /> Add rule
+                                                </button>
                                             </div>
                                         </details>
                                     </div>
@@ -263,7 +275,58 @@
                                         <p class="mt-1 text-xs text-gray-500">When unchecked, min days count only business days (Mon–Fri).</p>
                                     </div>
 
-                                    <div class="flex justify-end gap-2 pt-2">
+                                    <!-- Number: integer-only toggle -->
+                                    <div v-if="f.type === 'number'">
+                                        <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                                            <input type="checkbox" v-model="f.config.integer_only" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                                            Integers only — reject decimal values
+                                        </label>
+                                    </div>
+
+                                    <!-- Rating config (survey) -->
+                                    <div v-if="f.type === 'rating'">
+                                        <label class="rcmi-field-label">Max stars</label>
+                                        <input v-model.number="f.config.max" type="number" min="3" max="10" class="rcmi-input" placeholder="5" />
+                                        <div class="mt-2 grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label class="rcmi-field-label">Low end label</label>
+                                                <input v-model="f.config.low_label" class="rcmi-input" placeholder="e.g. Poor" />
+                                            </div>
+                                            <div>
+                                                <label class="rcmi-field-label">High end label</label>
+                                                <input v-model="f.config.high_label" class="rcmi-input" placeholder="e.g. Excellent" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Scale config (survey) -->
+                                    <div v-if="f.type === 'scale'">
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label class="rcmi-field-label">Min</label>
+                                                <input v-model.number="f.config.min" type="number" class="rcmi-input" placeholder="0" />
+                                            </div>
+                                            <div>
+                                                <label class="rcmi-field-label">Max</label>
+                                                <input v-model.number="f.config.max" type="number" class="rcmi-input" placeholder="10" />
+                                            </div>
+                                        </div>
+                                        <div class="mt-2 grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label class="rcmi-field-label">Low end label</label>
+                                                <input v-model="f.config.low_label" class="rcmi-input" placeholder="e.g. Not likely" />
+                                            </div>
+                                            <div>
+                                                <label class="rcmi-field-label">High end label</label>
+                                                <input v-model="f.config.high_label" class="rcmi-input" placeholder="e.g. Very likely" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Sticky so Save stays reachable while a long
+                                         editor scrolls (same treatment as the survey
+                                         Settings tab save bar). -->
+                                    <div class="sticky bottom-0 z-10 -mx-3 -mb-3 mt-3 flex justify-end gap-2 rounded-b-md border-t border-gray-100 bg-white/90 px-3 py-2.5 backdrop-blur">
                                         <button @click="saveField(f)" :disabled="saving === f.id"
                                             class="rcmi-button-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50">
                                             <Icon name="save" /> {{ saving === f.id ? 'Saving…' : 'Save' }}
@@ -283,19 +346,21 @@
                 </div>
             </main>
         </div>
+        <slot name="workspace" />
 
-        <!-- Warn before deleting a field that has stored ticket answers -->
+        <!-- Warn before deleting a field that has stored answers -->
         <Modal v-if="pendingDeleteField" @close="pendingDeleteField = null" title="Delete field" titleClass="rcmi-modal-title-sans">
             <p class="text-sm text-gray-700">
                 <strong class="text-gray-900">{{ pendingDeleteField.label }}</strong> has
                 <strong class="text-red-700">{{ pendingDeleteField.answer_count }}</strong>
                 stored answer{{ pendingDeleteField.answer_count === 1 ? '' : 's' }} on existing tickets.
-                Deleting the field permanently deletes those answers — this cannot be undone.
+                <template v-if="deletesStoredAnswers">Deleting the field permanently deletes those answers — this cannot be undone.</template>
+                <template v-else>Past responses keep their copy of this question and answer — only the field is removed for future surveys.</template>
             </p>
             <template #footer>
                 <button @click="performDeleteField(pendingDeleteField.id)"
                     class="rcmi-button-primary px-4 py-2 text-sm">
-                    Yes, delete field and answers
+                    {{ deletesStoredAnswers ? 'Yes, delete field and answers' : 'Yes, delete field' }}
                 </button>
                 <button @click="pendingDeleteField = null"
                     class="rcmi-button-secondary px-4 py-2 text-sm">Cancel</button>
@@ -312,12 +377,32 @@ import CascadeTreeEditor from './CascadeTreeEditor.vue';
 import CascadeField from './CascadeField.vue';
 import { useToast } from '../composables/useToast.js';
 import Modal from './Modal.vue';
+import { normalizeLogic } from '../lib/fieldLogic.js';
 
 const props = defineProps({
     initialFields: { type: Array, default: () => [] },
-    initialAllowPublic: { type: Boolean, default: false },
+    // REST base for field CRUD — '/form-fields' for the ticket form,
+    // '/survey-fields' for the satisfaction survey.
+    apiBase: { type: String, default: '/form-fields' },
+    // Palette buttons; defaults to the ticket-form types.
+    palette: { type: Array, default: null },
+    // Header text.
+    title: { type: String, default: 'Ticket Form Builder' },
+    subtitle: { type: String, default: 'Design the fields people complete when submitting a ticket.' },
+    breadcrumbs: {
+        type: Array,
+        default: () => [
+            { to: '/create', label: 'Create Ticket' },
+            { label: 'Form Builder' },
+        ],
+    },
+    backTo: { type: String, default: '/create' },
+    backLabel: { type: String, default: 'Back to ticket form' },
+    // Extra condition sources appended after this form's own fields —
+    // e.g. the ticket form's fields keyed "ticket:<key>" for the survey.
+    extraConditionSources: { type: Array, default: () => [] },
 });
-const emit = defineEmits(['updated']);
+const emit = defineEmits(['updated', 'fields-change']);
 
 const toast = useToast();
 const fields = ref([]);
@@ -330,10 +415,7 @@ const searchQuery = ref('');
 const previewAnswers = reactive({}); // field id => cascade preview path
 const collapsedGroups = ref([]);
 
-// Public submissions status badge (edited on the Messages page)
-const allowPublic = ref(false);
-
-const paletteTypes = [
+const DEFAULT_PALETTE = [
     { type: 'text',      label: 'Text',        icon: 'text' },
     { type: 'longtext',  label: 'Long Text',   icon: 'textarea' },
     { type: 'dropdown',  label: 'Dropdown',    icon: 'dropdown' },
@@ -344,10 +426,14 @@ const paletteTypes = [
     { type: 'number',    label: 'Number',      icon: 'hashtag' },
     { type: 'section',   label: 'Section',     icon: 'divider' },
 ];
+const paletteTypes = computed(() => props.palette || DEFAULT_PALETTE);
 
 function normalizeField(f) {
     if (!f.config) f.config = {};
-    if (!f.config.logic) f.config.logic = { action: 'show', field_key: '', op: 'equals', value: '' };
+    // v2 condition shape: { action, match, rules }. normalizeLogic also
+    // upgrades legacy single-rule configs; null → one blank rule row.
+    f.config.logic = normalizeLogic(f.config.logic)
+        || { action: 'show', match: 'all', rules: [{ field_key: '', op: 'equals', value: '' }] };
     if (['dropdown', 'radio', 'checkbox'].includes(f.type) && !f.config.options) f.config.options = [];
     if (f.type === 'dropdown') {
         // Ensure cascade_options is always a plain object ({}), never an
@@ -368,13 +454,18 @@ watch(() => props.initialFields, (nextFields) => {
     const cloned = JSON.parse(JSON.stringify(nextFields || []));
     cloned.forEach(normalizeField);
     fields.value = cloned;
-    editingId.value = null;
+    // Keep an open editor across reloads (e.g. a duplicate just opened for
+    // renaming) — close only when the field itself is gone.
+    if (editingId.value !== null && !cloned.some(f => f.id === editingId.value)) {
+        editingId.value = null;
+    }
 }, { immediate: true, flush: 'pre' });
 
-// Sync public submissions toggle from parent when meta loads
-watch(() => props.initialAllowPublic, (next) => {
-    allowPublic.value = !!next;
-}, { immediate: true });
+// Let the host page mirror the live field list (previews, status counts).
+// Deep-cloned so parents can never mutate panel state.
+watch(fields, (next) => {
+    emit('fields-change', JSON.parse(JSON.stringify(next || [])));
+}, { deep: true, immediate: true });
 
 const cascadeStyles = [
     { value: 'dropdown', label: 'Dropdowns', icon: 'dropdown', hint: 'Compact — one select per level' },
@@ -431,12 +522,24 @@ function cascadeFitHint(f) {
 }
 
 function typeIcon(type) {
-    const map = { text: 'text', longtext: 'textarea', dropdown: 'dropdown', cascade: 'flow', checkbox: 'checkbox-icon', radio: 'radio-icon', date: 'calendar', number: 'hashtag', section: 'divider' };
+    const map = { text: 'text', longtext: 'textarea', dropdown: 'dropdown', cascade: 'flow', checkbox: 'checkbox-icon', radio: 'radio-icon', date: 'calendar', number: 'hashtag', section: 'divider', rating: 'star', scale: 'sliders' };
     return map[type] || 'list';
 }
 
+// A field's condition group is keyed off its first rule's field_key.
 function groupKey(f) {
-    return f.config?.logic?.field_key || 'always';
+    const logic = normalizeLogic(f.config?.logic);
+    return logic?.rules?.[0]?.field_key || 'always';
+}
+
+// Label lookup across this form's fields + extra condition sources
+// (survey rules can point at "ticket:<key>").
+function sourceLabel(key) {
+    if (!key || key === 'always') return '';
+    const own = fields.value.find(x => x.field_key === key);
+    if (own) return own.label;
+    const extra = (props.extraConditionSources || []).find(x => x.field_key === key);
+    return extra ? extra.label : key;
 }
 
 const fieldGroupMeta = computed(() => {
@@ -452,19 +555,21 @@ const fieldGroupMeta = computed(() => {
             id = `${key}:${segment}`;
         }
         counts[id] = (counts[id] || 0) + 1;
-        const parent = fields.value.find(x => x.field_key === key);
-        return { id, key, label: key === 'always' ? 'Always shown' : `Conditional · ${parent?.label || key}` };
+        return { id, key, label: key === 'always' ? 'Always shown' : `Conditional · ${sourceLabel(key)}` };
     });
     return metadata.map(meta => ({ ...meta, count: counts[meta.id] }));
 });
 
 function conditionSummary(f) {
-    const logic = f.config?.logic;
-    if (!logic?.field_key) return '';
-    const parent = fields.value.find(x => x.field_key === logic.field_key);
+    const logic = normalizeLogic(f.config?.logic);
+    if (!logic) return '';
     const operators = { equals: 'is', not_equals: 'is not', contains: 'contains', not_contains: 'does not contain' };
     const action = logic.action === 'hide' ? 'Hide if' : 'Show if';
-    return `${action} ${parent?.label || logic.field_key} ${operators[logic.op] || logic.op} “${logic.value || '…'}”`;
+    const ruleText = (r) => `${sourceLabel(r.field_key)} ${operators[r.op] || r.op} “${r.value || '…'}”`;
+    if (logic.rules.length === 1) {
+        return `${action} ${ruleText(logic.rules[0])}`;
+    }
+    return `${action} ${logic.match} of ${logic.rules.length} rules match`;
 }
 
 const visibleFieldEntries = computed(() => {
@@ -562,10 +667,12 @@ function orderFieldsByIds(ids) {
         .concat(fields.value.filter(x => !ids.includes(x.id)));
 }
 
-// The exact body PUT /form-fields/{id} and POST /form-fields accept.
+// The exact body PUT {apiBase}/{id} and POST {apiBase} accept.
 function buildFieldPayload(f) {
     const config = { ...f.config };
-    if (config.logic && !config.logic.field_key) delete config.logic;
+    // Keep logic only when at least one rule names a field.
+    const logic = normalizeLogic(config.logic);
+    if (logic) config.logic = logic; else delete config.logic;
     if (config.cascades_from === '') delete config.cascades_from;
     if (config.cascade_options && Object.keys(config.cascade_options).length === 0) delete config.cascade_options;
     if (!config.allow_other) delete config.allow_other;
@@ -574,7 +681,7 @@ function buildFieldPayload(f) {
 
 // PUT a snapshot back — used by undo/redo of field saves.
 async function putFieldSnapshot(snapshot) {
-    const updated = await api('/form-fields/' + snapshot.id, { method: 'PUT', body: buildFieldPayload(snapshot) });
+    const updated = await api(props.apiBase + '/' + snapshot.id, { method: 'PUT', body: buildFieldPayload(snapshot) });
     const idx = fields.value.findIndex(x => x.id === snapshot.id);
     const merged = normalizeField({ ...(idx >= 0 ? fields.value[idx] : {}), ...updated });
     if (idx >= 0) fields.value[idx] = merged; else insertFieldLocal(merged);
@@ -607,14 +714,19 @@ function autoKey(f) {
 }
 
 function addField(type) {
-    const label = type === 'section' ? 'New Section' : 'New ' + paletteTypes.find(t => t.type === type).label + ' Field';
+    const label = type === 'section' ? 'New Section'
+        : type === 'rating' ? 'How would you rate your experience?'
+        : type === 'scale' ? 'How likely are you to recommend us?'
+        : 'New ' + paletteTypes.value.find(t => t.type === type).label + ' Field';
     const config = {};
     if (['dropdown', 'radio', 'checkbox'].includes(type)) config.options = ['Option 1'];
     if (type === 'cascade') {
         config.cascade_style = 'dropdown';
         config.cascade_tree = [{ label: 'Option 1', children: [] }];
     }
-    config.logic = { action: 'show', field_key: '', op: 'equals', value: '' };
+    if (type === 'rating') config.max = 5;
+    if (type === 'scale') { config.min = 0; config.max = 10; }
+    config.logic = { action: 'show', match: 'all', rules: [{ field_key: '', op: 'equals', value: '' }] };
 
     // Generate slug from label, with collision protection
     const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 50) || 'field';
@@ -624,7 +736,7 @@ function addField(type) {
         field_key = base + '_' + n++;
     }
 
-    api('/form-fields', {
+    api(props.apiBase, {
         method: 'POST',
         body: { label, field_key, type, required: false, config },
     }).then((created) => {
@@ -640,14 +752,14 @@ function addField(type) {
                 const current = fields.value.find(x => x.field_key === field_key);
                 const targetId = current ? current.id : cell.id;
                 try {
-                    await api('/form-fields/' + targetId, { method: 'DELETE' });
+                    await api(props.apiBase + '/' + targetId, { method: 'DELETE' });
                 } catch (err) {
                     if (current) throw err; // already gone server-side = goal achieved
                 }
                 removeFieldLocal(targetId);
             },
             redo: async () => {
-                const again = normalizeField(await api('/form-fields', {
+                const again = normalizeField(await api(props.apiBase, {
                     method: 'POST',
                     body: { label, field_key, type, required: false, config },
                 }));
@@ -657,6 +769,63 @@ function addField(type) {
         });
         toast.success('Field added');
     }).catch((e) => toast.error(e.message || 'Failed to add field'));
+}
+
+// Clone a field: copies its full config, gives it a unique key, inserts it
+// directly below the original (server sort_order synced via reorder), and
+// opens the copy for renaming. Undo deletes by field_key; redo re-creates.
+async function duplicateField(f) {
+    const payload = buildFieldPayload(f);
+    payload.label = (f.label || 'Field') + ' copy';
+    const base = payload.label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 50) || 'field';
+    let key = base;
+    let n = 2;
+    while (fields.value.some(x => x.field_key === key)) {
+        key = base + '_' + n++;
+    }
+    payload.field_key = key;
+
+    const srcIdx = fields.value.findIndex(x => x.id === f.id);
+    const insertAt = srcIdx >= 0 ? srcIdx + 1 : fields.value.length;
+    const cell = { id: null };
+    try {
+        const created = normalizeField(await api(props.apiBase, { method: 'POST', body: payload }));
+        cell.id = created.id;
+        fields.value.splice(insertAt, 0, created);
+        // The POST landed at the end server-side — persist the real position.
+        await api(props.apiBase + '/reorder', { method: 'PUT', body: { ids: fields.value.map(x => x.id) } });
+        editingId.value = created.id;
+        editSnapshots[created.id] = JSON.parse(JSON.stringify(created));
+        pushHistory({
+            label: 'Duplicate field',
+            undo: async () => {
+                const current = fields.value.find(x => x.field_key === key);
+                const targetId = current ? current.id : cell.id;
+                try {
+                    await api(props.apiBase + '/' + targetId, { method: 'DELETE' });
+                } catch (err) {
+                    if (current) throw err; // already gone server-side = goal achieved
+                }
+                removeFieldLocal(targetId);
+            },
+            redo: async () => {
+                const again = normalizeField(await api(props.apiBase, { method: 'POST', body: payload }));
+                cell.id = again.id;
+                fields.value.splice(Math.min(insertAt, fields.value.length), 0, again);
+                await api(props.apiBase + '/reorder', { method: 'PUT', body: { ids: fields.value.map(x => x.id) } });
+            },
+        });
+        emit('updated');
+        toast.success(`Duplicated "${f.label || 'field'}"`);
+    } catch (e) {
+        // If the field was created but reorder failed, clean up so we don't
+        // leave a stray copy parked at the end of the form.
+        if (cell.id) {
+            try { await api(props.apiBase + '/' + cell.id, { method: 'DELETE' }); } catch (_) { /* best effort */ }
+            removeFieldLocal(cell.id);
+        }
+        toast.error(e.message || 'Failed to duplicate field');
+    }
 }
 
 function toggleEdit(id) {
@@ -675,8 +844,30 @@ function addOption(f) {
     f.config.options.push('Option ' + (f.config.options.length + 1));
 }
 
-function otherFields(f) {
-    return fields.value.filter(x => x.id !== f.id && x.type !== 'section');
+// Options for a rule's "Field" dropdown: own fields (non-section,
+// excluding the field being edited) then any extra sources such as
+// the ticket form's fields for the survey builder.
+function conditionSourceGroups(f) {
+    const groups = [{
+        label: 'This form',
+        fields: fields.value.filter(x => x.id !== f.id && x.type !== 'section'),
+    }];
+    if (props.extraConditionSources.length) {
+        groups.push({ label: 'Ticket fields', fields: props.extraConditionSources });
+    }
+    return groups;
+}
+
+function addRule(f) {
+    const logic = f.config.logic;
+    if (!logic || !Array.isArray(logic.rules) || logic.rules.length >= 10) return;
+    logic.rules.push({ field_key: '', op: 'equals', value: '' });
+}
+
+function removeRule(f, i) {
+    const logic = f.config.logic;
+    if (!logic || logic.rules.length <= 1) return;
+    logic.rules.splice(i, 1);
 }
 
 function saveField(f) {
@@ -693,7 +884,7 @@ function saveField(f) {
     saving.value = f.id;
     const before = editSnapshots[f.id] ? JSON.parse(JSON.stringify(editSnapshots[f.id])) : null;
 
-    api('/form-fields/' + f.id, {
+    api(props.apiBase + '/' + f.id, {
         method: 'PUT',
         body: buildFieldPayload(f),
     }).then((updated) => {
@@ -729,8 +920,11 @@ function saveField(f) {
 // toast expires, so undoing in time never touches submitted answers.
 const DELETE_UNDO_MS = 8000;
 
-// Fields with stored answers get a hard confirmation first — deleting a
-// field permanently deletes its answers on every ticket.
+// Ticket-form answers are deleted with the field; survey answers are
+// snapshots kept for historical responses, so the modal wording differs.
+const deletesStoredAnswers = computed(() => props.apiBase === '/form-fields');
+
+// Fields with stored answers get a hard confirmation first.
 const pendingDeleteField = ref(null);
 
 function deleteField(id) {
@@ -757,7 +951,7 @@ function performDeleteField(id) {
     const schedule = () => {
         timer = setTimeout(() => {
             committed = true;
-            api('/form-fields/' + cell.id, { method: 'DELETE' })
+            api(props.apiBase + '/' + cell.id, { method: 'DELETE' })
                 .catch(e => toast.error(e.message || 'Failed to delete field'));
         }, DELETE_UNDO_MS);
     };
@@ -773,7 +967,7 @@ function performDeleteField(id) {
             }
             // Already deleted server-side — restore the definition by re-creating
             // it (same label/key/config; previously submitted answers stay gone).
-            const recreated = normalizeField(await api('/form-fields', { method: 'POST', body: buildFieldPayload(snapshot) }));
+            const recreated = normalizeField(await api(props.apiBase, { method: 'POST', body: buildFieldPayload(snapshot) }));
             cell.id = recreated.id;
             insertFieldLocal(recreated, idx);
         },
@@ -783,7 +977,7 @@ function performDeleteField(id) {
                 schedule();
                 return;
             }
-            await api('/form-fields/' + cell.id, { method: 'DELETE' });
+            await api(props.apiBase + '/' + cell.id, { method: 'DELETE' });
             removeFieldLocal(cell.id);
         },
     });
@@ -817,7 +1011,7 @@ function onDrop(targetIdx, side) {
     const afterIds = fields.value.map(f => f.id);
     dragIdx.value = null;
     // Persist reorder
-    api('/form-fields/reorder', {
+    api(props.apiBase + '/reorder', {
         method: 'PUT',
         body: { ids: afterIds },
     }).then(() => {
@@ -825,11 +1019,11 @@ function onDrop(targetIdx, side) {
         pushHistory({
             label: 'Reorder fields',
             undo: async () => {
-                await api('/form-fields/reorder', { method: 'PUT', body: { ids: beforeIds } });
+                await api(props.apiBase + '/reorder', { method: 'PUT', body: { ids: beforeIds } });
                 orderFieldsByIds(beforeIds);
             },
             redo: async () => {
-                await api('/form-fields/reorder', { method: 'PUT', body: { ids: afterIds } });
+                await api(props.apiBase + '/reorder', { method: 'PUT', body: { ids: afterIds } });
                 orderFieldsByIds(afterIds);
             },
         });
