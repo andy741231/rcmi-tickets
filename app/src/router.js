@@ -10,6 +10,7 @@ import FormBuilderPage from './pages/FormBuilderPage.vue';
 import SurveyBuilderPage from './pages/SurveyBuilderPage.vue';
 import SurveyResponses from './pages/SurveyResponses.vue';
 import SurveyPage from './pages/SurveyPage.vue';
+import MessagesPage from './pages/MessagesPage.vue';
 import TagRulesPage from './pages/TagRulesPage.vue';
 import TicketHeaven from './pages/TicketHeaven.vue';
 import LoginPage from './pages/LoginPage.vue';
@@ -31,9 +32,7 @@ export const routes = [
     { path: '/survey-builder', name: 'survey-builder', component: SurveyBuilderPage },
     { path: '/survey-responses', name: 'survey-responses', component: SurveyResponses },
     { path: '/survey/:id', name: 'survey', component: SurveyPage, props: true },
-    // Messages & Notifications lives in the form builder's Settings tab;
-    // redirect keeps old links working.
-    { path: '/messages', redirect: { path: '/form-builder', query: { tab: 'settings' } } },
+    { path: '/messages', name: 'messages', component: MessagesPage },
     { path: '/tag-rules', name: 'tag-rules', component: TagRulesPage },
     { path: '/ticket-heaven', name: 'ticket-heaven', component: TicketHeaven },
     { path: '/login', name: 'login', component: LoginPage },

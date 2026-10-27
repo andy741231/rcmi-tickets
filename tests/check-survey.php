@@ -326,11 +326,13 @@ survey_check('non-array config → no throw', !$ctx_threw);
 survey_check('non-array config → empty context',
     $ctx instanceof stdClass && (array) $ctx === []);
 
-// ── 8. Default chain completion message ────────────────────
+// ── 8. Global completion message ──────────────────────────
 
-echo "Default completion message\n";
+echo "Global completion message\n";
 
 $cm = ['ticket_id' => 0, 'chain_id' => 0, 'approval_id' => 0];
+// Captured before try so the finally always has it.
+$saved_cm = get_option('rcmi_tickets_completion_message', null);
 try {
     $now_mysql = current_time('mysql');
     $wpdb->insert($wpdb->prefix . 'rcmi_tickets', [
@@ -339,15 +341,15 @@ try {
     ]);
     $cm['ticket_id'] = (int) $wpdb->insert_id;
 
-    // No chain at all → default message.
-    survey_check('no chain → non-empty default',
-        rcmi_tickets_get_chain_completion_message($cm['ticket_id']) !== '');
-    survey_check('no chain → returns the default',
-        rcmi_tickets_get_chain_completion_message($cm['ticket_id']) === rcmi_tickets_default_completion_message());
+    // One global completion message — same for every ticket regardless of
+    // chain.
+    update_option('rcmi_tickets_completion_message', '<p>Global test msg</p>');
+    survey_check('no chain → global message',
+        rcmi_tickets_get_chain_completion_message($cm['ticket_id']) === '<p>Global test msg</p>');
     survey_check('default mentions the survey',
         strpos(rcmi_tickets_default_completion_message(), 'survey') !== false);
 
-    // Chain with empty completion_message → still the default.
+    // Chain with empty completion_message → still the global.
     $wpdb->insert($wpdb->prefix . 'rcmi_approval_chains', [
         'name' => 'Completion msg test chain', 'is_active' => 1,
         'created_at' => $now_mysql, 'updated_at' => $now_mysql,
@@ -359,15 +361,36 @@ try {
     ]);
     $cm['approval_id'] = (int) $wpdb->insert_id;
 
-    survey_check('empty chain message → default',
-        rcmi_tickets_get_chain_completion_message($cm['ticket_id']) === rcmi_tickets_default_completion_message());
+    survey_check('empty chain message → still global',
+        rcmi_tickets_get_chain_completion_message($cm['ticket_id']) === '<p>Global test msg</p>');
 
-    // A chain's custom message still wins over the default.
+    // A legacy per-chain message no longer overrides the global.
     $wpdb->update($wpdb->prefix . 'rcmi_approval_chains',
         ['completion_message' => '<p>Custom done note</p>'], ['id' => $cm['chain_id']]);
-    survey_check('custom chain message wins',
-        rcmi_tickets_get_chain_completion_message($cm['ticket_id']) === '<p>Custom done note</p>');
+    survey_check('per-chain message ignored (global wins)',
+        rcmi_tickets_get_chain_completion_message($cm['ticket_id']) === '<p>Global test msg</p>');
+
+    // Option absent → lazy fallback to chain #1's stored text (sanitized),
+    // or the default when chain #1 is blank/missing. Read-only: chain #1
+    // is never modified by the getter.
+    delete_option('rcmi_tickets_completion_message');
+    $chain1_msg = $wpdb->get_var(
+        "SELECT completion_message FROM {$wpdb->prefix}rcmi_approval_chains WHERE id = 1"
+    );
+    $expected = rcmi_tickets_sanitize_completion_message((string) $chain1_msg);
+    $expected = $expected !== '' ? $expected : rcmi_tickets_default_completion_message();
+    survey_check('unset option → sanitized chain-1 fallback',
+        rcmi_tickets_get_completion_message() === $expected);
+    // An explicitly-empty stored option also resolves to the default.
+    update_option('rcmi_tickets_completion_message', '');
+    survey_check('empty global option → default',
+        rcmi_tickets_get_completion_message() === rcmi_tickets_default_completion_message());
 } finally {
+    if ($saved_cm === null) {
+        delete_option('rcmi_tickets_completion_message');
+    } else {
+        update_option('rcmi_tickets_completion_message', $saved_cm);
+    }
     $wpdb->delete($wpdb->prefix . 'rcmi_ticket_approvals', ['id' => $cm['approval_id']], ['%d']);
     $wpdb->delete($wpdb->prefix . 'rcmi_approval_chains', ['id' => $cm['chain_id']], ['%d']);
     $wpdb->delete($wpdb->prefix . 'rcmi_tickets', ['id' => $cm['ticket_id']], ['%d']);
@@ -517,6 +540,53 @@ try {
     survey_check('settings PUT strips <script> from thank_you_text',
         strpos($body['thank_you_text'], '<script') === false
         && strpos($body['thank_you_text'], 'Thanks') !== false);
+
+    // Survey title — editable, sanitized, defaulted.
+    survey_check('title present in GET settings',
+        array_key_exists('title', $body) && $body['title'] !== '');
+    survey_check('missing/blank stored title → default',
+        rcmi_tickets_survey_default_settings()['title'] === 'How did we do?');
+
+    $req = new WP_REST_Request('PUT', '/rcmi/v1/survey-settings');
+    $req->set_header('Content-Type', 'application/json');
+    $req->set_body(wp_json_encode(['title' => 'Tell us how it went <b>now</b>']));
+    $body = rcmi_tickets_handle_survey_settings_update($req)->get_data();
+    survey_check('title roundtrip via PUT', $body['title'] === 'Tell us how it went now');
+    survey_check('title HTML stripped by sanitize_text_field',
+        strpos($body['title'], '<') === false);
+    survey_check('getter returns custom title',
+        rcmi_tickets_survey_settings()['title'] === 'Tell us how it went now');
+
+    // Whitespace-only title normalizes back to the default.
+    $req = new WP_REST_Request('PUT', '/rcmi/v1/survey-settings');
+    $req->set_header('Content-Type', 'application/json');
+    $req->set_body(wp_json_encode(['title' => '   ']));
+    rcmi_tickets_handle_survey_settings_update($req);
+    survey_check('empty title → default', rcmi_tickets_survey_settings()['title'] === 'How did we do?');
+
+    // Partial update without a title key preserves the stored title.
+    $req = new WP_REST_Request('PUT', '/rcmi/v1/survey-settings');
+    $req->set_header('Content-Type', 'application/json');
+    $req->set_body(wp_json_encode(['title' => 'Partial-keep title']));
+    rcmi_tickets_handle_survey_settings_update($req);
+    $req = new WP_REST_Request('PUT', '/rcmi/v1/survey-settings');
+    $req->set_header('Content-Type', 'application/json');
+    $req->set_body(wp_json_encode(['max_reminders' => 2]));
+    $body = rcmi_tickets_handle_survey_settings_update($req)->get_data();
+    survey_check('partial PUT preserves title', $body['title'] === 'Partial-keep title');
+
+    // The tokenized public GET exposes the title too.
+    $wpdb->insert($wpdb->prefix . 'rcmi_tickets', [
+        'author_id' => $author_id, 'title' => 'Survey title test ticket',
+        'status' => 'Completed', 'created_at' => current_time('mysql'), 'updated_at' => current_time('mysql'),
+    ]);
+    $title_tid = (int) $wpdb->insert_id;
+    $req = new WP_REST_Request('GET', '/rcmi/v1/survey/' . $title_tid);
+    $req->set_param('id', $title_tid); // direct handler call — route param not parsed from the path
+    $req->set_param('token', rcmi_tickets_survey_token($title_tid));
+    $body = rcmi_tickets_handle_survey_get($req)->get_data();
+    survey_check('public GET exposes title', ($body['title'] ?? '') === 'Partial-keep title');
+    $wpdb->delete($wpdb->prefix . 'rcmi_tickets', ['id' => $title_tid], ['%d']);
 } finally {
     if ($saved_survey_settings === null) {
         delete_option('rcmi_tickets_survey_settings');

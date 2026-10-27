@@ -20,16 +20,9 @@
         </div>
 
         <!-- Success message (public mode) -->
-        <div v-else-if="publicSuccess" class="rcmi-card p-8 text-center">
-            <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-teal-100">
-                <Icon name="check" />
-            </div>
-            <h3 class="text-lg font-bold text-gray-900">{{ successHeading }}</h3>
-            <p class="mt-2 text-sm text-gray-600">{{ publicSuccessMessage }}</p>
-            <button @click="resetPublicForm" class="rcmi-button-secondary mt-6 inline-flex items-center gap-1.5 px-4 py-2 text-sm">
-                <Icon name="plus" /> Submit another request
-            </button>
-        </div>
+        <PublicSubmissionConfirmation v-else-if="publicSuccess"
+            :heading="successHeading" :message="publicSuccessMessage"
+            @submit-another="resetPublicForm" />
 
         <!-- Public submissions closed (SSO-only policy) -->
         <div v-else-if="isPublic && publicClosed" class="rcmi-card p-8 text-center">
@@ -113,6 +106,7 @@ import { api } from '../api.js';
 import DynamicForm from '../components/DynamicForm.vue';
 import FileStager from '../components/FileStager.vue';
 import Icon from '../components/Icon.vue';
+import PublicSubmissionConfirmation from '../components/PublicSubmissionConfirmation.vue';
 import { useToast } from '../composables/useToast.js';
 import { useConfetti } from '../composables/useConfetti.js';
 import { useStagedFiles } from '../composables/useStagedFiles.js';

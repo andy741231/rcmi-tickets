@@ -173,12 +173,8 @@
                 <p class="rcmi-field-help">The selected person is assigned when a ticket enters this approval chain (at creation). They receive the Approved notification once all steps clear, and can then start work (In Progress) and Complete.</p>
             </div>
 
-            <!-- Completion email message -->
-            <div class="rounded-md border border-gray-200 p-4">
-                <h4 class="rcmi-section-label mb-3">Completion Email Message</h4>
-                <RichTextEditor v-model="chain.completion_message" />
-                <p class="rcmi-field-help mt-2">Included in the <strong>email</strong> sent to the requestor when a ticket in this chain is completed. Use it for next steps, contact info, links, or a thank-you note specific to this approval chain. Leave blank to send the default notification.</p>
-            </div>
+            <!-- Completion email message moved to Form Builder → Settings
+                 as one global message. The legacy column stays for compat. -->
 
             <!-- Save / Delete -->
             <div class="flex items-center gap-3 border-t border-gray-100 pt-4">
@@ -203,7 +199,6 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter, onBeforeRouteLeave } from 'vue-router';
 import { api } from '../api.js';
 import Icon from '../components/Icon.vue';
-import RichTextEditor from '../components/RichTextEditor.vue';
 import { useToast } from '../composables/useToast.js';
 
 const props = defineProps({ id: { type: String, required: true } });
@@ -213,10 +208,8 @@ const toast = useToast();
 const chain = ref(null);
 const formFields = ref([]);
 const assignableUsers = ref([]);
-// Prefilled into new chains so managers can see/edit the default text.
-// Matches rcmi_tickets_default_completion_message() in class-emails.php.
-const DEFAULT_COMPLETION_MESSAGE = '<p>Thank you for collaborating with our team on your request!</p><p>How did we do? Take a 30-second survey about your experience with this request — we value your feedback.</p>';
-const completionMessageDefault = ref(DEFAULT_COMPLETION_MESSAGE);
+// Completion email message is a single global setting — edited in
+// Form Builder → Settings, not per chain (legacy column kept for compat).
 const loading = ref(true);
 const loadError = ref('');
 const saving = ref(false);
@@ -307,7 +300,7 @@ async function loadMeta() {
         const data = await api('/meta');
         formFields.value = data.form_fields || [];
         assignableUsers.value = data.assignable_users || [];
-        completionMessageDefault.value = data.completion_message_default || DEFAULT_COMPLETION_MESSAGE;
+
     } catch (e) {
         toast.error('Failed to load form fields');
     }
@@ -326,7 +319,6 @@ async function load() {
             trigger_value: '',
             on_reject: 'restart',
             completion_assignee_id: null,
-            completion_message: completionMessageDefault.value,
             is_active: true,
             survey_enabled: true,
             steps: [
@@ -386,7 +378,6 @@ async function saveChain() {
             trigger_value: chain.value.trigger_value || '',
             on_reject: chain.value.on_reject,
             completion_assignee_id: chain.value.completion_assignee_id || 0,
-            completion_message: chain.value.completion_message || '',
             is_active: chain.value.is_active,
             survey_enabled: chain.value.survey_enabled !== false,
             steps: chain.value.steps.map((s, i) => ({

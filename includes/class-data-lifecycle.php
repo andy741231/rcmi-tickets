@@ -34,6 +34,7 @@ function rcmi_tickets_data_manifest() {
             'rcmi_tickets_allow_public_submit',
             'rcmi_tickets_view_token_secret',
             'rcmi_tickets_survey_settings',
+            'rcmi_tickets_completion_message',
             'rcmi_tickets_mail',
         ],
         'transients' => [

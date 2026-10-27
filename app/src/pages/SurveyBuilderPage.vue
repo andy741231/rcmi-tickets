@@ -63,6 +63,7 @@
                     </div>
                 </div>
 
+                <div class="space-y-5">
                 <div class="rcmi-card p-5">
                     <h2 class="rcmi-section-label mb-4">Survey content</h2>
                     <div class="space-y-4">
@@ -70,6 +71,10 @@
                             <input type="checkbox" v-model="settings.enabled" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
                             Survey enabled
                         </label>
+                        <div>
+                            <label class="rcmi-field-label" for="survey-title">Survey title</label>
+                            <input id="survey-title" v-model="settings.title" type="text" class="rcmi-input" placeholder="How did we do?" />
+                        </div>
                         <div>
                             <label class="rcmi-field-label">Intro text</label>
                             <RichTextEditor v-model="settings.intro_text" />
@@ -81,6 +86,32 @@
                             <p class="rcmi-field-help mt-1">Shown after the requestor submits.</p>
                         </div>
                     </div>
+                </div>
+
+                <div class="rcmi-card p-5">
+                    <h2 class="rcmi-section-label mb-4">Survey e-mail</h2>
+                    <p class="mb-4 text-xs text-gray-500">Used for the survey invitation and its reminders. Placeholders: <code class="rounded bg-gray-100 px-1">{ticket}</code> = ticket number, <code class="rounded bg-gray-100 px-1">{title}</code> = ticket title. Reminders automatically get "Reminder:" in front of the subject.</p>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="rcmi-field-label" for="survey-email-subject">E-mail subject</label>
+                            <input id="survey-email-subject" v-model="settings.email_subject" type="text" class="rcmi-input" />
+                        </div>
+                        <div>
+                            <label class="rcmi-field-label">Invitation text</label>
+                            <RichTextEditor v-model="settings.email_lead" />
+                            <p class="rcmi-field-help mt-1">Body of the first survey e-mail, above the ticket line and button.</p>
+                        </div>
+                        <div>
+                            <label class="rcmi-field-label">Reminder text</label>
+                            <RichTextEditor v-model="settings.reminder_lead" />
+                            <p class="rcmi-field-help mt-1">Body of reminder e-mails instead of the invitation text.</p>
+                        </div>
+                        <div>
+                            <label class="rcmi-field-label" for="survey-email-button">Button label</label>
+                            <input id="survey-email-button" v-model="settings.email_button" type="text" class="rcmi-input sm:max-w-52" />
+                        </div>
+                    </div>
+                </div>
                 </div>
                 </div>
 
@@ -146,6 +177,7 @@
                             <SurveyView
                                 :ticket-id="123"
                                 ticket-title="Sample ticket"
+                                :title="settings.title"
                                 :intro-text="settings.intro_text"
                                 :thank-you-text="settings.thank_you_text"
                                 :fields="liveFields"
@@ -377,6 +409,8 @@ async function loadAll() {
         const s = surveySettings || {};
         s.intro_text = toEditorHtml(s.intro_text);
         s.thank_you_text = toEditorHtml(s.thank_you_text);
+        s.email_lead = toEditorHtml(s.email_lead);
+        s.reminder_lead = toEditorHtml(s.reminder_lead);
         settings.value = s;
         snapshotSettings();
         ticketFields.value = meta.form_fields || [];

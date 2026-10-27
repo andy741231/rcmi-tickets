@@ -26,6 +26,7 @@
         <SurveyView v-else
             :ticket-id="data.ticket_id"
             :ticket-title="data.ticket_title"
+            :title="data.title"
             :intro-text="data.intro_text"
             :thank-you-text="data.thank_you_text"
             :fields="data.fields || []"

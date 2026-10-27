@@ -52,6 +52,9 @@
                             <router-link to="/tag-rules" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
                                 <Icon name="tag" /> Tag Rules
                             </router-link>
+                            <router-link to="/messages" role="menuitem" class="rcmi-nav-menu-item" active-class="rcmi-nav-menu-item-active" @click="settingsOpen = false">
+                                <Icon name="mail" /> Automated emails
+                            </router-link>
                         </div>
                     </div>
                     <router-link to="/create" class="rcmi-button-primary inline-flex items-center gap-1.5 px-4 py-2 text-sm shadow-sm">
@@ -111,7 +114,7 @@ const meta = reactive({ caps: {} });
 const pendingCount = ref(0);
 const loggingOut = ref(false);
 
-const SETTINGS_PATHS = ['/form-builder', '/approval-edit', '/tag-rules', '/survey-builder', '/survey-responses'];
+const SETTINGS_PATHS = ['/form-builder', '/approval-edit', '/tag-rules', '/survey-builder', '/survey-responses', '/messages'];
 const settingsOpen = ref(false);
 const settingsRoot = ref(null);
 const settingsActive = computed(() => SETTINGS_PATHS.some((p) => route.path.startsWith(p)));

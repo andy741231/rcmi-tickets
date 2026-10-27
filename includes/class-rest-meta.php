@@ -82,6 +82,8 @@ function rcmi_tickets_handle_settings_get() {
     return new WP_REST_Response([
         'public_success'      => rcmi_tickets_get_success_message(),
         'allow_public_submit' => rcmi_tickets_public_submissions_enabled(),
+        'completion_message'          => rcmi_tickets_get_completion_message(),
+        'completion_message_default'  => rcmi_tickets_default_completion_message(),
     ], 200);
 }
 
@@ -97,7 +99,7 @@ function rcmi_tickets_handle_settings_update($request) {
         ? sanitize_text_field($params['public_success']['heading'])
         : $current['heading'];
     $message = isset($params['public_success']['message'])
-        ? sanitize_textarea_field($params['public_success']['message'])
+        ? rcmi_tickets_sanitize_completion_message($params['public_success']['message'])
         : $current['message'];
 
     // Allow empty to reset to defaults
@@ -110,9 +112,16 @@ function rcmi_tickets_handle_settings_update($request) {
         ]);
     }
 
+    if (isset($params['completion_message'])) {
+        update_option('rcmi_tickets_completion_message',
+            rcmi_tickets_sanitize_completion_message($params['completion_message']));
+    }
+
     return new WP_REST_Response([
         'public_success'      => rcmi_tickets_get_success_message(),
         'allow_public_submit' => rcmi_tickets_public_submissions_enabled(),
+        'completion_message'          => rcmi_tickets_get_completion_message(),
+        'completion_message_default'  => rcmi_tickets_default_completion_message(),
     ], 200);
 }
 
@@ -343,8 +352,8 @@ function rcmi_tickets_handle_meta() {
         'status_counts'    => $filter_status_counts,
         'public_success'   => rcmi_tickets_get_success_message(),
         'allow_public_submit' => rcmi_tickets_public_submissions_enabled(),
-        // Default chain completion message — the chain editor prefills this
-        // so managers can see and customize what Completed emails say.
+        // Retained for API compatibility; the shared message is edited
+        // through Form Builder settings.
         'completion_message_default' => rcmi_tickets_default_completion_message(),
     ], 200);
 }

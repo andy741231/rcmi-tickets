@@ -35,6 +35,7 @@ if (!defined('ABSPATH')) {
 function rcmi_tickets_survey_default_settings() {
     return [
         'enabled'             => true,
+        'title'               => 'How did we do?',
         'intro_text'          => '',
         'thank_you_text'      => 'Thank you for your feedback!',
         'reminders_enabled'   => true,
@@ -42,6 +43,11 @@ function rcmi_tickets_survey_default_settings() {
         'repeat_every_days'   => 7,
         'max_reminders'       => 1,
         'close_after_days'    => 30,
+        // Survey + reminder email copy — {ticket} and {title} placeholders.
+        'email_subject'       => 'How did we do on ticket #{ticket}?',
+        'email_lead'          => 'We\'d love your feedback on how we handled your request.',
+        'reminder_lead'       => 'Just a friendly reminder — we\'d still love your feedback on how we handled your request.',
+        'email_button'        => 'Rate your experience',
     ];
 }
 
@@ -53,6 +59,8 @@ function rcmi_tickets_survey_settings() {
     $s = array_merge(rcmi_tickets_survey_default_settings(), $stored);
     return [
         'enabled'             => (bool) $s['enabled'],
+        // Blank/whitespace falls back to the default heading.
+        'title'               => trim((string) $s['title']) !== '' ? (string) $s['title'] : 'How did we do?',
         'intro_text'          => (string) $s['intro_text'],
         'thank_you_text'      => (string) $s['thank_you_text'],
         'reminders_enabled'   => (bool) $s['reminders_enabled'],
@@ -60,6 +68,10 @@ function rcmi_tickets_survey_settings() {
         'repeat_every_days'   => max(1, (int) $s['repeat_every_days']),
         'max_reminders'       => max(0, (int) $s['max_reminders']),
         'close_after_days'    => max(1, (int) $s['close_after_days']),
+        'email_subject'       => (string) $s['email_subject'],
+        'email_lead'          => (string) $s['email_lead'],
+        'reminder_lead'       => (string) $s['reminder_lead'],
+        'email_button'        => (string) $s['email_button'],
     ];
 }
 
@@ -700,6 +712,16 @@ function rcmi_tickets_handle_survey_settings_update($request) {
             $s[$k] = (int) $params[$k];
         }
     }
+    foreach (['title', 'email_subject', 'email_button'] as $k) {
+        if (isset($params[$k])) {
+            $s[$k] = sanitize_text_field((string) $params[$k]);
+        }
+    }
+    foreach (['email_lead', 'reminder_lead'] as $k) {
+        if (isset($params[$k])) {
+            $s[$k] = rcmi_tickets_sanitize_completion_message((string) $params[$k]);
+        }
+    }
 
     update_option('rcmi_tickets_survey_settings', $s);
     return new WP_REST_Response(rcmi_tickets_survey_settings(), 200);
@@ -866,6 +888,7 @@ function rcmi_tickets_handle_survey_get($request) {
         'ticket_id'       => $ticket_id,
         'ticket_title'    => $ticket['title'],
         'fields'          => $fields,
+        'title'           => $settings['title'],
         'intro_text'      => $settings['intro_text'],
         'thank_you_text'  => $settings['thank_you_text'],
         'ticket_answers'  => rcmi_tickets_survey_ticket_context($ticket_id, $fields),

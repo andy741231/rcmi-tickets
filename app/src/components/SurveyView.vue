@@ -2,7 +2,7 @@
     <div>
         <!-- Header -->
         <div class="mb-6">
-            <h2 class="text-2xl font-bold text-gray-900">How did we do?</h2>
+            <h2 class="text-2xl font-bold text-gray-900">{{ title || 'How did we do?' }}</h2>
             <p class="mt-1 text-sm text-gray-600">
                 Ticket #{{ ticketId }}<span v-if="ticketTitle"> — {{ ticketTitle }}</span>
             </p>
@@ -51,6 +51,7 @@ import { renderRichText } from '../lib/richText.js';
 defineProps({
     ticketId: { type: [Number, String], default: '' },
     ticketTitle: { type: String, default: '' },
+    title: { type: String, default: 'How did we do?' },
     introText: { type: String, default: '' },
     thankYouText: { type: String, default: '' },
     fields: { type: Array, default: () => [] },
