@@ -118,8 +118,8 @@ survey_check('rating config keeps max + labels', $rating_cfg['max'] === 7 && $ra
 $num_cfg = rcmi_tickets_validate_field_config(['integer_only' => true], 'number');
 survey_check('number integer_only kept', !empty($num_cfg['integer_only']));
 
-survey_check('survey types = ticket types + rating/scale',
-    rcmi_tickets_valid_survey_field_types() === array_merge(rcmi_tickets_valid_field_types(), ['rating', 'scale']));
+survey_check('survey types = ticket types + rating/scale/matrix',
+    rcmi_tickets_valid_survey_field_types() === array_merge(rcmi_tickets_valid_field_types(), ['rating', 'scale', 'matrix']));
 
 // ── 3. Survey token ────────────────────────────────────────
 
@@ -595,6 +595,87 @@ try {
     }
     wp_set_current_user($saved_uid);
 }
+
+// ── 11. Matrix field ───────────────────────────────────────
+
+echo "Matrix field\n";
+
+survey_check('matrix is a survey field type',
+    in_array('matrix', rcmi_tickets_valid_survey_field_types(), true));
+survey_check('matrix is NOT a ticket field type',
+    !in_array('matrix', rcmi_tickets_valid_field_types(), true));
+
+// Config: rows + columns kept as sanitized string lists, unknown keys dropped.
+$mx_cfg = rcmi_tickets_validate_field_config([
+    'rows'    => ['Row A', 'Row B', ''],
+    'columns' => ['Disagree', 'Agree'],
+    'bogus'   => 'x',
+], 'matrix');
+survey_check('matrix config keeps rows + columns',
+    $mx_cfg['rows'] === ['Row A', 'Row B'] && $mx_cfg['columns'] === ['Disagree', 'Agree']);
+survey_check('matrix config drops unknown keys', !isset($mx_cfg['bogus']));
+
+$mx_field = [
+    'label'    => 'Statements',
+    'type'     => 'matrix',
+    'required' => false,
+    'config'   => ['rows' => ['Row A', 'Row B'], 'columns' => ['Disagree', 'Agree']],
+];
+
+// A full valid answer → JSON object in configured row order.
+$mx_err = null;
+$mx_val = rcmi_tickets_sanitize_survey_answer($mx_field, ['Row B' => 'Disagree', 'Row A' => 'Agree'], $mx_err);
+survey_check('matrix valid answer → JSON assoc in row order',
+    $mx_err === null && $mx_val === wp_json_encode(['Row A' => 'Agree', 'Row B' => 'Disagree']));
+
+// Unknown row labels in the submission are dropped.
+$mx_err = null;
+$mx_val = rcmi_tickets_sanitize_survey_answer($mx_field, ['Row A' => 'Agree', 'Mystery' => 'Agree'], $mx_err);
+survey_check('matrix unknown row dropped',
+    $mx_err === null && $mx_val === wp_json_encode(['Row A' => 'Agree']));
+
+// A value outside the configured columns fails with an error.
+$mx_err = null;
+$mx_val = rcmi_tickets_sanitize_survey_answer($mx_field, ['Row A' => 'Maybe'], $mx_err);
+survey_check('matrix invalid column → null + error',
+    $mx_val === null && is_string($mx_err) && strpos($mx_err, 'invalid choice') !== false);
+
+// Non-array submission fails with an error.
+$mx_err = null;
+$mx_val = rcmi_tickets_sanitize_survey_answer($mx_field, 'Agree', $mx_err);
+survey_check('matrix non-array → null + error',
+    $mx_val === null && is_string($mx_err) && $mx_err !== '');
+
+// Required: every configured row must be answered.
+$mx_required = array_merge($mx_field, ['required' => true]);
+$mx_err = null;
+$mx_val = rcmi_tickets_sanitize_survey_answer($mx_required, ['Row A' => 'Agree'], $mx_err);
+survey_check('required matrix missing a row → null + error',
+    $mx_val === null && is_string($mx_err) && strpos($mx_err, 'every row') !== false);
+$mx_err = null;
+$mx_val = rcmi_tickets_sanitize_survey_answer($mx_required, ['Row A' => 'Agree', 'Row B' => 'Disagree'], $mx_err);
+survey_check('required matrix all rows → stored',
+    $mx_err === null && $mx_val === wp_json_encode(['Row A' => 'Agree', 'Row B' => 'Disagree']));
+
+// Non-required: partial answers store only the answered rows; nothing at all → null.
+$mx_err = null;
+$mx_val = rcmi_tickets_sanitize_survey_answer($mx_field, ['Row B' => 'Disagree'], $mx_err);
+survey_check('non-required partial → answered rows only',
+    $mx_err === null && $mx_val === wp_json_encode(['Row B' => 'Disagree']));
+$mx_err = null;
+$mx_val = rcmi_tickets_sanitize_survey_answer($mx_field, ['Mystery' => 'Agree'], $mx_err);
+survey_check('non-required nothing valid → null, no error',
+    $mx_err === null && $mx_val === null);
+
+// format_survey_answer decodes the stored JSON object back to an assoc.
+$mx_formatted = rcmi_tickets_format_survey_answer([
+    'field_id' => 1, 'field_key' => 'mx', 'label' => 'Statements',
+    'type'     => 'matrix',
+    'value'    => wp_json_encode(['Row A' => 'Agree', 'Row B' => 'Disagree']),
+]);
+survey_check('format_survey_answer decodes matrix assoc',
+    is_array($mx_formatted['value'])
+    && $mx_formatted['value'] === ['Row A' => 'Agree', 'Row B' => 'Disagree']);
 
 // ── Summary ────────────────────────────────────────────────
 

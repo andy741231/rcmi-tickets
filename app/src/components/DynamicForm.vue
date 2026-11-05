@@ -28,6 +28,32 @@
                                     class="h-4 w-4" :class="n <= Number(answers[f.field_key]) ? 'text-amber-400' : 'text-gray-200'" />
                             </span>
                         </template>
+                        <template v-else-if="f.type === 'matrix'">
+                            <span class="mt-1 block overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead v-if="matrixColumns(f).length">
+                                        <tr>
+                                            <th class="pr-2 text-left text-xs font-semibold text-gray-400"></th>
+                                            <th v-for="col in matrixColumns(f)" :key="col"
+                                                class="px-2 text-center text-xs font-semibold text-gray-400">{{ col }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="row in matrixRows(f)" :key="row" class="border-t border-gray-100">
+                                            <td class="py-1 pr-2 text-gray-700">{{ row }}</td>
+                                            <td v-if="matrixAnswer(f, row) === ''" :colspan="Math.max(matrixColumns(f).length, 1)"
+                                                class="px-2 py-1 text-center text-gray-400">—</td>
+                                            <template v-else>
+                                                <td v-for="col in matrixColumns(f)" :key="col" class="px-2 py-1 text-center">
+                                                    <Icon v-if="matrixAnswer(f, row) === col" name="check"
+                                                        class="mx-auto h-3.5 w-3.5 text-red-700" />
+                                                </td>
+                                            </template>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </span>
+                        </template>
                         <template v-else>{{ answers[f.field_key] }}</template>
                     </span>
                 </div>
@@ -167,6 +193,35 @@
                         <span v-if="scaleLabels(f).high" class="w-16 shrink-0 text-xs text-gray-500">{{ scaleLabels(f).high }}</span>
                     </div>
                 </div>
+
+                <!-- matrix (Likert grid, survey only): rows × columns radios.
+                     Radios in one row share a name so `required` enforces a
+                     pick per row when the field is required. -->
+                <div v-else-if="f.type === 'matrix'" class="mt-1 overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th class="py-1.5 pr-3 text-left text-xs font-semibold text-gray-500"></th>
+                                <th v-for="col in (f.config?.columns || [])" :key="col"
+                                    class="px-2 py-1.5 text-center text-xs font-semibold text-gray-500">{{ col }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(row, ri) in (f.config?.rows || [])" :key="ri"
+                                class="border-b border-gray-100 transition hover:bg-gray-50">
+                                <td class="py-2 pr-3 text-sm text-gray-700">{{ row }}</td>
+                                <td v-for="col in (f.config?.columns || [])" :key="col" class="px-2 py-2 text-center">
+                                    <input type="radio" :name="'field-' + f.field_key + '-' + ri" :value="col"
+                                        :checked="answers[f.field_key]?.[row] === col"
+                                        @change="setMatrixAnswer(f, row, col)"
+                                        :required="f.required"
+                                        :aria-label="`${row}: ${col}`"
+                                        class="h-4 w-4 border-gray-400 text-red-700 focus:ring-red-700" />
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </template>
     </div>
@@ -217,7 +272,8 @@ watch(normalizedFields, (fields) => {
     for (const f of fields) {
         if (f.type === 'section') continue;
         if (!(f.field_key in a)) {
-            a[f.field_key] = (f.type === 'checkbox' || f.type === 'cascade') ? [] : '';
+            a[f.field_key] = (f.type === 'checkbox' || f.type === 'cascade') ? []
+                : (f.type === 'matrix' ? {} : '');
             changed = true;
         }
     }
@@ -295,6 +351,35 @@ function scaleRange(f) {
 
 function scaleLabels(f) {
     return { low: f.config?.low_label || '', high: f.config?.high_label || '' };
+}
+
+// ── matrix helpers (survey Likert grid) ─────────────────────────────
+// The answer is an object map of row label → chosen column label.
+function matrixRows(f) {
+    const rows = Array.isArray(f.config?.rows) ? [...f.config.rows] : [];
+    const stored = answers.value[f.field_key];
+    if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+        for (const k of Object.keys(stored)) {
+            if (!rows.includes(k)) rows.push(k); // stored rows removed from config still display
+        }
+    }
+    return rows;
+}
+
+function matrixColumns(f) {
+    return Array.isArray(f.config?.columns) ? f.config.columns : [];
+}
+
+function matrixAnswer(f, row) {
+    const v = answers.value[f.field_key];
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return '';
+    return v[row] ?? '';
+}
+
+function setMatrixAnswer(f, row, col) {
+    const cur = answers.value[f.field_key];
+    const base = cur && typeof cur === 'object' && !Array.isArray(cur) ? cur : {};
+    answers.value[f.field_key] = { ...base, [row]: col };
 }
 
 // Dropdown options (handles cascading)
@@ -417,6 +502,7 @@ function parentLabel(field, parentVal) {
 function hasAnswer(f) {
     const v = answers.value[f.field_key];
     if (f.type === 'checkbox' || f.type === 'cascade') return Array.isArray(v) && v.length > 0;
+    if (f.type === 'matrix') return Boolean(v) && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0;
     return v !== undefined && v !== null && v !== '';
 }
 </script>

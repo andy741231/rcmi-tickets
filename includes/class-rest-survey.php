@@ -19,7 +19,7 @@
  *   GET    /survey-field-values           — distinct stored answer values (manager)
  *
  * Survey fields reuse the form-field sanitizer; valid types are the ticket
- * form types plus 'rating' and 'scale'. Conditions support the shared v2
+ * form types plus 'rating', 'scale' and 'matrix'. Conditions support the shared v2
  * {action, match, rules} shape and may reference ticket form answers via
  * "ticket:<field_key>" rules.
  */
@@ -80,7 +80,7 @@ function rcmi_tickets_survey_settings() {
 // ============================================================
 
 function rcmi_tickets_valid_survey_field_types() {
-    return array_merge(rcmi_tickets_valid_field_types(), ['rating', 'scale']);
+    return array_merge(rcmi_tickets_valid_field_types(), ['rating', 'scale', 'matrix']);
 }
 
 function rcmi_tickets_get_all_survey_fields() {
@@ -315,7 +315,7 @@ function rcmi_tickets_survey_is_eligible($ticket_id) {
  */
 function rcmi_tickets_format_survey_answer($a) {
     $value = $a['value'];
-    if (in_array($a['type'], ['checkbox', 'radio', 'cascade'], true)) {
+    if (in_array($a['type'], ['checkbox', 'radio', 'cascade', 'matrix'], true)) {
         $decoded = json_decode((string) $value, true);
         if (is_array($decoded)) {
             $value = $decoded;
@@ -1061,6 +1061,41 @@ function rcmi_tickets_sanitize_survey_answer($field, $raw, &$error) {
             }
             return $value;
 
+        case 'matrix':
+            // Likert grid: one row per configured row label, each answer a
+            // column label. Stored as a JSON object {row_label: col_label}
+            // in configured row order; unknown submitted keys are dropped.
+            if (!is_array($raw)) {
+                $error = sprintf('%s is invalid.', $label);
+                return null;
+            }
+            $rows = array_values(array_unique(array_filter(array_map('strval', (array) ($config['rows'] ?? [])), 'strlen')));
+            $columns = array_values(array_filter(array_map('strval', (array) ($config['columns'] ?? [])), 'strlen'));
+            $picked = [];
+            foreach ($rows as $row_label) {
+                if (!array_key_exists($row_label, $raw)) {
+                    continue;
+                }
+                if (!is_scalar($raw[$row_label])) {
+                    $error = sprintf('%s has an invalid choice.', $label);
+                    return null;
+                }
+                $choice = sanitize_text_field((string) $raw[$row_label]);
+                if ($choice === '') {
+                    continue;
+                }
+                if (!in_array($choice, $columns, true)) {
+                    $error = sprintf('%s has an invalid choice.', $label);
+                    return null;
+                }
+                $picked[$row_label] = $choice;
+            }
+            if (!empty($field['required']) && count($picked) < count($rows)) {
+                $error = sprintf('%s — please answer every row.', $label);
+                return null;
+            }
+            return $picked ? wp_json_encode($picked) : null;
+
         case 'longtext':
             return sanitize_textarea_field((string) $raw);
 
@@ -1453,7 +1488,16 @@ function rcmi_tickets_handle_survey_export($request) {
                 $formatted = rcmi_tickets_format_survey_answer($a);
                 $val = $formatted['value'];
                 if (is_array($val)) {
-                    $val = implode($a['type'] === 'cascade' ? ' › ' : '; ', $val);
+                    if ($a['type'] === 'matrix') {
+                        // Assoc {row: col} → "Row: Col; Row2: Col2".
+                        $pairs = [];
+                        foreach ($val as $row_label => $col_label) {
+                            $pairs[] = $row_label . ': ' . $col_label;
+                        }
+                        $val = implode('; ', $pairs);
+                    } else {
+                        $val = implode($a['type'] === 'cascade' ? ' › ' : '; ', $val);
+                    }
                 }
             }
             $field_values[] = $val;

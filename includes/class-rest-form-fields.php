@@ -22,6 +22,7 @@
  *     cascade_tree: [{ label, children: [...] }], // cascade type: nested tree, any depth
  *     cascade_style: "dropdown"|"pills"|"steps"|"columns"|"search",
  *     cascade_level_labels: ["Step 1","Step 2"], // cascade + steps style: optional per-level labels
+ *     rows: ["Statement",...], columns: ["Choice",...], // matrix (survey-only Likert grid)
  *   }
  */
 
@@ -54,6 +55,7 @@ function rcmi_tickets_allowed_config_keys($type) {
         // Survey-only types (rcmi_survey_fields)
         'rating'    => array_merge($common, ['max', 'low_label', 'high_label']),
         'scale'     => array_merge($common, ['min', 'max', 'low_label', 'high_label']),
+        'matrix'    => array_merge($common, ['rows', 'columns']),
     ];
     return $map[$type] ?? $common;
 }
@@ -78,8 +80,10 @@ function rcmi_tickets_validate_field_config($config, $type) {
         }
         switch ($k) {
             case 'options':
+            case 'rows':
+            case 'columns':
                 if (is_array($v)) {
-                    $clean['options'] = array_values(array_filter(array_map('sanitize_text_field', array_map('strval', $v))));
+                    $clean[$k] = array_values(array_filter(array_map('sanitize_text_field', array_map('strval', $v))));
                 }
                 break;
             case 'cascade_options':

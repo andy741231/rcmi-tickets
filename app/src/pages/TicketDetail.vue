@@ -762,6 +762,10 @@ function surveyAnswerText(a) {
     if (Array.isArray(a.value)) {
         return a.type === 'cascade' ? a.value.join(' › ') : a.value.join(', ');
     }
+    // Matrix answers arrive as an object {row: column} — one line per row.
+    if (a.value && typeof a.value === 'object') {
+        return Object.entries(a.value).map(([row, col]) => `${row}: ${col}`).join('\n');
+    }
     return String(a.value ?? '');
 }
 

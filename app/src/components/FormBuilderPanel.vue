@@ -323,6 +323,38 @@
                                         </div>
                                     </div>
 
+                                    <!-- Matrix config (survey Likert grid) -->
+                                    <div v-if="f.type === 'matrix'" class="space-y-3">
+                                        <div>
+                                            <label class="rcmi-field-label">Rows</label>
+                                            <p class="mb-1.5 text-xs text-gray-500">Each row is a statement the respondent rates.</p>
+                                            <ul class="space-y-1.5">
+                                                <li v-for="(row, ri) in (f.config.rows || [])" :key="ri" class="flex items-center gap-2">
+                                                    <input v-model="f.config.rows[ri]" class="rcmi-input flex-1" placeholder="Statement" />
+                                                    <button @click="f.config.rows.splice(ri, 1)" class="rcmi-button-ghost px-2 py-1 text-xs text-red-700"
+                                                        aria-label="Remove row"><Icon name="x" /></button>
+                                                </li>
+                                            </ul>
+                                            <button @click="addMatrixRow(f)" class="rcmi-button-secondary mt-2 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs">
+                                                <Icon name="plus" /> Add row
+                                            </button>
+                                        </div>
+                                        <div>
+                                            <label class="rcmi-field-label">Columns</label>
+                                            <p class="mb-1.5 text-xs text-gray-500">Each column is a choice on the scale.</p>
+                                            <ul class="space-y-1.5">
+                                                <li v-for="(col, ci) in (f.config.columns || [])" :key="ci" class="flex items-center gap-2">
+                                                    <input v-model="f.config.columns[ci]" class="rcmi-input flex-1" placeholder="Choice label" />
+                                                    <button @click="f.config.columns.splice(ci, 1)" class="rcmi-button-ghost px-2 py-1 text-xs text-red-700"
+                                                        aria-label="Remove column"><Icon name="x" /></button>
+                                                </li>
+                                            </ul>
+                                            <button @click="addMatrixColumn(f)" class="rcmi-button-secondary mt-2 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs">
+                                                <Icon name="plus" /> Add column
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <!-- Sticky so Save stays reachable while a long
                                          editor scrolls (same treatment as the survey
                                          Settings tab save bar). -->
@@ -445,6 +477,10 @@ function normalizeField(f) {
         if (!Array.isArray(f.config.cascade_tree)) f.config.cascade_tree = [];
         if (!f.config.cascade_style) f.config.cascade_style = 'dropdown';
     }
+    if (f.type === 'matrix') {
+        if (!Array.isArray(f.config.rows)) f.config.rows = [];
+        if (!Array.isArray(f.config.columns)) f.config.columns = [];
+    }
     return f;
 }
 
@@ -522,7 +558,7 @@ function cascadeFitHint(f) {
 }
 
 function typeIcon(type) {
-    const map = { text: 'text', longtext: 'textarea', dropdown: 'dropdown', cascade: 'flow', checkbox: 'checkbox-icon', radio: 'radio-icon', date: 'calendar', number: 'hashtag', section: 'divider', rating: 'star', scale: 'sliders' };
+    const map = { text: 'text', longtext: 'textarea', dropdown: 'dropdown', cascade: 'flow', checkbox: 'checkbox-icon', radio: 'radio-icon', date: 'calendar', number: 'hashtag', section: 'divider', rating: 'star', scale: 'sliders', matrix: 'grid' };
     return map[type] || 'list';
 }
 
@@ -717,6 +753,7 @@ function addField(type) {
     const label = type === 'section' ? 'New Section'
         : type === 'rating' ? 'How would you rate your experience?'
         : type === 'scale' ? 'How likely are you to recommend us?'
+        : type === 'matrix' ? 'Rate the following statements'
         : 'New ' + paletteTypes.value.find(t => t.type === type).label + ' Field';
     const config = {};
     if (['dropdown', 'radio', 'checkbox'].includes(type)) config.options = ['Option 1'];
@@ -726,6 +763,10 @@ function addField(type) {
     }
     if (type === 'rating') config.max = 5;
     if (type === 'scale') { config.min = 0; config.max = 10; }
+    if (type === 'matrix') {
+        config.rows = ['Statement 1'];
+        config.columns = ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree'];
+    }
     config.logic = { action: 'show', match: 'all', rules: [{ field_key: '', op: 'equals', value: '' }] };
 
     // Generate slug from label, with collision protection
@@ -842,6 +883,17 @@ function toggleEdit(id) {
 function addOption(f) {
     if (!f.config.options) f.config.options = [];
     f.config.options.push('Option ' + (f.config.options.length + 1));
+}
+
+// Matrix (survey) list helpers — rows are statements, columns are the scale choices.
+function addMatrixRow(f) {
+    if (!Array.isArray(f.config.rows)) f.config.rows = [];
+    f.config.rows.push('Statement ' + (f.config.rows.length + 1));
+}
+
+function addMatrixColumn(f) {
+    if (!Array.isArray(f.config.columns)) f.config.columns = [];
+    f.config.columns.push('Choice ' + (f.config.columns.length + 1));
 }
 
 // Options for a rule's "Field" dropdown: own fields (non-section,

@@ -256,6 +256,7 @@ const simAnswers = ref({}); // answers to the simulated ticket fields
 const palette = [
     { type: 'rating',    label: 'Rating',      icon: 'star' },
     { type: 'scale',     label: 'Scale',       icon: 'sliders' },
+    { type: 'matrix',    label: 'Matrix',      icon: 'grid' },
     { type: 'text',      label: 'Text',        icon: 'text' },
     { type: 'longtext',  label: 'Long Text',   icon: 'textarea' },
     { type: 'dropdown',  label: 'Dropdown',    icon: 'dropdown' },
@@ -339,8 +340,7 @@ const previewSubmittedAnswers = computed(() => {
     for (const f of liveFields.value) {
         if (f.type === 'section') continue;
         const v = previewAnswers.value[f.field_key];
-        const empty = v === '' || v === null || v === undefined || (Array.isArray(v) && v.length === 0);
-        if (!empty) out[f.field_key] = v;
+        if (!isEmptyAnswer(v)) out[f.field_key] = v;
     }
     return out;
 });
@@ -360,7 +360,11 @@ const previewSubmittedFields = computed(() =>
 );
 
 function isEmptyAnswer(v) {
-    return v === '' || v === null || v === undefined || (Array.isArray(v) && v.length === 0);
+    if (v === '' || v === null || v === undefined) return true;
+    if (Array.isArray(v)) return v.length === 0;
+    // An unanswered matrix is an empty object {}.
+    if (typeof v === 'object') return Object.keys(v).length === 0;
+    return false;
 }
 
 // Client-side version of the server's submit check: every visible,

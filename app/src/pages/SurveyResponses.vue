@@ -315,10 +315,14 @@ function scaleMax(key) {
     return Math.max(min, max);
 }
 
-// Readable value: multi-value types arrive as arrays (cascade = a path).
+// Readable value: multi-value types arrive as arrays (cascade = a path);
+// matrix answers arrive as an object {row: column} — one line per row.
 function answerText(a) {
     if (Array.isArray(a.value)) {
         return a.type === 'cascade' ? a.value.join(' › ') : a.value.join(', ');
+    }
+    if (a.value && typeof a.value === 'object') {
+        return Object.entries(a.value).map(([row, col]) => `${row}: ${col}`).join('\n');
     }
     return String(a.value ?? '');
 }
