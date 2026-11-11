@@ -447,7 +447,7 @@ function rcmi_tickets_handle_email_previews(WP_REST_Request $request) {
         if (!$captured) {
             $previews[$key] = [
                 'available' => false,
-                'note'      => 'This email would not be sent for the selected ticket (no matching recipients).',
+                'note'      => 'This email would not be sent for the selected ticket (no matching recipients, or it is disabled on the ticket\'s approval chain).',
             ];
             continue;
         }

@@ -83,18 +83,29 @@ function rcmi_tickets_perm_approval_chains_write() {
 }
 
 function rcmi_tickets_approval_chain_write_args($is_update = false) {
-    return [
+    $args = [
         'name'                => ['type' => 'string', 'required' => !$is_update, 'sanitize_callback' => 'sanitize_text_field'],
         'description'         => ['type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field'],
         'trigger_field_key'   => ['type' => 'string', 'sanitize_callback' => 'sanitize_key'],
         'trigger_value'       => ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field'],
-        'on_reject'           => ['type' => 'string', 'default' => 'restart', 'validate_callback' => function ($v) { return in_array($v, rcmi_tickets_valid_on_reject_modes(), true); }],
+        'on_reject'           => ['type' => 'string', 'validate_callback' => function ($v) { return in_array($v, rcmi_tickets_valid_on_reject_modes(), true); }],
         'completion_message'     => ['type' => 'string', 'sanitize_callback' => 'rcmi_tickets_sanitize_completion_message'],
         'completion_assignee_id' => ['type' => 'integer', 'validate_callback' => function ($v) { return !(int) $v || (bool) get_userdata((int) $v); }],
-        'is_active'              => ['type' => 'boolean', 'default' => true],
-        'survey_enabled'         => ['type' => 'boolean', 'default' => true],
+        'is_active'              => ['type' => 'boolean'],
+        'survey_enabled'         => ['type' => 'boolean'],
+        'completion_email_enabled' => ['type' => 'boolean'],
         'steps'               => ['type' => 'array', 'required' => !$is_update],
     ];
+    // Defaults apply on create only — a registered default also fills
+    // the param on update requests, which would silently reset flags a
+    // partial PUT never sent (e.g. survey_enabled forced back on).
+    if (!$is_update) {
+        $args['on_reject']['default'] = 'restart';
+        $args['is_active']['default'] = true;
+        $args['survey_enabled']['default'] = true;
+        $args['completion_email_enabled']['default'] = true;
+    }
+    return $args;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -174,6 +185,8 @@ function rcmi_tickets_format_approval_chain($row) {
         'is_active'              => (bool) $row['is_active'],
         // Default on — chains created before v14 have no stored value.
         'survey_enabled'         => !isset($row['survey_enabled']) || (bool) $row['survey_enabled'],
+        // Default on — chains created before v16 have no stored value.
+        'completion_email_enabled' => !isset($row['completion_email_enabled']) || (bool) $row['completion_email_enabled'],
         'steps'               => $formatted_steps,
         'created_at'          => $row['created_at'],
         'updated_at'          => $row['updated_at'],
@@ -277,6 +290,7 @@ function rcmi_tickets_handle_approval_chain_create($request) {
     $completion_assignee_id = !empty($request['completion_assignee_id']) ? (int) $request['completion_assignee_id'] : null;
     $is_active = !empty($request['is_active']);
     $survey_enabled = array_key_exists('survey_enabled', $request->get_params()) ? !empty($request['survey_enabled']) : true;
+    $completion_email_enabled = array_key_exists('completion_email_enabled', $request->get_params()) ? !empty($request['completion_email_enabled']) : true;
 
     $wpdb->insert($wpdb->prefix . 'rcmi_approval_chains', [
         'name'                   => $name,
@@ -288,9 +302,10 @@ function rcmi_tickets_handle_approval_chain_create($request) {
         'completion_assignee_id' => $completion_assignee_id,
         'is_active'              => $is_active ? 1 : 0,
         'survey_enabled'         => $survey_enabled ? 1 : 0,
+        'completion_email_enabled' => $completion_email_enabled ? 1 : 0,
         'created_at'             => $now,
         'updated_at'             => $now,
-    ], ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%s']);
+    ], ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d', '%s', '%s']);
 
     $id = (int) $wpdb->insert_id;
     if (!$id) {
@@ -354,6 +369,10 @@ function rcmi_tickets_handle_approval_chain_update($request) {
     }
     if (isset($request['survey_enabled'])) {
         $data['survey_enabled'] = !empty($request['survey_enabled']) ? 1 : 0;
+        $format[] = '%d';
+    }
+    if (isset($request['completion_email_enabled'])) {
+        $data['completion_email_enabled'] = !empty($request['completion_email_enabled']) ? 1 : 0;
         $format[] = '%d';
     }
 

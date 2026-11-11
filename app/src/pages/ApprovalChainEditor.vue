@@ -153,13 +153,26 @@
                 Active
             </label>
 
-            <!-- Survey opt-out -->
+            <!-- Completion email -->
             <div>
-                <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-                    <input type="checkbox" v-model="chain.survey_enabled" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
-                    Send satisfaction survey
-                </label>
-                <p class="mt-1 pl-6 text-xs text-gray-500">Uncheck to exclude tickets in this chain from the requestor satisfaction survey.</p>
+                <h4 class="rcmi-section-label mb-2">Completion email</h4>
+                <p class="mb-3 text-xs text-gray-500">When a ticket in this chain is completed, the requestor gets a single email combining the pieces checked below. Uncheck both and no completion email is sent.</p>
+                <div class="space-y-2">
+                    <div>
+                        <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                            <input type="checkbox" v-model="chain.completion_email_enabled" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                            Include completion message
+                        </label>
+                        <p class="mt-1 pl-6 text-xs text-gray-500">Adds the shared completion message from Form Builder → Settings.</p>
+                    </div>
+                    <div>
+                        <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                            <input type="checkbox" v-model="chain.survey_enabled" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                            Send satisfaction survey
+                        </label>
+                        <p class="mt-1 pl-6 text-xs text-gray-500">Adds the survey invitation when the ticket is eligible. Uncheck to exclude tickets in this chain from the requestor satisfaction survey.</p>
+                    </div>
+                </div>
             </div>
 
             <!-- Default assignee -->
@@ -321,6 +334,7 @@ async function load() {
             completion_assignee_id: null,
             is_active: true,
             survey_enabled: true,
+            completion_email_enabled: true,
             steps: [
                 { name: 'Step 1', approver_type: 'user', approver_user_id: null, approver_role: '' },
             ],
@@ -380,6 +394,7 @@ async function saveChain() {
             completion_assignee_id: chain.value.completion_assignee_id || 0,
             is_active: chain.value.is_active,
             survey_enabled: chain.value.survey_enabled !== false,
+            completion_email_enabled: chain.value.completion_email_enabled !== false,
             steps: chain.value.steps.map((s, i) => ({
                 name: s.name || ('Step ' + (i + 1)),
                 approver_type: s.approver_type,

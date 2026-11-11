@@ -20,10 +20,16 @@
 
         <!-- Toolbar: export + per page -->
         <div class="mb-4 flex flex-wrap items-center gap-2">
-            <div class="ml-auto flex items-center gap-2">
+            <div class="ml-auto flex flex-wrap items-center gap-2">
+                <label for="survey-export-scope" class="text-sm text-gray-600">CSV contents</label>
+                <select id="survey-export-scope" v-model="exportScope" :disabled="exporting"
+                    class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 disabled:opacity-50">
+                    <option value="survey">Survey only</option>
+                    <option value="survey_ticket">Survey and ticket</option>
+                </select>
                 <button @click="exportCsv" :disabled="exporting"
                     class="rcmi-button-secondary inline-flex items-center gap-1.5 px-3 py-2 text-sm disabled:opacity-50">
-                    <Icon name="download" /> {{ exporting ? 'Exporting…' : 'Export CSV' }}
+                    <Icon name="download" /> {{ exporting ? 'Exporting…' : 'Download CSV' }}
                 </button>
                 <label for="per-page" class="text-sm text-gray-600">Per page</label>
                 <select id="per-page" v-model.number="perPage" @change="onPerPageChange" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
@@ -178,6 +184,7 @@ const total = ref(0);
 const totalPages = ref(0);
 const detail = ref(null);
 const exporting = ref(false);
+const exportScope = ref('survey');
 const mounted = ref(false);
 
 function defaultFilters() {
@@ -410,9 +417,11 @@ async function load() {
 }
 
 async function exportCsv() {
+    if (exporting.value) return;
     exporting.value = true;
     try {
         const params = applyFilterParams(new URLSearchParams());
+        params.set('scope', exportScope.value);
 
         const config = window.rcmiTickets || {};
         const sep = config.apiBase.includes('?') ? '&' : '?';

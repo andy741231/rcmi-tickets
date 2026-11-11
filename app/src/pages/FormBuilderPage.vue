@@ -53,7 +53,7 @@
                             <h2 class="rcmi-section-label mb-4">Completion Email Message</h2>
                             <div class="space-y-4">
                                 <RichTextEditor v-model="settings.completion_message" />
-                                <p class="rcmi-field-help">Included in the email sent to the requestor when any ticket is completed. Leave blank to use the default message.</p>
+                                <p class="rcmi-field-help">Included in the completion email sent to the requestor — only when the ticket's approval chain has "Include completion message" enabled. The survey invitation is separate copy managed in <router-link to="/survey-builder?tab=settings" class="text-red-700 underline hover:text-red-800">Survey Builder → Settings</router-link>. Leave blank to use the default message.</p>
                                 <button @click="resetCompletion" class="rcmi-button-ghost px-2 py-1.5 text-xs">Reset completion message to default</button>
                             </div>
                         </div>

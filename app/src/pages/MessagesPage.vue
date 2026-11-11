@@ -98,7 +98,7 @@ const emailNotifications = [
     { key: 'approval_step', name: 'Approval needed', when: 'A ticket reaches an approval step', to: "That step's approvers" },
     { key: 'approval_rejected', name: 'Approval rejected', when: 'An approver rejects the ticket', to: 'The submitter (includes the reviewer\u2019s comment)' },
     { key: 'status_approved', name: 'Status: Assigned', when: 'A ticket is approved', to: 'The assignees' },
-    { key: 'status_completed', name: 'Status: Completed', when: 'A ticket is completed', to: 'The submitter (includes the shared completion message from Form Builder → Settings)' },
+    { key: 'status_completed', name: 'Status: Completed', when: 'A ticket is completed — its approval chain can turn this off', to: 'The submitter (completion message and/or survey invite, per the chain)' },
     { key: 'due_date_changed', name: 'Due date changed', when: 'Someone edits the due date', to: 'Submitter + assignees' },
     { key: 'assignees_changed', name: 'New assignee', when: 'Someone is added as an assignee', to: 'The newly added assignees' },
     { key: 'mention', name: 'Mention', when: 'Someone @mentions a user in a comment', to: 'The mentioned users' },

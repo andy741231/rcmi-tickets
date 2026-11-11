@@ -346,8 +346,10 @@ try {
     update_option('rcmi_tickets_completion_message', '<p>Global test msg</p>');
     survey_check('no chain → global message',
         rcmi_tickets_get_chain_completion_message($cm['ticket_id']) === '<p>Global test msg</p>');
-    survey_check('default mentions the survey',
-        strpos(rcmi_tickets_default_completion_message(), 'survey') !== false);
+    // The survey pitch is its own email section (survey builder copy) —
+    // the completion default stays survey-free.
+    survey_check('default has no survey pitch',
+        rcmi_tickets_default_completion_message() === '<p>Thank you for collaborating with our team on your request!</p>');
 
     // Chain with empty completion_message → still the global.
     $wpdb->insert($wpdb->prefix . 'rcmi_approval_chains', [

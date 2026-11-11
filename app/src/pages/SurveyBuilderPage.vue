@@ -33,34 +33,39 @@
             <!-- Settings -->
             <div v-if="tab === 'settings'">
                 <!-- Left column matches the Preview tab's "Simulate ticket"
-                     panel width (300px). Arbitrary grid-cols value avoids the
-                     WP core :root .grid-cols-N utility that outranks variants. -->
-                <div class="grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-                <div class="rcmi-card p-5">
+                     panel width (300px). Arbitrary grid-cols values avoid the
+                     WP core :root .grid-cols-N utility and the theme's global
+                     .grid rule, both of which outrank Tailwind variants —
+                     the base minmax track keeps mobile single-column. -->
+                <div class="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+                <div class="rcmi-card bg-gray-50 p-5">
                     <h2 class="rcmi-section-label mb-4">Reminders &amp; availability</h2>
-                    <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-                        <input type="checkbox" v-model="settings.reminders_enabled" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
-                        Send reminders when there's no response
-                    </label>
-                    <div v-if="settings.reminders_enabled" class="mt-3 space-y-3">
-                        <div>
-                            <label class="rcmi-field-label" for="survey-first-reminder">First reminder after (days)</label>
-                            <input id="survey-first-reminder" v-model.number="settings.first_reminder_days" type="number" min="0" class="rcmi-input" />
+                    <p class="mb-4 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-500">Editing is disabled. Existing reminder schedules and survey-link expiration remain active.</p>
+                    <fieldset disabled class="min-w-0">
+                        <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                            <input type="checkbox" v-model="settings.reminders_enabled" class="h-4 w-4 rounded border-gray-400 text-red-700 focus:ring-red-700" />
+                            Send reminders when there's no response
+                        </label>
+                        <div v-if="settings.reminders_enabled" class="mt-3 space-y-3">
+                            <div>
+                                <label class="rcmi-field-label" for="survey-first-reminder">First reminder after (days)</label>
+                                <input id="survey-first-reminder" v-model.number="settings.first_reminder_days" type="number" min="0" class="rcmi-input" />
+                            </div>
+                            <div>
+                                <label class="rcmi-field-label" for="survey-repeat">Repeat every (days)</label>
+                                <input id="survey-repeat" v-model.number="settings.repeat_every_days" type="number" min="1" class="rcmi-input" />
+                            </div>
+                            <div>
+                                <label class="rcmi-field-label" for="survey-max-reminders">Max reminders</label>
+                                <input id="survey-max-reminders" v-model.number="settings.max_reminders" type="number" min="0" class="rcmi-input" />
+                            </div>
                         </div>
-                        <div>
-                            <label class="rcmi-field-label" for="survey-repeat">Repeat every (days)</label>
-                            <input id="survey-repeat" v-model.number="settings.repeat_every_days" type="number" min="1" class="rcmi-input" />
+                        <div class="mt-3">
+                            <label class="rcmi-field-label" for="survey-close">Close survey link after (days)</label>
+                            <input id="survey-close" v-model.number="settings.close_after_days" type="number" min="1" class="rcmi-input sm:max-w-52" />
+                            <p class="mt-1 text-xs text-gray-500">Counted from the ticket's completion date.</p>
                         </div>
-                        <div>
-                            <label class="rcmi-field-label" for="survey-max-reminders">Max reminders</label>
-                            <input id="survey-max-reminders" v-model.number="settings.max_reminders" type="number" min="0" class="rcmi-input" />
-                        </div>
-                    </div>
-                    <div class="mt-3">
-                        <label class="rcmi-field-label" for="survey-close">Close survey link after (days)</label>
-                        <input id="survey-close" v-model.number="settings.close_after_days" type="number" min="1" class="rcmi-input sm:max-w-52" />
-                        <p class="mt-1 text-xs text-gray-500">Counted from the ticket's completion date.</p>
-                    </div>
+                    </fieldset>
                 </div>
 
                 <div class="space-y-5">
@@ -90,16 +95,17 @@
 
                 <div class="rcmi-card p-5">
                     <h2 class="rcmi-section-label mb-4">Survey e-mail</h2>
-                    <p class="mb-4 text-xs text-gray-500">Used for the survey invitation and its reminders. Placeholders: <code class="rounded bg-gray-100 px-1">{ticket}</code> = ticket number, <code class="rounded bg-gray-100 px-1">{title}</code> = ticket title. Reminders automatically get "Reminder:" in front of the subject.</p>
+                    <p class="mb-4 text-xs text-gray-500">The invitation text and button appear inside the ticket's Completed email (which keeps its own subject) and in manual resends; reminders send as their own e-mail and automatically get "Reminder:" in front of the subject. Placeholders: <code class="rounded bg-gray-100 px-1">{ticket}</code> = ticket number, <code class="rounded bg-gray-100 px-1">{title}</code> = ticket title.</p>
                     <div class="space-y-4">
                         <div>
                             <label class="rcmi-field-label" for="survey-email-subject">E-mail subject</label>
                             <input id="survey-email-subject" v-model="settings.email_subject" type="text" class="rcmi-input" />
+                            <p class="rcmi-field-help mt-1">Used only for standalone survey e-mails — manual resends and reminders — not for the invitation inside the Completed e-mail.</p>
                         </div>
                         <div>
                             <label class="rcmi-field-label">Invitation text</label>
                             <RichTextEditor v-model="settings.email_lead" />
-                            <p class="rcmi-field-help mt-1">Body of the first survey e-mail, above the ticket line and button.</p>
+                            <p class="rcmi-field-help mt-1">Shown above the survey button — in the ticket's Completed e-mail and in manual resends.</p>
                         </div>
                         <div>
                             <label class="rcmi-field-label">Reminder text</label>
@@ -109,6 +115,7 @@
                         <div>
                             <label class="rcmi-field-label" for="survey-email-button">Button label</label>
                             <input id="survey-email-button" v-model="settings.email_button" type="text" class="rcmi-input sm:max-w-52" />
+                            <p class="rcmi-field-help mt-1">Label for the survey button in both the Completed e-mail and standalone survey e-mails.</p>
                         </div>
                     </div>
                 </div>

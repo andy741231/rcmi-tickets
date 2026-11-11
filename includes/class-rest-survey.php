@@ -621,7 +621,9 @@ function rcmi_tickets_register_survey_routes() {
             'methods'             => 'GET',
             'callback'            => 'rcmi_tickets_handle_survey_export',
             'permission_callback' => 'rcmi_tickets_perm_settings',
-            'args'                => rcmi_tickets_survey_responses_args(),
+            'args'                => array_merge(rcmi_tickets_survey_responses_args(), [
+                'scope' => ['type' => 'string', 'enum' => ['survey', 'survey_ticket'], 'default' => 'survey'],
+            ]),
         ],
     ]);
 
@@ -1422,31 +1424,116 @@ function rcmi_tickets_handle_survey_field_values($request) {
 }
 
 /**
- * CSV export: returns all matching responses (same filters as the list,
- * no pagination) as a CSV download. Primary columns mirror the on-screen
- * table; each survey field adds a column headed by its label.
+ * Ticket-only columns for the combined export. Identity columns already
+ * present in the survey CSV are not repeated. Fetch related values in
+ * batches rather than expanding every ticket through the detail endpoint.
  */
-function rcmi_tickets_handle_survey_export($request) {
+function rcmi_tickets_survey_export_ticket_data($ticket_ids) {
+    global $wpdb;
+    $fields = array_values(array_filter(rcmi_tickets_get_all_form_fields(), function ($f) {
+        return $f['type'] !== 'section'
+            && !($f['type'] === 'date' && strcasecmp(trim($f['label']), 'Due Date') === 0);
+    }));
+    $headers = ['Ticket Status', 'Assignee', 'Due Date', 'Ticket Created', 'Ticket Updated',
+        'Description', 'Requestor Phone', 'Requestor Employee ID', 'Tags', 'Archived', 'Updated By'];
+    foreach ($fields as $field) {
+        $headers[] = 'Ticket: ' . $field['label'];
+    }
+    $result = ['headers' => $headers, 'rows' => []];
+    $ticket_ids = array_values(array_unique(array_filter(array_map('absint', $ticket_ids))));
+    if (!$ticket_ids) {
+        return $result;
+    }
+    $placeholders = implode(',', array_fill(0, count($ticket_ids), '%d'));
+    $tickets = $wpdb->get_results($wpdb->prepare(
+        "SELECT id, author_id, status, due_date, created_at, updated_at, description_text,
+                description, archived, updated_by
+         FROM {$wpdb->prefix}rcmi_tickets WHERE id IN ($placeholders)",
+        $ticket_ids
+    ), ARRAY_A);
+    $assignees = [];
+    $assignee_rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT a.ticket_id, u.display_name FROM {$wpdb->prefix}rcmi_ticket_assignees a
+         INNER JOIN {$wpdb->users} u ON u.ID = a.user_id
+         WHERE a.ticket_id IN ($placeholders) ORDER BY a.user_id",
+        $ticket_ids
+    ), ARRAY_A);
+    foreach ($assignee_rows as $row) {
+        $assignees[(int) $row['ticket_id']][] = $row['display_name'];
+    }
+    $tags = [];
+    $tag_rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT m.ticket_id, t.name FROM {$wpdb->prefix}rcmi_ticket_tag_map m
+         INNER JOIN {$wpdb->prefix}rcmi_ticket_tags t ON t.id = m.tag_id
+         WHERE m.ticket_id IN ($placeholders) ORDER BY t.id",
+        $ticket_ids
+    ), ARRAY_A);
+    foreach ($tag_rows as $row) {
+        $tags[(int) $row['ticket_id']][] = $row['name'];
+    }
+    $answers = [];
+    $answer_rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT ticket_id, field_id, value FROM {$wpdb->prefix}rcmi_form_answers
+         WHERE ticket_id IN ($placeholders) ORDER BY id",
+        $ticket_ids
+    ), ARRAY_A);
+    foreach ($answer_rows as $row) {
+        $answers[(int) $row['ticket_id']][(int) $row['field_id']] = $row['value'];
+    }
+    foreach ($tickets as $ticket) {
+        $id = (int) $ticket['id'];
+        $updater = !empty($ticket['updated_by']) ? get_userdata((int) $ticket['updated_by']) : null;
+        $values = [
+            $ticket['status'],
+            implode('; ', $assignees[$id] ?? []),
+            $ticket['due_date'] ?? '',
+            $ticket['created_at'],
+            $ticket['updated_at'],
+            $ticket['description_text'] ?: wp_strip_all_tags((string) $ticket['description']),
+            (string) get_user_meta((int) $ticket['author_id'], 'rcmi_phone', true),
+            (string) get_user_meta((int) $ticket['author_id'], 'rcmi_employee_id', true),
+            implode('; ', $tags[$id] ?? []),
+            !empty($ticket['archived']) ? 'Yes' : 'No',
+            $updater ? $updater->display_name : '',
+        ];
+        foreach ($fields as $field) {
+            $value = $answers[$id][(int) $field['id']] ?? '';
+            if (in_array($field['type'], ['checkbox', 'radio', 'cascade'], true)) {
+                $decoded = json_decode((string) $value, true);
+                if (is_array($decoded)) {
+                    $value = implode($field['type'] === 'cascade' ? ' › ' : '; ', $decoded);
+                }
+            }
+            $values[] = $value;
+        }
+        $result['rows'][$id] = $values;
+    }
+    return $result;
+}
+
+/**
+ * Build the filtered CSV independently of HTTP delivery, keeping one row
+ * per response in either scope. Tokens and private file paths never export.
+ */
+function rcmi_tickets_build_survey_export($params) {
     global $wpdb;
 
-    $params = $request->get_params();
+    $include_ticket = ($params['scope'] ?? 'survey') === 'survey_ticket';
     [$where_clause, $args] = rcmi_tickets_build_survey_responses_where($params);
 
-    $sort = in_array($params['sort'] ?? 'submitted_at', ['submitted_at', 'ticket_id'], true) ? $params['sort'] : 'submitted_at';
+    $sort = in_array($params['sort'] ?? 'submitted_at', ['submitted_at', 'ticket_id'], true) ? ($params['sort'] ?? 'submitted_at') : 'submitted_at';
     $order = strtolower((string) ($params['order'] ?? 'desc')) === 'asc' ? 'ASC' : 'DESC';
 
     // Fetch ALL matching rows (no pagination for export), capped at a
     // sane maximum like the ticket export.
-    $rows = $wpdb->get_results($wpdb->prepare(
-        "SELECT r.*, t.title AS ticket_title, t.author_id AS ticket_author_id,
+    $query = "SELECT r.*, t.title AS ticket_title, t.author_id AS ticket_author_id,
                 t.submitter_name, t.submitter_email
          FROM {$wpdb->prefix}rcmi_survey_responses r
          LEFT JOIN {$wpdb->prefix}rcmi_tickets t ON t.id = r.ticket_id
          WHERE {$where_clause}
          ORDER BY r.{$sort} {$order}, r.id {$order}
-         LIMIT 5000",
-        $args
-    ), ARRAY_A);
+         LIMIT 5000";
+    $rows = $wpdb->get_results($args ? $wpdb->prepare($query, $args) : $query, ARRAY_A);
 
     // Answers keyed by response_id → field_id (id ASC = field order at
     // submit time); deleted fields keep no column but stay in the data.
@@ -1466,15 +1553,39 @@ function rcmi_tickets_handle_survey_export($request) {
     // One column per survey question, in builder order.
     $survey_fields = rcmi_tickets_get_all_survey_fields();
 
+    $ticket_data = $include_ticket
+        ? rcmi_tickets_survey_export_ticket_data(wp_list_pluck($rows, 'ticket_id'))
+        : ['headers' => [], 'rows' => []];
     $headers = array_merge(
         ['Response ID', 'Ticket ID', 'Ticket Title', 'Respondent', 'Email', 'Job Title', 'Department', 'Submitted'],
+        $ticket_data['headers'],
         array_map(function ($f) { return $f['label']; }, $survey_fields)
     );
+    // Identically labeled questions are not necessarily the same question.
+    // Preserve their answers and distinguish headers rather than dropping data.
+    $used_headers = [];
+    foreach ($headers as &$header) {
+        $base = $header;
+        $suffix = 2;
+        while (isset($used_headers[strtolower(trim($header))])) {
+            $header = $base . ' (' . $suffix++ . ')';
+        }
+        $used_headers[strtolower(trim($header))] = true;
+    }
+    unset($header);
+
+    $safe_cells = function ($cells) {
+        return array_map(function ($value) {
+            $value = (string) $value;
+            // Spreadsheet programs interpret these prefixes as executable formulas.
+            return preg_match('/^(?:[=\-+@\t\r\n]|[[:space:]]+[=\-+@])/', $value) ? "'" . $value : $value;
+        }, $cells);
+    };
 
     $output = fopen('php://temp', 'r+');
     // BOM for Excel UTF-8 compatibility
     fwrite($output, "\xEF\xBB\xBF");
-    fputcsv($output, $headers);
+    fputcsv($output, $safe_cells($headers), ',', '"', '');
 
     foreach ($rows as $r) {
         $people = rcmi_tickets_survey_respondent_details($r);
@@ -1503,7 +1614,9 @@ function rcmi_tickets_handle_survey_export($request) {
             $field_values[] = $val;
         }
 
-        fputcsv($output, array_merge([
+        $ticket_values = $ticket_data['rows'][(int) $r['ticket_id']]
+            ?? array_fill(0, count($ticket_data['headers']), '');
+        fputcsv($output, $safe_cells(array_merge([
             (int) $r['id'],
             (int) $r['ticket_id'],
             (string) ($r['ticket_title'] ?? ''),
@@ -1512,15 +1625,24 @@ function rcmi_tickets_handle_survey_export($request) {
             $people['requestor_job_title'],
             $people['requestor_department'],
             (string) $r['submitted_at'],
-        ], $field_values));
+        ], $ticket_values, $field_values)), ',', '"', '');
     }
 
     rewind($output);
     $csv = stream_get_contents($output);
     fclose($output);
 
-    $filename = 'survey-responses-' . current_time('Y-m-d-His') . '.csv';
+    $filename = ($include_ticket ? 'survey-and-tickets-' : 'survey-responses-') . current_time('Y-m-d-His') . '.csv';
+    return ['csv' => $csv, 'filename' => $filename];
+}
 
+/**
+ * Manager-only raw download; the route permission gate covers both scopes.
+ */
+function rcmi_tickets_handle_survey_export($request) {
+    $export = rcmi_tickets_build_survey_export($request->get_params());
+    $csv = $export['csv'];
+    $filename = $export['filename'];
     // Serve as a raw file download — must echo directly and exit to
     // prevent WP REST from JSON-encoding the CSV body (which turns
     // real newlines into literal "\n" text).

@@ -9,6 +9,8 @@ This roadmap supersedes the completed root-level v1 implementation plan as the s
 - [x] Add a non-destructive regression check for persistence-manifest parity.
 - [x] Install fail-closed Apache/IIS guards and local-development routing protection for ticket attachments.
 - [x] Route valid public view tokens through the protected attachment download endpoint.
+- [x] Split the Completed email into composable per-chain sections — completion message (`completion_email_enabled`, schema v16) and survey invite (`survey_enabled` + eligibility) — one email max, none when both are off; standalone survey email copy extracted into `rcmi_tickets_survey_email_content()` with a configurable button.
+- [x] Add a `scope` picker to the survey-responses CSV export — `survey` (default) or `survey_ticket`; the combined scope places ticket metadata and answers before the survey questions, after the shared identity columns (`Ticket:`-prefixed answers for all current form questions except sections and the reserved `Due Date` field, same-label headers deduplicated), behind the same manager-only filters and 5000-row cap.
 - [ ] Add committed REST regression coverage for permissions, status transitions, approvals, public tokens, comments, attachments, and migrations.
 - [ ] Verify that ticket attachments cannot be fetched directly on IIS; otherwise move them outside the public web root or add an enforced server deny rule.
 - [ ] Define and verify token hashing, expiration, rotation, and revocation for public ticket and approval links.
@@ -18,6 +20,8 @@ This roadmap supersedes the completed root-level v1 implementation plan as the s
 ## Release gates
 
 - `php tests/check-persistence-manifest.php`
+- `php wp-cli.phar eval-file wp-content/plugins/rcmi-tickets/tests/check-completion-email.php` (from the WordPress root)
+- `php wp-cli.phar eval-file wp-content/plugins/rcmi-tickets/tests/check-survey-export.php` (from the WordPress root)
 - Raw ticket-upload URLs return 404, including duplicate-slash, encoded, and dot-segment path variants.
 - PHP syntax checks pass for every changed PHP file.
 - `npm run build` succeeds from `app/` when frontend source changes.

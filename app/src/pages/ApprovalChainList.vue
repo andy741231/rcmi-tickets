@@ -247,6 +247,8 @@ async function duplicate(c) {
             completion_assignee_id: c.completion_assignee_id || 0,
             completion_message: c.completion_message || '',
             is_active: false, // start copies inactive so they don't take effect accidentally
+            survey_enabled: c.survey_enabled !== false,
+            completion_email_enabled: c.completion_email_enabled !== false,
             steps: (c.steps || []).map((s, i) => ({
                 name: s.name || ('Step ' + (i + 1)),
                 approver_type: s.approver_type,

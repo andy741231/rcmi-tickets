@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
  * re-run on the next admin request to bring tables up to date.
  */
 if (!defined('RCMI_TICKETS_DB_VERSION')) {
-    define('RCMI_TICKETS_DB_VERSION', '15');
+    define('RCMI_TICKETS_DB_VERSION', '16');
 }
 
 /**
@@ -151,6 +151,8 @@ function rcmi_tickets_schema_statements() {
             completion_message TEXT NULL,
             completion_assignee_id BIGINT UNSIGNED NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
+            survey_enabled TINYINT(1) NOT NULL DEFAULT 1,
+            completion_email_enabled TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
@@ -378,6 +380,12 @@ function rcmi_tickets_run_schema_migrations() {
     $has_survey_enabled = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_approval_chains LIKE 'survey_enabled'");
     if (!$has_survey_enabled) {
         $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_approval_chains ADD COLUMN survey_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER is_active");
+    }
+
+    // v16: per-chain opt-out for the completion message (on by default)
+    $has_completion_email_enabled = $wpdb->get_var("SHOW COLUMNS FROM {$wpdb->prefix}rcmi_approval_chains LIKE 'completion_email_enabled'");
+    if (!$has_completion_email_enabled) {
+        $wpdb->query("ALTER TABLE {$wpdb->prefix}rcmi_approval_chains ADD COLUMN completion_email_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER survey_enabled");
     }
 }
 
