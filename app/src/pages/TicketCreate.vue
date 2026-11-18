@@ -1,7 +1,8 @@
 <template>
     <div class="mx-auto max-w-5xl">
-        <!-- Header -->
-        <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <!-- Header (hidden when submissions are closed so the page
+             focuses on signing in) -->
+        <div v-if="!(isPublic && publicClosed)" class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
                 <nav v-if="!isPublic" class="rcmi-breadcrumb mb-3" aria-label="Breadcrumb">
                     <router-link to="/">Tickets</router-link>
@@ -24,17 +25,28 @@
             :heading="successHeading" :message="publicSuccessMessage"
             @submit-another="resetPublicForm" />
 
-        <!-- Public submissions closed (SSO-only policy) -->
-        <div v-else-if="isPublic && publicClosed" class="rcmi-card p-8 text-center">
-            <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
-                <Icon name="x-circle" />
-            </div>
-            <h3 class="text-lg font-bold text-gray-900">Public submissions are currently closed</h3>
-            <p class="mt-2 text-sm text-gray-600">If you have a UH account, sign in to submit a ticket.</p>
-            <a v-if="config.ssoUrl" :href="config.ssoUrl"
-                class="rcmi-button-primary inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm mt-6">
-                Sign in with UH (SSO)
-            </a>
+        <!-- Public submissions closed (SSO-only policy): a focused
+             sign-in screen instead of an empty form -->
+        <div v-else-if="isPublic && publicClosed" class="rcmi-signin-gate">
+            <section class="rcmi-signin-card" aria-labelledby="rcmi-signin-heading">
+                <div class="rcmi-signin-icon" aria-hidden="true">
+                    <Icon name="lock" />
+                </div>
+                <h2 id="rcmi-signin-heading" class="rcmi-signin-heading">Sign in to submit a request</h2>
+
+                <a v-if="config.ssoUrl" :href="config.ssoUrl" class="rcmi-button-primary rcmi-signin-button"
+                    @click="rememberCreateRedirect">
+                    Sign in with UH CougarNet account
+                    <Icon name="arrow-right" />
+                </a>
+                <router-link v-else :to="{ name: 'login', query: { redirect: '/create' } }" class="rcmi-button-primary rcmi-signin-button">
+                    Sign in
+                    <Icon name="arrow-right" />
+                </router-link>
+
+
+                <p class="rcmi-signin-note">You'll continue to UH single sign-on. First time here? Your access is set up automatically when you sign in.</p>
+            </section>
         </div>
 
         <!-- Form -->
@@ -113,6 +125,13 @@ import { useStagedFiles } from '../composables/useStagedFiles.js';
 
 const config = window.rcmiTickets || {};
 const isPublic = computed(() => !config.isLoggedIn);
+
+// The SSO round-trip drops the URL hash, so the user would land on the
+// ticket list (#/). Stash the create route; main.js navigates to it once
+// the SPA reloads in logged-in mode.
+function rememberCreateRedirect() {
+    try { sessionStorage.setItem('rcmi_redirect', '/create'); } catch (e) {}
+}
 // Public submissions closed server-side (Form Builder setting)
 const publicClosed = computed(() => isPublic.value && meta.allow_public_submit === false);
 
