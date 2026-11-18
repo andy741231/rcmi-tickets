@@ -265,14 +265,14 @@ async function submit() {
             publicSuccess.value = true;
             publicSuccessMessage.value = result.message || meta.public_success?.message || 'Your ticket has been submitted. A confirmation has been sent to your email.';
             toast.success('Request submitted');
-            confetti.submitted();
+            confetti.submitted({ subtext: result.id ? `Ticket #${result.id}` : undefined });
         } else {
             // Logged-in submission
             const body = { ...form };
             const ticket = await api('/tickets', { method: 'POST', body });
             await uploadStagedFiles(ticket.id);
             toast.success('Ticket created');
-            confetti.submitted();
+            confetti.submitted({ subtext: `Ticket #${ticket.id}` });
             router.push(`/ticket/${ticket.id}`);
         }
     } catch (e) {

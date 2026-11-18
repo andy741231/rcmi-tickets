@@ -1033,7 +1033,7 @@ async function changeStatus(newStatus) {
         rejectMessage.value = '';
         toast.success(`Status changed to ${newStatus}`);
         if (newStatus === 'Completed') {
-            confetti.fireworks();
+            confetti.fireworks({ subtext: `Ticket #${ticket.value.id}` });
             loadSurvey();
         }
     } catch (e) {
@@ -1052,7 +1052,7 @@ async function chainApprove() {
         const res = await api(`/tickets/${ticket.value.id}/approve`, { method: 'POST', body });
         if (res.ticket_status === 'Approved') {
             toast.success('Ticket approved!');
-            confetti.burst();
+            confetti.burst({ subtext: `Ticket #${ticket.value.id} approved` });
         } else {
             toast.success('Step approved — advanced to next step');
         }

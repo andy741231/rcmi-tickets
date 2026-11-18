@@ -165,6 +165,334 @@
         opacity: 0;
     }
 
+    /* ── Cascade: search first, browse second ─────────────────────── */
+
+    /* Search is the field's main control — same weight as other inputs. */
+    .rcmi-cascade-search { position: relative; }
+
+    .rcmi-cascade-search-box {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0 0.75rem;
+        border: 1px solid #d1d5db;
+        border-radius: var(--rcmi-radius-sm);
+        background: var(--rcmi-surface);
+        color: var(--rcmi-muted);
+    }
+    .rcmi-cascade-search-box:focus-within {
+        border-color: var(--rcmi-red);
+        box-shadow: 0 0 0 1px var(--rcmi-red);
+    }
+    .rcmi-cascade-search-input {
+        flex: 1;
+        min-width: 0;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        outline: none !important;
+        background: transparent !important;
+        padding: 0.625rem 0 !important;
+        font-size: 0.9375rem;
+        color: var(--rcmi-ink);
+    }
+    .rcmi-cascade-search-clear {
+        display: inline-flex;
+        border: 0;
+        background: transparent;
+        color: var(--rcmi-muted);
+        cursor: pointer;
+        padding: 0.25rem;
+    }
+    .rcmi-cascade-search-clear:hover { color: var(--rcmi-red); }
+
+    .rcmi-cascade-search-results {
+        position: absolute;
+        z-index: 40;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        max-height: 20rem;
+        overflow-y: auto;
+        margin: 0;
+        padding: 0.25rem 0;
+        list-style: none;
+        background: var(--rcmi-surface);
+        border: 1px solid var(--rcmi-border);
+        border-radius: var(--rcmi-radius-lg);
+        box-shadow: var(--rcmi-shadow-md);
+    }
+    .rcmi-cascade-search-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0;
+        padding: 0.5rem 0.875rem;
+        cursor: pointer;
+    }
+    .rcmi-cascade-search-row.is-active { background: var(--rcmi-red-soft); }
+    .rcmi-cascade-search-main { display: flex; flex-direction: column; min-width: 0; }
+    .rcmi-cascade-search-label { font-size: 0.875rem; font-weight: 600; color: var(--rcmi-ink); }
+    .rcmi-cascade-search-label mark {
+        background: transparent;
+        color: var(--rcmi-red);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+    .rcmi-cascade-search-trail {
+        font-size: 0.75rem;
+        color: var(--rcmi-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .rcmi-cascade-search-meta {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.125rem;
+        flex-shrink: 0;
+        text-align: right;
+    }
+    .rcmi-cascade-search-level {
+        font-size: 0.625rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--rcmi-muted);
+        background: #f3f4f6;
+        border-radius: 9999px;
+        padding: 0.125rem 0.5rem;
+    }
+    .rcmi-cascade-search-more { font-size: 0.6875rem; color: var(--rcmi-muted); }
+    .rcmi-cascade-search-other .rcmi-cascade-search-label { font-weight: 400; }
+    .rcmi-cascade-search-other .rcmi-cascade-search-label em { font-weight: 600; }
+    .rcmi-cascade-search-empty {
+        margin: 0.375rem 0 0;
+        font-size: 0.8125rem;
+        color: var(--rcmi-muted);
+    }
+
+    /* Current answer, shown under the search while levels are tucked away. */
+    .rcmi-cascade-answer {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--rcmi-border);
+        border-left: 3px solid var(--rcmi-red);
+        border-radius: var(--rcmi-radius-sm);
+        background: #f9fafb;
+    }
+    .rcmi-cascade-answer > svg { flex-shrink: 0; color: var(--rcmi-success); }
+    .rcmi-cascade-answer-path {
+        flex: 1;
+        min-width: 0;
+        font-size: 0.8125rem;
+        color: var(--rcmi-muted);
+    }
+    .rcmi-cascade-answer-sep { margin: 0 0.3rem; color: #9ca3af; }
+    .rcmi-cascade-answer-leaf { font-weight: 700; color: var(--rcmi-ink); }
+    .rcmi-cascade-answer-clear {
+        display: inline-flex;
+        border: 0;
+        background: transparent;
+        color: var(--rcmi-muted);
+        cursor: pointer;
+        padding: 0.25rem;
+    }
+    .rcmi-cascade-answer-clear:hover { color: var(--rcmi-red); }
+
+    /* Small text links: "Or browse all options", "Change". */
+    .rcmi-cascade-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        border: 0;
+        background: transparent;
+        padding: 0;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--rcmi-red);
+        cursor: pointer;
+    }
+    .rcmi-cascade-link:hover { color: var(--rcmi-red-dark); text-decoration: underline; }
+    .rcmi-cascade-link svg { width: 14px; height: 14px; }
+    .rcmi-cascade-browse-toggle { align-self: flex-start; }
+
+    /* Browse levels under a search: indented and quieter, so they read
+       as the secondary path. */
+    .rcmi-cascade-browse--sub {
+        padding: 0.75rem 0 0.25rem 0.875rem;
+        border-left: 2px solid var(--rcmi-border);
+    }
+
+    .rcmi-cascade-other-wrap { display: flex; flex-direction: column; gap: 0.25rem; }
+    .rcmi-cascade-other-label { font-size: 0.75rem; font-weight: 600; color: var(--rcmi-muted); }
+
+    /* Visually hidden input that carries a custom control's value into
+       native form validation (display:none would skip validation). */
+    .rcmi-proxy-input {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+        border: 0;
+        padding: 0;
+    }
+
+    /* ── Date picker (ticket form date fields) ─────────────────────── */
+
+    .rcmi-datepicker { position: relative; }
+
+    .rcmi-datepicker-trigger {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        text-align: left;
+        cursor: pointer;
+    }
+    .rcmi-datepicker-trigger.is-empty { color: var(--rcmi-muted); }
+    .rcmi-datepicker-trigger svg { flex-shrink: 0; color: var(--rcmi-muted); }
+
+    /* Visually hidden but still validatable (display:none would skip it). */
+    .rcmi-datepicker-proxy {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+        border: 0;
+        padding: 0;
+    }
+
+    .rcmi-datepicker-pop {
+        position: absolute;
+        z-index: 50;
+        top: calc(100% + 6px);
+        left: 0;
+        width: 320px;
+        max-width: calc(100vw - 32px);
+        background: var(--rcmi-surface);
+        border: 1px solid var(--rcmi-border);
+        border-radius: var(--rcmi-radius-lg);
+        box-shadow: var(--rcmi-shadow-md);
+        padding: 0.875rem;
+    }
+
+    .rcmi-datepicker-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+    }
+    .rcmi-datepicker-month { font-weight: 700; font-size: 0.9375rem; color: var(--rcmi-ink); }
+    .rcmi-datepicker-nav {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 9999px;
+        border: 0;
+        background: transparent;
+        color: var(--rcmi-ink);
+        cursor: pointer;
+    }
+    .rcmi-datepicker-nav:hover:not(:disabled) { background: var(--rcmi-red-soft); color: var(--rcmi-red); }
+    .rcmi-datepicker-nav:disabled { opacity: 0.3; cursor: default; }
+
+    .rcmi-datepicker-grid { width: 100%; border-collapse: separate; border-spacing: 2px; table-layout: fixed; }
+    .rcmi-datepicker-grid th {
+        padding: 0.25rem 0;
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--rcmi-muted);
+        text-align: center;
+    }
+    .rcmi-datepicker-grid td { padding: 0; text-align: center; }
+
+    .rcmi-datepicker-day {
+        width: 100%;
+        aspect-ratio: 1;
+        min-height: 2.25rem;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--rcmi-ink);
+        cursor: pointer;
+        position: relative;
+    }
+    .rcmi-datepicker-day:hover { background: var(--rcmi-red-soft); color: var(--rcmi-red); }
+    .rcmi-datepicker-day:focus-visible { outline: 2px solid var(--rcmi-red); outline-offset: 1px; }
+    .rcmi-datepicker-day.is-today { border-color: var(--rcmi-border); }
+    .rcmi-datepicker-day.is-earliest:not(.is-selected) { border-color: var(--rcmi-red); }
+    .rcmi-datepicker-day.is-selected,
+    .rcmi-datepicker-day.is-selected:hover { background: var(--rcmi-red); color: #fff; }
+
+    /* Unavailable: hatched slate + struck-through number, so "blocked"
+       reads clearly without relying on gray alone. */
+    .rcmi-datepicker-day.is-blocked,
+    .rcmi-datepicker-day.is-blocked:hover {
+        cursor: not-allowed;
+        color: #9a9d9f;
+        font-weight: 400;
+        text-decoration: line-through;
+        background: repeating-linear-gradient(135deg, #f1f2f3 0 4px, #e4e5e6 4px 5px);
+    }
+
+    /* Past days: simply faded — hatching is reserved for blocked-out days. */
+    .rcmi-datepicker-day.is-past,
+    .rcmi-datepicker-day.is-past:hover {
+        cursor: default;
+        color: #c4c6c8;
+        font-weight: 400;
+        background: transparent;
+    }
+
+    .rcmi-datepicker-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.375rem 1rem;
+        margin-top: 0.625rem;
+        padding-top: 0.625rem;
+        border-top: 1px solid var(--rcmi-border);
+        font-size: 0.75rem;
+        color: var(--rcmi-ink);
+    }
+    .rcmi-datepicker-legend span { display: inline-flex; align-items: center; gap: 0.375rem; }
+    .rcmi-datepicker-swatch {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        border: 1px solid var(--rcmi-border);
+    }
+    .rcmi-datepicker-swatch.is-open { background: #fff; }
+    .rcmi-datepicker-swatch.is-blocked { background: repeating-linear-gradient(135deg, #f1f2f3 0 3px, #d6d7d8 3px 4px); }
+
+
+    .rcmi-datepicker-blocked-msg {
+        margin-top: 0.5rem;
+        padding: 0.5rem 0.625rem;
+        border-radius: var(--rcmi-radius-sm);
+        background: var(--rcmi-danger-soft);
+        color: var(--rcmi-danger);
+        font-size: 0.75rem;
+        line-height: 1.45;
+    }
+
     /* ── Sign-in gate (public submissions closed) ─────────────────── */
 
     .rcmi-signin-gate {
@@ -1310,74 +1638,10 @@
         color: #fff;
     }
 
-    /* search style */
-    .rcmi-cascade-results {
-        position: absolute;
-        z-index: 20;
-        left: 0;
-        right: 0;
-        margin-top: 0.25rem;
-        max-height: 15rem;
-        overflow-y: auto;
-        border: 1px solid var(--rcmi-border);
-        border-radius: var(--rcmi-radius-md);
-        background: var(--rcmi-surface);
-        box-shadow: var(--rcmi-shadow-md);
-    }
-
-    .rcmi-cascade-result {
-        display: block;
-        width: 100%;
-        text-align: left;
-        border: none;
-        background: transparent;
-        color: var(--rcmi-ink);
-        font-size: 0.8125rem;
-        padding: 0.5rem 0.75rem;
-        cursor: pointer;
-    }
-
-    .rcmi-cascade-result:hover {
-        background: var(--rcmi-red-soft);
-        color: var(--rcmi-red-dark);
-    }
-
-    .rcmi-cascade-results-empty {
-        position: absolute;
-        z-index: 20;
-        left: 0;
-        right: 0;
-        margin-top: 0.25rem;
-        border: 1px solid var(--rcmi-border);
-        border-radius: var(--rcmi-radius-md);
-        background: var(--rcmi-surface);
-        box-shadow: var(--rcmi-shadow-md);
-        color: var(--rcmi-muted);
-        font-size: 0.8125rem;
-        padding: 0.5rem 0.75rem;
-    }
-
-    .rcmi-cascade-selection {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        border: 1px solid var(--rcmi-border);
-        border-radius: var(--rcmi-radius-md);
-        background: var(--rcmi-surface);
-        padding: 0.5rem 0.75rem;
-        max-width: 28rem;
-    }
-
-    .rcmi-cascade-selection-path {
-        font-size: 0.8125rem;
-        font-weight: 600;
-        color: var(--rcmi-ink);
-    }
 }
 
 @layer components {
     .rcmi-cascade-other {
-        margin-top: 0.5rem;
         max-width: 28rem;
     }
 

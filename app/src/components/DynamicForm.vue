@@ -99,27 +99,35 @@
 
                 <!-- date -->
                 <template v-else-if="f.type === 'date'">
-                    <input :id="'field-' + f.field_key"
-                        v-model="answers[f.field_key]" type="date"
-                        :min="dateMin(f)"
-                        :required="f.required" class="rcmi-input"
-                        @click="openDatePicker"
+                    <DatePickerField :id="'field-' + f.field_key"
+                        v-model="answers[f.field_key]"
+                        :label="f.label"
+                        :min="dateMin(f) || ''"
+                        :min-days="dateMinDays(f)"
+                        :weekdays-only="f.config?.include_weekend === false"
+                        :required="!!f.required"
+                        :describedby="'field-' + f.field_key + '-help'"
                         @change="validateDate(f)" />
-                    <p v-if="dateErrors[f.field_key]" class="rcmi-field-help text-red-700">{{ dateErrors[f.field_key] }}</p>
-                    <p v-else-if="dateHint(f)" class="rcmi-field-help">{{ dateHint(f) }}</p>
+                    <p v-if="dateErrors[f.field_key]" :id="'field-' + f.field_key + '-help'" class="rcmi-field-help text-red-700">{{ dateErrors[f.field_key] }}</p>
+                    <p v-else-if="dateHint(f)" :id="'field-' + f.field_key + '-help'" class="rcmi-field-help">{{ dateHint(f) }}</p>
                 </template>
 
                 <!-- dropdown (with optional cascading + "Other" free-text) -->
                 <template v-else-if="f.type === 'dropdown'">
-                    <select :id="'field-' + f.field_key"
-                        :value="dropdownSelectValue(f)" :required="f.required" class="rcmi-input"
-                        :disabled="f.config?.cascades_from && !answers[f.config.cascades_from]"
-                        @change="onDropdownChange(f, $event.target.value)">
-                        <option value="">{{ f.config?.cascades_from ? 'Select ' + f.label.toLowerCase() + '…' : 'Select…' }}</option>
-                        <option v-for="opt in dropdownOptions(f)" :key="opt" :value="opt">{{ opt }}</option>
-                        <option v-if="f.config?.allow_other" :value="DROPDOWN_OTHER">Other (specify…)</option>
-                    </select>
-                    <input v-if="dropdownIsOther(f)" type="text"
+                    <SearchSelect :id="'field-' + f.field_key"
+                        :model-value="dropdownSelectValue(f)"
+                        :options="dropdownSearchOptions(f)"
+                        :placeholder="f.config?.cascades_from ? 'Select ' + f.label.toLowerCase() + '…' : 'Select…'"
+                        :search-placeholder="'Search ' + f.label.toLowerCase() + '…'"
+                        clear-label="Clear selection"
+                        :clearable="!f.required"
+                        :required="!!f.required"
+                        trigger-class="rcmi-input"
+                        :disabled="!!(f.config?.cascades_from && !answers[f.config.cascades_from])"
+                        :other-value="f.config?.allow_other ? DROPDOWN_OTHER : null"
+                        @update:model-value="onDropdownChange(f, $event ?? '')"
+                        @other="onDropdownOther(f, $event)" />
+                    <input v-if="dropdownIsOther(f)" type="text" :id="'field-' + f.field_key + '-other'"
                         v-model="answers[f.field_key]" class="rcmi-input mt-2"
                         placeholder="Type your answer…" :required="f.required" />
                 </template>
@@ -228,9 +236,11 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, nextTick } from 'vue';
 import CascadeField from './CascadeField.vue';
 import Icon from './Icon.vue';
+import DatePickerField from './DatePickerField.vue';
+import SearchSelect from './SearchSelect.vue';
 import { isFieldVisible as checkFieldVisible } from '../lib/fieldLogic.js';
 
 const props = defineProps({
@@ -392,6 +402,12 @@ function dropdownOptions(field) {
     return config.options || [];
 }
 
+// Option rows for the searchable dropdown; "Other" stays last.
+function dropdownSearchOptions(f) {
+    const opts = dropdownOptions(f).map(o => ({ value: o, label: o }));
+    if (f.config?.allow_other) opts.push({ value: DROPDOWN_OTHER, label: 'Other (specify…)' });
+    return opts;
+}
 function dropdownIsOther(f) {
     if (!f.config?.allow_other) return false;
     if (dropdownOther.value[f.field_key]) return true;
@@ -403,6 +419,13 @@ function dropdownSelectValue(f) {
     return dropdownIsOther(f) ? DROPDOWN_OTHER : (answers.value[f.field_key] || '');
 }
 
+// "Use "…" as Other" from a search with no matches: switch to Other with
+// the typed text prefilled (still editable), and focus that box.
+function onDropdownOther(f, text) {
+    dropdownOther.value = { ...dropdownOther.value, [f.field_key]: true };
+    answers.value[f.field_key] = text;
+    nextTick(() => document.getElementById('field-' + f.field_key + '-other')?.focus());
+}
 function onDropdownChange(f, val) {
     if (val === DROPDOWN_OTHER) {
         dropdownOther.value = { ...dropdownOther.value, [f.field_key]: true };
@@ -431,12 +454,14 @@ function dateMin(field) {
             if (day !== 0 && day !== 6) added++;
         }
     }
-    return d.toISOString().split('T')[0];
+    // Local calendar date — toISOString() is UTC and would shift the
+    // window by a day in the evening (after 6 pm in Houston).
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Open the native date picker when clicking anywhere in the field.
-function openDatePicker(e) {
-    try { e.target.showPicker?.(); } catch { /* picker needs a user gesture or isn't supported */ }
+function dateMinDays(field) {
+    const n = parseInt(field.config?.min_days, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 // Human-readable "earliest available" hint so users know what's blocked
@@ -457,8 +482,12 @@ function isWeekend(iso) {
 function dateHint(field) {
     const min = dateMin(field);
     if (!min) return field.config?.include_weekend === false ? 'Weekdays only.' : '';
-    let hint = `Earliest available: ${fmtDate(min)}`;
-    if (field.config?.include_weekend === false) hint += ' · Weekdays only';
+    const days = dateMinDays(field);
+    const weekdays = field.config?.include_weekend === false;
+    let hint = days
+        ? `Needs at least ${days} ${weekdays ? 'business ' : ''}day${days === 1 ? '' : 's'}' notice — earlier dates are unavailable. Earliest: ${fmtDate(min)}.`
+        : `Earliest available: ${fmtDate(min)}.`;
+    if (weekdays) hint += ' Weekdays only.';
     return hint;
 }
 

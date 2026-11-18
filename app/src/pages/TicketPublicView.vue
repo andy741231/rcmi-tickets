@@ -149,7 +149,7 @@
                 </div>
             </div>
 
-            <p class="mt-6 text-center text-xs text-gray-400">You will receive updates by email as your ticket is processed.</p>
+            <p class="mt-6 text-center text-xs text-gray-400">You will receive an email when your ticket is completed.</p>
         </template>
     </div>
 </template>

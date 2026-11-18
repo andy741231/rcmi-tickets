@@ -530,16 +530,15 @@ function rcmi_tickets_email_public_receipt($ticket_id, $name, $email, $title, $v
         . '<h2>' . __('Thank you for your submission', 'rcmi-tickets') . '</h2>'
         . '<p>' . sprintf(__('Hi %s,', 'rcmi-tickets'), esc_html($name)) . '</p>'
         . '<p>' . __('We have received your ticket and our team will review it shortly.', 'rcmi-tickets') . '</p>'
-        . '<p><strong>' . __('Ticket #:', 'rcmi-tickets') . '</strong> ' . (int) $ticket_id . '</p>'
-        . '<p><strong>' . __('Title:', 'rcmi-tickets') . '</strong> ' . esc_html($title) . '</p>'
-        . '<p>' . __('You will receive updates by email as your ticket is processed.', 'rcmi-tickets') . '</p>'
+        . rcmi_tickets_email_summary_box($ticket_id, esc_html($title))
+        . '<p>' . sprintf(__('You can check on your ticket at any time using the %s button below. We\'ll also email you when your request is completed.', 'rcmi-tickets'), '<strong>' . __('View ticket', 'rcmi-tickets') . '</strong>') . '</p>'
         . '<p style="margin-top:1rem;"><a href="' . esc_url($ticket_url) . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('View ticket', 'rcmi-tickets') . '</a></p>'
         . '<h3 style="margin-top:1.5rem;font-size:15px;color:#333;">' . __('Ticket details', 'rcmi-tickets') . '</h3>'
         . '<table style="border-collapse:collapse;margin-top:.5rem;">' . $details['html'] . '</table>'
         . '</body></html>';
 
     $plain = sprintf(
-        "Thank you for your submission\n\nHi %s,\n\nWe have received your ticket and our team will review it shortly.\n\nTicket #%d\nTitle: %s\n\nYou will receive updates by email as your ticket is processed.\n\nView ticket: %s\n\nTicket details:\n%s",
+        "Thank you for your submission\n\nHi %s,\n\nWe have received your ticket and our team will review it shortly.\n\nTicket #%d\nTitle: %s\n\nYou can check on your ticket at any time using the View ticket link below. We'll also email you when your request is completed.\n\nView ticket: %s\n\nTicket details:\n%s",
         $name,
         $ticket_id,
         $title,

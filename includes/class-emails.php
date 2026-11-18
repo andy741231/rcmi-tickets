@@ -41,6 +41,11 @@ function rcmi_tickets_email_ticket_url($ticket_id) {
  * @return bool
  */
 function rcmi_tickets_send_email($to, $subject, $html, $plain = '') {
+    // Every ticket email shares one UH-branded layout. Applied here (not
+    // per template) so all notifications — and the dry-run previews on
+    // Settings → Automated emails — stay consistent.
+    $html = rcmi_tickets_email_layout($html);
+
     if (!empty($GLOBALS['rcmi_tickets_email_dry_run'])) {
         $GLOBALS['rcmi_tickets_email_captured'][] = compact('to', 'subject', 'html', 'plain');
         return true;
@@ -61,7 +66,23 @@ function rcmi_tickets_send_email($to, $subject, $html, $plain = '') {
         $headers[] = 'From: ' . $from;
     }
 
-    return wp_mail($to, $subject, $html, $headers);
+    // Send the plain-text version as the multipart/alternative part.
+    // wp_mail() has no AltBody parameter and clears it on every call, so
+    // set it from phpmailer_init for this one message only.
+    $alt = trim((string) $plain);
+    $set_alt = function ($phpmailer) use ($alt) {
+        $phpmailer->AltBody = $alt;
+    };
+    if ($alt !== '') {
+        add_action('phpmailer_init', $set_alt);
+    }
+    try {
+        return wp_mail($to, $subject, $html, $headers);
+    } finally {
+        if ($alt !== '') {
+            remove_action('phpmailer_init', $set_alt);
+        }
+    }
 }
 
 /**
@@ -89,6 +110,129 @@ function rcmi_tickets_email_esc($value) {
     return esc_html((string) $value);
 }
 
+// ============================================================
+// Shared email layout (UH brand: uh.edu/brand style guide)
+// ============================================================
+
+/** Email-safe font stack — web fonts don't load reliably in mail clients. */
+const RCMI_TICKETS_EMAIL_FONT = "Helvetica, Arial, 'Segoe UI', sans-serif";
+
+/**
+ * Greeting name: the WP first name when set; otherwise SSO-style
+ * "Last, First" display names are flipped to "First"; otherwise the
+ * display name as-is.
+ *
+ * @param WP_User|string $user_or_name
+ */
+function rcmi_tickets_email_greeting_name($user_or_name) {
+    if ($user_or_name instanceof WP_User) {
+        $first = trim((string) get_user_meta($user_or_name->ID, 'first_name', true));
+        if ($first !== '') {
+            return $first;
+        }
+        $name = (string) $user_or_name->display_name;
+    } else {
+        $name = (string) $user_or_name;
+    }
+    $name = trim($name);
+    if (substr_count($name, ',') === 1) {
+        $parts = array_map('trim', explode(',', $name));
+        if ($parts[1] !== '') {
+            return $parts[1];
+        }
+    }
+    return $name;
+}
+
+/**
+ * Boxed "Ticket #N / title" summary for the top of an email.
+ * $title_html must already be escaped.
+ */
+function rcmi_tickets_email_summary_box($ticket_id, $title_html) {
+    $f = RCMI_TICKETS_EMAIL_FONT;
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 18px;border-collapse:separate;background:#f9fafb;border:1px solid #e5e7eb;border-left:4px solid #C8102E;border-radius:6px;">'
+        . '<tr><td style="padding:14px 18px;font-family:' . $f . ';">'
+        . '<div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#54585A;">'
+        . sprintf(esc_html__('Ticket #%d', 'rcmi-tickets'), (int) $ticket_id) . '</div>'
+        . '<div style="margin-top:4px;font-size:17px;line-height:1.35;font-weight:700;color:#111827;">' . $title_html . '</div>'
+        . '</td></tr></table>';
+}
+
+/**
+ * Wrap a template's HTML in the shared branded layout: UH red header
+ * band, white 600px card, footer, and a hidden inbox preview line.
+ * Templates keep emitting simple markup (<h2>, <p>, the red button,
+ * the "Ticket details" table); this restyles those building blocks so
+ * every notification matches without each template carrying styles.
+ * Idempotent — already-wrapped HTML is returned unchanged.
+ */
+function rcmi_tickets_email_layout($html) {
+    $html = (string) $html;
+    if ($html === '' || strpos($html, 'data-rcmi-email-layout') !== false) {
+        return $html;
+    }
+    $inner = preg_match('#<body[^>]*>(.*)</body>#is', $html, $m) ? $m[1] : $html;
+    $f = RCMI_TICKETS_EMAIL_FONT;
+
+    $inner = strtr($inner, [
+        '<h2>'  => '<h1 style="margin:0 0 18px;font-family:' . $f . ';font-size:24px;line-height:1.25;font-weight:700;color:#111827;">',
+        '</h2>' => '</h1>',
+        '<p>'   => '<p style="margin:0 0 14px;font-family:' . $f . ';font-size:15px;line-height:1.6;color:#1f2937;">',
+        // Button wrapper + button
+        '<p style="margin-top:1rem;">' => '<p style="margin:24px 0 8px;font-family:' . $f . ';">',
+        'style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;"'
+            => 'style="display:inline-block;padding:13px 26px;background:#C8102E;color:#ffffff;font-family:' . $f . ';font-size:15px;font-weight:700;line-height:1;text-decoration:none;border-radius:6px;"',
+        // "Ticket details" section label + table
+        '<h3 style="margin-top:1.5rem;font-size:15px;color:#333;">'
+            => '<h2 style="margin:30px 0 4px;padding-top:22px;border-top:1px solid #e5e7eb;font-family:' . $f . ';font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#54585A;">',
+        '<table style="border-collapse:collapse;margin-top:.5rem;">'
+            => '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">',
+    ]);
+    // The section label opened as <h2>; close it to match.
+    $inner = preg_replace('#(<h2 style="margin:30px[^"]*">)(.*?)</h3>#s', '$1$2</h2>', $inner);
+
+    // Inbox preview: the first real sentence (skip the "Hi …," greeting).
+    $preheader = '';
+    if (preg_match_all('#<p[^>]*>(.*?)</p>#s', $inner, $pm)) {
+        foreach ($pm[1] as $para) {
+            $text = trim(html_entity_decode(wp_strip_all_tags($para), ENT_QUOTES, 'UTF-8'));
+            if ($text !== '' && !preg_match('/^(Hi|Hello)\b/i', $text)) {
+                $preheader = $text;
+                break;
+            }
+        }
+    }
+    $preheader = esc_html(wp_html_excerpt($preheader, 140, '…'));
+    // Filler keeps clients from pulling body text into the preview.
+    $filler = str_repeat('&#8204;&nbsp;', 60);
+
+    $site = esc_html__('RCMI at University of Houston', 'rcmi-tickets');
+    $footer = esc_html__('You\'re receiving this email because of your involvement with an RCMI ticket. Questions? Just reply to this email.', 'rcmi-tickets');
+
+    return '<!doctype html><html lang="en" data-rcmi-email-layout="1"><head>'
+        . '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        . '<meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">'
+        . '<style>a{color:#C8102E;}@media (max-width:620px){.rcmi-card{padding:24px 20px !important;}}</style>'
+        . '</head><body style="margin:0;padding:0;background:#f3f4f6;">'
+        . '<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#f3f4f6;">' . $preheader . $filler . '</div>'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;"><tr><td align="center" style="padding:24px 12px;">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;">'
+        // Header band
+        . '<tr><td style="background:#C8102E;border-radius:8px 8px 0 0;padding:18px 32px;font-family:' . $f . ';">'
+        . '<span style="font-size:20px;font-weight:700;letter-spacing:.12em;color:#ffffff;">RCMI</span>'
+        . '<span style="font-size:13px;color:#ffffff;padding-left:10px;">' . esc_html__('University of Houston', 'rcmi-tickets') . '</span>'
+        . '</td></tr>'
+        // Content card
+        . '<tr><td class="rcmi-card" style="background:#ffffff;padding:32px;border-radius:0 0 8px 8px;border:1px solid #e5e7eb;border-top:0;">'
+        . $inner
+        . '</td></tr>'
+        // Footer
+        . '<tr><td style="padding:20px 32px 8px;font-family:' . $f . ';font-size:12px;line-height:1.6;color:#54585A;text-align:center;">'
+        . '<strong style="color:#111827;">' . $site . '</strong><br>' . $footer
+        . '</td></tr>'
+        . '</table></td></tr></table></body></html>';
+}
+
 /**
  * Build ticket details as HTML table rows + plain-text lines for email.
  * Returns ['html' => string, 'plain' => string].
@@ -101,13 +245,14 @@ function rcmi_tickets_email_ticket_details($ticket) {
     $details_plain = '';
 
     // Core fields
-    $detail_rows = [
-        'Due date'  => $ticket['due_date'] ?: '—',
-        'Status'    => rcmi_tickets_display_status($ticket['status']),
-    ];
+    $detail_rows = [];
+    if (!empty($ticket['due_date'])) {
+        $detail_rows['Due date'] = $ticket['due_date'];
+    }
+    $detail_rows['Status'] = rcmi_tickets_display_status($ticket['status']);
     foreach ($detail_rows as $label => $val) {
-        $details_html .= '<tr><td style="padding:4px 12px 4px 0;color:#666;font-size:13px;white-space:nowrap;">' . rcmi_tickets_email_esc($label) . ':</td>'
-            . '<td style="padding:4px 0;font-size:13px;">' . rcmi_tickets_email_esc($val) . '</td></tr>';
+        $details_html .= '<tr><td style="padding:9px 16px 9px 0;border-bottom:1px solid #f0f1f2;color:#54585A;font-size:14px;line-height:1.45;white-space:nowrap;vertical-align:top;width:1%;font-family:Helvetica, Arial, sans-serif;">' . rcmi_tickets_email_esc($label) . ':</td>'
+            . '<td style="padding:9px 0;border-bottom:1px solid #f0f1f2;font-size:14px;line-height:1.45;color:#1f2937;font-family:Helvetica, Arial, sans-serif;">' . rcmi_tickets_email_esc($val) . '</td></tr>';
         $details_plain .= $label . ': ' . $val . "\n";
     }
 
@@ -118,16 +263,16 @@ function rcmi_tickets_email_ticket_details($ticket) {
         $val = $form_answers[$key];
         if (is_array($val)) $val = implode(', ', $val);
         if ($val === '' || $val === null) $val = '—';
-        $details_html .= '<tr><td style="padding:4px 12px 4px 0;color:#666;font-size:13px;white-space:nowrap;">' . rcmi_tickets_email_esc($f['label']) . ':</td>'
-            . '<td style="padding:4px 0;font-size:13px;">' . rcmi_tickets_email_esc($val) . '</td></tr>';
+        $details_html .= '<tr><td style="padding:9px 16px 9px 0;border-bottom:1px solid #f0f1f2;color:#54585A;font-size:14px;line-height:1.45;white-space:nowrap;vertical-align:top;width:1%;font-family:Helvetica, Arial, sans-serif;">' . rcmi_tickets_email_esc($f['label']) . ':</td>'
+            . '<td style="padding:9px 0;border-bottom:1px solid #f0f1f2;font-size:14px;line-height:1.45;color:#1f2937;font-family:Helvetica, Arial, sans-serif;">' . rcmi_tickets_email_esc($val) . '</td></tr>';
         $details_plain .= $f['label'] . ': ' . $val . "\n";
     }
 
     // Description
     $desc_text = $ticket['description_text'] ?: wp_strip_all_tags($ticket['description']);
     if ($desc_text) {
-        $details_html .= '<tr><td style="padding:4px 12px 4px 0;color:#666;font-size:13px;white-space:nowrap;vertical-align:top;">Description:</td>'
-            . '<td style="padding:4px 0;font-size:13px;">' . nl2br(rcmi_tickets_email_esc(mb_substr($desc_text, 0, 500))) . (mb_strlen($desc_text) > 500 ? '…' : '') . '</td></tr>';
+        $details_html .= '<tr><td style="padding:9px 16px 9px 0;border-bottom:1px solid #f0f1f2;color:#54585A;font-size:14px;line-height:1.45;white-space:nowrap;vertical-align:top;width:1%;font-family:Helvetica, Arial, sans-serif;">Description:</td>'
+            . '<td style="padding:9px 0;border-bottom:1px solid #f0f1f2;font-size:14px;line-height:1.45;color:#1f2937;font-family:Helvetica, Arial, sans-serif;">' . nl2br(rcmi_tickets_email_esc(mb_substr($desc_text, 0, 500))) . (mb_strlen($desc_text) > 500 ? '…' : '') . '</td></tr>';
         $details_plain .= 'Description: ' . mb_substr($desc_text, 0, 500) . (mb_strlen($desc_text) > 500 ? '…' : '') . "\n";
     }
 
@@ -219,19 +364,18 @@ function rcmi_tickets_email_submitter_receipt($ticket_id, $author_id, $assignee_
 
     $html = '<!doctype html><html><body>'
         . '<h2>' . __('Thank you for your submission', 'rcmi-tickets') . '</h2>'
-        . '<p>' . sprintf(__('Hi %s,', 'rcmi-tickets'), rcmi_tickets_email_esc($author->display_name)) . '</p>'
+        . '<p>' . sprintf(__('Hi %s,', 'rcmi-tickets'), rcmi_tickets_email_esc(rcmi_tickets_email_greeting_name($author))) . '</p>'
         . '<p>' . __('We have received your ticket and our team will review it shortly.', 'rcmi-tickets') . '</p>'
-        . '<p><strong>' . __('Ticket #:', 'rcmi-tickets') . '</strong> ' . (int) $ticket_id . '</p>'
-        . '<p><strong>' . __('Title:', 'rcmi-tickets') . '</strong> ' . $title . '</p>'
-        . '<p>' . __('You will receive updates by email as your ticket is processed.', 'rcmi-tickets') . '</p>'
+        . rcmi_tickets_email_summary_box($ticket_id, $title)
+        . '<p>' . sprintf(__('You can check on your ticket at any time using the %s button below. We\'ll also email you when your request is completed.', 'rcmi-tickets'), '<strong>' . __('View ticket', 'rcmi-tickets') . '</strong>') . '</p>'
         . '<p style="margin-top:1rem;"><a href="' . $url . '" style="display:inline-block;padding:.6rem 1.2rem;background:#c8102e;color:#fff;text-decoration:none;border-radius:.375rem;">' . __('View ticket', 'rcmi-tickets') . '</a></p>'
         . '<h3 style="margin-top:1.5rem;font-size:15px;color:#333;">' . __('Ticket details', 'rcmi-tickets') . '</h3>'
         . '<table style="border-collapse:collapse;margin-top:.5rem;">' . $details['html'] . '</table>'
         . '</body></html>';
 
     $plain = sprintf(
-        "Thank you for your submission\n\nHi %s,\n\nWe have received your ticket and our team will review it shortly.\n\nTicket #%d\nTitle: %s\n\nYou will receive updates by email as your ticket is processed.\n\nView ticket: %s\n\nTicket details:\n%s",
-        $author->display_name,
+        "Thank you for your submission\n\nHi %s,\n\nWe have received your ticket and our team will review it shortly.\n\nTicket #%d\nTitle: %s\n\nYou can check on your ticket at any time using the View ticket link below. We'll also email you when your request is completed.\n\nView ticket: %s\n\nTicket details:\n%s",
+        rcmi_tickets_email_greeting_name($author),
         $ticket_id,
         $ticket['title'],
         wp_strip_all_tags($url),

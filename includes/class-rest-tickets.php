@@ -1224,19 +1224,38 @@ function rcmi_tickets_handle_csv_export($request) {
     $primary_headers   = ['ID', 'Title', 'Status', 'Assignee', 'Due Date', 'Updated'];
     $field_headers     = array_map(function ($f) { return $f['label']; }, $form_fields);
     $extra_headers     = ['Requestor', 'Requestor Email', 'Requestor Job Title', 'Requestor Department', 'Requestor Phone', 'Requestor Employee ID', 'Tags', 'Created'];
-    $all_headers       = array_merge($primary_headers, $field_headers, $extra_headers);
+
+    // Format every ticket first: the timeline columns depend on the
+    // longest approval chain in the export.
+    $formatted_rows = [];
+    foreach ($rows as $row) {
+        $row['id'] = (int) $row['id'];
+        $row['author_id'] = (int) $row['author_id'];
+        $row['assignee_ids'] = rcmi_tickets_get_assignee_ids($row['id']);
+        $row['tag_ids'] = rcmi_tickets_get_ticket_tag_ids($row['id']);
+        $formatted_rows[] = rcmi_tickets_format_ticket($row);
+    }
+    $timelines = [];
+    $max_steps = 0;
+    foreach ($formatted_rows as $formatted) {
+        $tl = rcmi_tickets_export_timeline($formatted);
+        $timelines[$formatted['id']] = $tl;
+        $max_steps = max($max_steps, count($tl['steps']));
+    }
+    $timeline_headers = [];
+    for ($i = 1; $i <= $max_steps; $i++) {
+        $timeline_headers[] = "Approval Step {$i} At";
+    }
+    $timeline_headers = array_merge($timeline_headers, ['Assigned At', 'Started At', 'Completed At', 'Last Rejected At']);
+
+    $all_headers = array_merge($primary_headers, $field_headers, $extra_headers, $timeline_headers);
 
     $output = fopen('php://temp', 'r+');
     // BOM for Excel UTF-8 compatibility
     fwrite($output, "\xEF\xBB\xBF");
     fputcsv($output, $all_headers);
 
-    foreach ($rows as $row) {
-        $row['id'] = (int) $row['id'];
-        $row['author_id'] = (int) $row['author_id'];
-        $row['assignee_ids'] = rcmi_tickets_get_assignee_ids($row['id']);
-        $row['tag_ids'] = rcmi_tickets_get_ticket_tag_ids($row['id']);
-        $formatted = rcmi_tickets_format_ticket($row);
+    foreach ($formatted_rows as $formatted) {
 
         // Assignee names (Assignee column — matches UI "Assignee")
         $assignee_names = implode('; ', array_map(function ($a) { return $a['display_name']; }, $formatted['assignees']));
@@ -1274,7 +1293,13 @@ function rcmi_tickets_handle_csv_export($request) {
             $formatted['created_at'],
         ];
 
-        fputcsv($output, array_merge($primary_row, $field_values, $extra_row));
+        $tl = $timelines[$formatted['id']];
+        $timeline_row = array_pad($tl['steps'], $max_steps, '');
+        $timeline_row = array_merge($timeline_row, [
+            $tl['assigned_at'], $tl['started_at'], $tl['completed_at'], $tl['rejected_at'],
+        ]);
+
+        fputcsv($output, array_merge($primary_row, $field_values, $extra_row, $timeline_row));
     }
 
     rewind($output);
@@ -1292,6 +1317,51 @@ function rcmi_tickets_handle_csv_export($request) {
     header('Content-Length: ' . strlen($csv));
     echo $csv;
     exit;
+}
+
+/**
+ * Timeline timestamps for the CSV export, matching the ticket's Timeline
+ * card: approval-step decisions (latest cycle) and status changes.
+ * Timestamps are the stored site-local 'Y-m-d H:i:s' values, like Created.
+ *
+ * Returns [
+ *   'steps'        => [step 1 decided_at, step 2 …] (latest cycle; '' if undecided),
+ *   'assigned_at'  => last change to Approved (shown as "Assigned"),
+ *   'started_at'   => last change to In Progress,
+ *   'completed_at' => last change to Completed,
+ *   'rejected_at'  => last change to Rejected / Rejected: Pending Revision,
+ * ]
+ */
+function rcmi_tickets_export_timeline(array $ticket) {
+    $approvals = $ticket['approval_history'] ?? [];
+    $status_log = $ticket['status_history'] ?? [];
+
+    $latest_cycle = 0;
+    foreach ($approvals as $a) {
+        $latest_cycle = max($latest_cycle, (int) $a['cycle']);
+    }
+    $steps = [];
+    foreach ($approvals as $a) {
+        if ((int) $a['cycle'] === $latest_cycle) {
+            $steps[] = $a['decided_at'] ?: '';
+        }
+    }
+
+    $last = ['Approved' => '', 'In Progress' => '', 'Completed' => '', 'Rejected' => ''];
+    foreach ($status_log as $e) {
+        $key = strpos((string) $e['new_status'], 'Rejected') === 0 ? 'Rejected' : $e['new_status'];
+        if (array_key_exists($key, $last)) {
+            $last[$key] = $e['changed_at'];
+        }
+    }
+
+    return [
+        'steps'        => $steps,
+        'assigned_at'  => $last['Approved'],
+        'started_at'   => $last['In Progress'],
+        'completed_at' => $last['Completed'],
+        'rejected_at'  => $last['Rejected'],
+    ];
 }
 
 function rcmi_tickets_handle_create($request) {
